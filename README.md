@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Dormitorios Plaza Basílica - ETAPA 1
 
-## Getting Started
+Webapp operativa (mobile-first) para reservas, huéspedes, folios y caja.
 
-First, run the development server:
+## Stack
+- Next.js (App Router) + TypeScript
+- Tailwind CSS
+- Supabase (Auth + Postgres + RLS)
+- Deploy listo para Vercel
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Correr local
+1. Instala dependencias:
+   - `npm install`
+2. Configura variables:
+   - copia `.env.example` a `.env.local`
+   - agrega `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+3. Ejecuta:
+   - `npm run dev`
+4. Abre `http://localhost:3000`
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Bootstrap de primer acceso (login inmediato)
+Si aún no tienes usuarios en Supabase Auth, puedes crearlos en un solo comando:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. En `.env.local` agrega:
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `BOOTSTRAP_ADMIN_PASSWORD`
+   - `BOOTSTRAP_RECEPTION_PASSWORD`
+2. Ejecuta:
+   - `npm run bootstrap:staff`
+3. Inicia sesión en `/login` con:
+   - `admin@dormitorios.local` + contraseña admin
+   - `recepcion@dormitorios.local` + contraseña recepción
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Notas:
+- El script crea (o reutiliza) usuarios en `auth.users`.
+- También crea/actualiza `public.profiles` con roles `admin` y `reception`.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Base de datos
+- Migración principal: `supabase/migrations/20260420_init_stage1.sql`
+- Seed demo: `supabase/seed/seed_stage1.sql`
+- Guía rápida: `docs/stage1.md`
