@@ -44,7 +44,7 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
   return (
     <form
       action={action}
-      className="rounded-3xl border border-[#d8d4ce] bg-white p-6 shadow-sm"
+      className="rounded-3xl border border-mkt-border bg-mkt-card p-6 shadow-sm"
       onSubmit={() => setSubmitAttempted(true)}
       noValidate
     >
@@ -54,7 +54,7 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
         <div>
           <input
             name="full_name"
-            className="w-full rounded-xl border border-[#d9d9d9] px-3 py-2 text-sm"
+            className="w-full rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink"
             placeholder="Nombre completo"
             defaultValue={values.full_name}
             required
@@ -66,7 +66,7 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
         <div>
           <input
             name="phone"
-            className="w-full rounded-xl border border-[#d9d9d9] px-3 py-2 text-sm"
+            className="w-full rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink"
             placeholder="Teléfono"
             defaultValue={values.phone}
             required
@@ -79,7 +79,7 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
           <input
             name="email"
             type="email"
-            className="w-full rounded-xl border border-[#d9d9d9] px-3 py-2 text-sm"
+            className="w-full rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink"
             placeholder="Correo"
             defaultValue={values.email}
             required
@@ -90,7 +90,7 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
         </div>
         <select
           name="sex"
-          className="rounded-xl border border-[#d9d9d9] bg-white px-3 py-2 text-sm"
+          className="rounded-xl border border-mkt-border bg-white px-3 py-2 text-sm text-mkt-ink"
           defaultValue={recurringGuest?.sex ?? "unknown"}
         >
           <option value="unknown">Sexo</option>
@@ -102,7 +102,7 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
           <input
             name="check_in_date"
             type="date"
-            className="w-full rounded-xl border border-[#d9d9d9] px-3 py-2 text-sm"
+            className="w-full rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink"
             required
             onChange={(e) => setValues((prev) => ({ ...prev, check_in_date: e.target.value }))}
             onBlur={() => setTouched((prev) => ({ ...prev, check_in_date: true }))}
@@ -113,14 +113,14 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
           <input
             name="check_out_date"
             type="date"
-            className="w-full rounded-xl border border-[#d9d9d9] px-3 py-2 text-sm"
+            className="w-full rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink"
             required
             onChange={(e) => setValues((prev) => ({ ...prev, check_out_date: e.target.value }))}
             onBlur={() => setTouched((prev) => ({ ...prev, check_out_date: true }))}
           />
           {showError("check_out_date") ? <p className="mt-1 text-xs text-red-600">{errors.check_out_date}</p> : null}
         </div>
-        <select name="bed_number" className="rounded-xl border border-[#d9d9d9] bg-white px-3 py-2 text-sm">
+        <select name="bed_number" className="rounded-xl border border-mkt-border bg-white px-3 py-2 text-sm text-mkt-ink">
           <option value="">Cama (manual)</option>
           {beds.map((bed) => (
             <option key={bed.bed_number} value={bed.bed_number}>
@@ -128,22 +128,22 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
             </option>
           ))}
         </select>
-        <label className="flex items-center gap-2 rounded-xl border border-[#d9d9d9] px-3 py-2 text-sm text-[#436276]">
+        <label className="flex items-center gap-2 rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink-muted">
           <input name="auto_assign" type="checkbox" className="h-4 w-4" />
           Autoasignar cama libre
         </label>
-        <input name="locker_number" className="rounded-xl border border-[#d9d9d9] px-3 py-2 text-sm" placeholder="N. locker (opcional)" />
-        <input name="locker_price" type="number" step="0.01" min="0" className="rounded-xl border border-[#d9d9d9] px-3 py-2 text-sm" placeholder="Precio locker" />
-        <input name="locker_days" type="number" min="0" className="rounded-xl border border-[#d9d9d9] px-3 py-2 text-sm" placeholder="Días locker" />
-        <input name="extras_amount" type="number" step="0.01" min="0" className="rounded-xl border border-[#d9d9d9] px-3 py-2 text-sm" placeholder="Extras" />
+        <input name="locker_number" className="rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink" placeholder="N. locker (opcional)" />
+        <input name="locker_price" type="number" step="0.01" min="0" className="rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink" placeholder="Precio locker" />
+        <input name="locker_days" type="number" min="0" className="rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink" placeholder="Días locker" />
+        <input name="extras_amount" type="number" step="0.01" min="0" className="rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink" placeholder="Extras" />
       </div>
       <textarea
         name="notes"
-        className="mt-3 min-h-20 w-full rounded-xl border border-[#d9d9d9] px-3 py-2 text-sm"
+        className="mt-3 min-h-20 w-full rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink"
         placeholder="Notas de la reservación"
       />
-      <p className="mt-3 text-xs text-[#567183]">Se aplican $10 MXN de bonificación por cama al capturar datos completos.</p>
-      <button className="mt-4 inline-flex h-10 w-full items-center justify-center rounded-full bg-[#1f5a78] text-sm font-semibold text-white hover:bg-[#184860]">
+      <p className="mt-3 text-xs text-mkt-ink-muted">Se aplican $10 MXN de bonificación por cama al capturar datos completos.</p>
+      <button className="mt-4 inline-flex h-10 w-full items-center justify-center rounded-full bg-mkt-slate text-sm font-semibold text-white transition hover:bg-mkt-slate-deep">
         Generar folio de reserva
       </button>
     </form>

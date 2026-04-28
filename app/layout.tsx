@@ -16,8 +16,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Dormitorios Plaza Basílica",
-  description: "Sistema operativo para reservas, huéspedes y folios",
+  title: "Dormitorios Plaza Basílica | Renta de camas por noche",
+  description:
+    "Hospedaje económico en CDMX cerca de la Basílica. Camas por noche, wifi y regaderas con agua caliente. Reserva en línea.",
+  openGraph: {
+    title: "Dormitorios Plaza Basílica",
+    description: "Renta de camas por noche en Ciudad de México.",
+    locale: "es_MX",
+    type: "website",
+  },
 };
 
 export default function RootLayout({

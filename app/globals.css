@@ -13,6 +13,21 @@
   --warning-ink: #6a4300;
   --danger: #c53b3b;
   --border-soft: #d7e0e8;
+
+  /* Marketing / landing (scoped via .landing-marketing) */
+  --mkt-canvas: #fde4d0;
+  --mkt-canvas-elevated: #fff3e6;
+  --mkt-card: #ffffff;
+  --mkt-ink: #3e6479;
+  --mkt-ink-muted: #5a7d91;
+  --mkt-slate: #406075;
+  --mkt-slate-deep: #2f4a5a;
+  --mkt-terracotta: #c25e44;
+  --mkt-terracotta-hover: #a64d38;
+  --mkt-chocolate: #5d3a1a;
+  --mkt-border: #e5cbb8;
+  --mkt-sky: #c5e4f2;
+  --mkt-footer: #2d4d5c;
 }
 
 @theme inline {
@@ -28,6 +43,19 @@
   --color-warning-ink: var(--warning-ink);
   --color-danger: var(--danger);
   --color-border-soft: var(--border-soft);
+  --color-mkt-canvas: var(--mkt-canvas);
+  --color-mkt-canvas-elevated: var(--mkt-canvas-elevated);
+  --color-mkt-card: var(--mkt-card);
+  --color-mkt-ink: var(--mkt-ink);
+  --color-mkt-ink-muted: var(--mkt-ink-muted);
+  --color-mkt-slate: var(--mkt-slate);
+  --color-mkt-slate-deep: var(--mkt-slate-deep);
+  --color-mkt-terracotta: var(--mkt-terracotta);
+  --color-mkt-terracotta-hover: var(--mkt-terracotta-hover);
+  --color-mkt-chocolate: var(--mkt-chocolate);
+  --color-mkt-border: var(--mkt-border);
+  --color-mkt-sky: var(--mkt-sky);
+  --color-mkt-footer: var(--mkt-footer);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -39,4 +67,14 @@ body {
 
 * {
   border-color: var(--border-soft);
+}
+
+.landing-marketing {
+  background-color: var(--mkt-canvas);
+  color: var(--mkt-ink);
+}
+
+.landing-marketing :where(a, button, input, textarea, select):focus-visible {
+  outline: 2px solid var(--mkt-terracotta);
+  outline-offset: 2px;
 }
