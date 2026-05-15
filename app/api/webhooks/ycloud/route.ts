@@ -9,14 +9,22 @@ import { pickAvailableBeds } from "@/actions/operations";
 
 // Función para validar que la petición realmente viene de Ycloud
 function verifySignature(bodyText: string, headerValue: string | null, secret: string) {
-  if (!headerValue || !secret) return false;
+  if (!headerValue || !secret) {
+    console.error("Falta headerValue o secret.", { hasHeader: !!headerValue, secretLength: secret?.length });
+    return false;
+  }
   try {
-    // Ycloud header format is typically: t={timestamp},s={signature}
-    const match = headerValue.match(/t=([^,]+),s=([^,]+)/);
-    if (!match) return false;
+    const parts = headerValue.split(',');
+    const tPart = parts.find(p => p.trim().startsWith('t='));
+    const sPart = parts.find(p => p.trim().startsWith('s='));
 
-    const timestamp = match[1];
-    const signature = match[2];
+    if (!tPart || !sPart) {
+      console.error("Formato de Ycloud-Signature inválido:", headerValue);
+      return false;
+    }
+
+    const timestamp = tPart.split('=')[1].trim();
+    const signature = sPart.split('=')[1].trim();
     const signedPayload = `${timestamp}.${bodyText}`;
 
     const expectedSignature = crypto
@@ -24,13 +32,20 @@ function verifySignature(bodyText: string, headerValue: string | null, secret: s
       .update(signedPayload)
       .digest("hex");
       
-    if (signature.length !== expectedSignature.length) return false;
+    if (signature.length !== expectedSignature.length) {
+       console.error("Las longitudes de las firmas no coinciden.", { received: signature.length, expected: expectedSignature.length });
+       return false;
+    }
 
-    return crypto.timingSafeEqual(
+    const isValid = crypto.timingSafeEqual(
       Buffer.from(signature),
       Buffer.from(expectedSignature)
     );
+
+    if (!isValid) console.error("La firma calculada no coincide con la recibida.");
+    return isValid;
   } catch (e) {
+    console.error("Excepción en verifySignature:", e);
     return false;
   }
 }
