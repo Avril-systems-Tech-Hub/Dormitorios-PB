@@ -8,13 +8,24 @@ import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { pickAvailableBeds } from "@/actions/operations";
 
 // Función para validar que la petición realmente viene de Ycloud
-function verifySignature(bodyText: string, signature: string | null, secret: string) {
-  if (!signature || !secret) return false;
+function verifySignature(bodyText: string, headerValue: string | null, secret: string) {
+  if (!headerValue || !secret) return false;
   try {
+    // Ycloud header format is typically: t={timestamp},s={signature}
+    const match = headerValue.match(/t=([^,]+),s=([^,]+)/);
+    if (!match) return false;
+
+    const timestamp = match[1];
+    const signature = match[2];
+    const signedPayload = `${timestamp}.${bodyText}`;
+
     const expectedSignature = crypto
       .createHmac("sha256", secret)
-      .update(bodyText)
+      .update(signedPayload)
       .digest("hex");
+      
+    if (signature.length !== expectedSignature.length) return false;
+
     return crypto.timingSafeEqual(
       Buffer.from(signature),
       Buffer.from(expectedSignature)
