@@ -103,19 +103,19 @@ async function getFolioExpectedTotal(supabase: ReturnType<typeof createAdminClie
   return baseExpected + extraTotal;
 }
 
-async function pickBedId({
-  requestedBedNumber,
+export async function pickAvailableBeds({
+  count,
   checkInDate,
   checkOutDate,
 }: {
-  requestedBedNumber: number | null;
+  count: number;
   checkInDate: string;
   checkOutDate: string;
 }) {
   const supabase = createAdminClient();
   const { data: allBeds } = await supabase.from("beds").select("id, bed_number, status").eq("status", "available");
 
-  if (!allBeds?.length) return null;
+  if (!allBeds?.length) return [];
 
   const { data: overlappingReservations } = await supabase
     .from("reservations")
@@ -127,9 +127,7 @@ async function pickBedId({
   const overlappingIds = overlappingReservations?.map((r) => r.id) ?? [];
   if (!overlappingIds.length) {
     const freeBeds = [...allBeds].sort((a, b) => a.bed_number - b.bed_number);
-    if (!requestedBedNumber) return freeBeds[0].id;
-    const requested = freeBeds.find((b) => b.bed_number === requestedBedNumber);
-    return requested?.id ?? null;
+    return freeBeds.slice(0, count).map(b => b.id);
   }
 
   const { data: occupiedRows } = await supabase
@@ -140,14 +138,29 @@ async function pickBedId({
   const occupied = new Set((occupiedRows ?? []).map((row) => row.bed_id));
   const freeBeds = allBeds.filter((bed) => !occupied.has(bed.id)).sort((a, b) => a.bed_number - b.bed_number);
 
-  if (!freeBeds.length) return null;
+  return freeBeds.slice(0, count).map(b => b.id);
+}
 
-  if (!requestedBedNumber) {
-    return freeBeds[0].id;
+export async function searchGuestByPhoneAction(phoneRaw: string) {
+  let phone = phoneRaw.replace(/\D/g, "");
+  if (phone.startsWith("52") && phone.length === 12) {
+    phone = phone.slice(2);
   }
 
-  const requested = freeBeds.find((b) => b.bed_number === requestedBedNumber);
-  return requested?.id ?? null;
+  if (!phone) return { success: false, guest: null };
+
+  const supabase = createAdminClient();
+  const { data: guest } = await supabase
+    .from("guests")
+    .select("full_name, email, phone, sex")
+    .eq("normalized_phone", phone)
+    .maybeSingle();
+
+  if (guest) {
+    return { success: true, guest };
+  }
+
+  return { success: false, guest: null };
 }
 
 export async function createReservationAction(formData: FormData): Promise<void> {
@@ -156,77 +169,90 @@ export async function createReservationAction(formData: FormData): Promise<void>
   const returnTo = String(formData.get("return_to") ?? "/");
   const requestedSource = String(formData.get("reservation_source") ?? "").trim();
 
-  const fullName = String(formData.get("full_name") ?? "").trim();
-  const phone = normalizePhone(String(formData.get("phone") ?? ""));
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const sex = String(formData.get("sex") ?? "unknown");
+  const guestsJson = String(formData.get("guests_data") ?? "[]");
+  let guests: { full_name: string; phone: string; email: string; sex: string }[] = [];
+  try {
+    guests = JSON.parse(guestsJson);
+  } catch (e) {}
+
+  if (!guests.length) {
+    return redirectWithResult(returnTo, "error", "Se requiere al menos un huésped para crear la reserva.");
+  }
+
   const checkInDate = String(formData.get("check_in_date") ?? "");
   const checkOutDate = String(formData.get("check_out_date") ?? "");
-  const requestedBed = Number(formData.get("bed_number") ?? 0);
-  const useAutoAssign = String(formData.get("auto_assign") ?? "") === "on";
-  const lockerNumber = Number(formData.get("locker_number") ?? 0) || null;
-  const lockerPrice = Number(formData.get("locker_price") ?? 0);
-  const lockerDays = Number(formData.get("locker_days") ?? 0);
-  const extrasAmount = Number(formData.get("extras_amount") ?? 0);
   const notes = String(formData.get("notes") ?? "").trim();
 
-  if (!fullName || !phone || !email || !checkInDate || !checkOutDate) {
-    return redirectWithResult(returnTo, "error", "Faltan campos obligatorios para crear la reserva.");
+  if (!checkInDate || !checkOutDate) {
+    return redirectWithResult(returnTo, "error", "Faltan las fechas de reservación.");
   }
 
   const nights = dateDiffInNights(checkInDate, checkOutDate);
-  const bedId = await pickBedId({
-    requestedBedNumber: useAutoAssign ? null : requestedBed || null,
-    checkInDate,
-    checkOutDate,
-  });
+  const bedIds = await pickAvailableBeds({ count: guests.length, checkInDate, checkOutDate });
 
-  if (!bedId) {
-    return redirectWithResult(returnTo, "error", "No hay cama disponible para ese rango de fechas.");
+  if (bedIds.length < guests.length) {
+    return redirectWithResult(returnTo, "error", `Solo hay ${bedIds.length} camas disponibles para esas fechas.`);
   }
 
-  const { data: guestByPhone } = await supabase
-    .from("guests")
-    .select("id")
-    .eq("normalized_phone", phone)
-    .maybeSingle();
+  const guestIds: string[] = [];
 
-  let guestId = guestByPhone?.id as string | undefined;
-  if (!guestId) {
-    const { data: newGuest, error: guestError } = await supabase
+  for (const guest of guests) {
+    const fullName = guest.full_name.trim();
+    const phone = normalizePhone(guest.phone);
+    const email = guest.email.trim().toLowerCase();
+    const sex = guest.sex || "unknown";
+
+    if (!fullName || !phone) continue;
+
+    const { data: existingGuest } = await supabase
       .from("guests")
-      .insert({
-        full_name: fullName,
-        phone,
-        email,
-        sex,
-        normalized_name: normalizeName(fullName),
-        normalized_phone: phone,
-      })
       .select("id")
-      .single();
-    if (guestError || !newGuest) {
-      return redirectWithResult(returnTo, "error", "No se pudo crear el huésped.");
+      .eq("normalized_phone", phone)
+      .maybeSingle();
+
+    if (existingGuest) {
+      guestIds.push(existingGuest.id);
+      await supabase
+        .from("guests")
+        .update({
+          full_name: fullName,
+          email,
+          sex,
+          normalized_name: normalizeName(fullName),
+        })
+        .eq("id", existingGuest.id);
+    } else {
+      const { data: newGuest, error: guestError } = await supabase
+        .from("guests")
+        .insert({
+          full_name: fullName,
+          phone,
+          email,
+          sex,
+          normalized_name: normalizeName(fullName),
+          normalized_phone: phone,
+        })
+        .select("id")
+        .single();
+
+      if (guestError || !newGuest) {
+        return redirectWithResult(returnTo, "error", `No se pudo registrar al huésped ${fullName}.`);
+      }
+      guestIds.push(newGuest.id);
     }
-    guestId = newGuest.id;
-  } else {
-    await supabase
-      .from("guests")
-      .update({
-        full_name: fullName,
-        email,
-        sex,
-        normalized_name: normalizeName(fullName),
-      })
-      .eq("id", guestId);
+  }
+
+  if (guestIds.length === 0) {
+    return redirectWithResult(returnTo, "error", "Datos de huéspedes inválidos.");
   }
 
   const folioCode = generateFolioCode();
   const nightlyRate = BASE_NIGHTLY_RATE;
   const discountAmount = BED_DATA_DISCOUNT;
   const finalRate = Math.max(0, nightlyRate - discountAmount);
-  const lockerAmount = lockerPrice * Math.max(0, lockerDays);
-  const totalAmount = finalRate * nights + lockerAmount + Math.max(0, extrasAmount);
+  
+  // Total = (tarifa final x noches) x numero de huespedes
+  const totalAmount = finalRate * nights * guestIds.length;
 
   const { data: folio, error: folioError } = await supabase
     .from("folios")
@@ -270,22 +296,24 @@ export async function createReservationAction(formData: FormData): Promise<void>
     return redirectWithResult(returnTo, "error", "No se pudo crear la reservación.");
   }
 
-  const { error: guestReservationError } = await supabase.from("reservation_guests").insert({
+  const guestInserts = guestIds.map((gId, i) => ({
     reservation_id: reservation.id,
-    guest_id: guestId,
-    bed_id: bedId,
+    guest_id: gId,
+    bed_id: bedIds[i],
     nightly_rate: nightlyRate,
     discount_amount: discountAmount,
     final_rate: finalRate,
-    locker_number: lockerNumber,
-    locker_price: lockerPrice,
-    locker_days: lockerDays,
-    locker_amount: lockerAmount,
+    locker_number: null,
+    locker_price: 0,
+    locker_days: 0,
+    locker_amount: 0,
     social_bonus_status: "captured",
-  });
+  }));
+
+  const { error: guestReservationError } = await supabase.from("reservation_guests").insert(guestInserts);
 
   if (guestReservationError) {
-    return redirectWithResult(returnTo, "error", "No se pudo guardar la asignación de cama.");
+    return redirectWithResult(returnTo, "error", "No se pudo guardar la asignación de camas.");
   }
 
   await supabase.from("audit_logs").insert({
@@ -296,8 +324,8 @@ export async function createReservationAction(formData: FormData): Promise<void>
     entity_id: reservation.id,
     metadata: {
       folio_code: folioCode,
-      phone,
-      auto_assign: useAutoAssign,
+      guests_count: guestIds.length,
+      auto_assign: true,
       nights,
       total_amount: totalAmount,
       reservation_source: reservationSource,

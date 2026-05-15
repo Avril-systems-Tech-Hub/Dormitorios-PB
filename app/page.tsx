@@ -7,7 +7,6 @@ import { LandingHero } from "@/components/landing/landing-hero";
 import { MotionSection, StaggerGrid, StaggerItem } from "@/components/landing/motion";
 import { PriceBadge } from "@/components/landing/price-badge";
 import { TrustStrip } from "@/components/landing/trust-strip";
-import { NewsletterCta } from "@/components/landing/newsletter-cta";
 import { NIGHTLY_PRICE_MXN } from "@/components/landing/constants";
 import { ReservationForm } from "@/components/forms/reservation-form";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -116,18 +115,7 @@ export default async function Home({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const params = await searchParams;
-  const recurrentPhoneRaw = String(params.phone ?? "");
-  const recurrentPhone = recurrentPhoneRaw.replace(/\D/g, "");
-
   const supabase = createAdminClient();
-  const { data: recurringGuest } = recurrentPhone
-    ? await supabase
-        .from("guests")
-        .select("full_name, email, phone, sex")
-        .eq("normalized_phone", recurrentPhone)
-        .maybeSingle()
-    : { data: null };
 
   const { data: beds } = await supabase
     .from("beds")
@@ -166,28 +154,8 @@ export default async function Home({
           <p className="text-mkt-ink-muted">
             Cliente nuevo o recurrente: captura datos, elige cama o autoasigna, genera folio y paga en caja.
           </p>
-          <form method="get" className="mt-4 rounded-2xl border border-mkt-border bg-mkt-card p-4 shadow-sm">
-            <p className="text-sm font-semibold text-mkt-ink">Cliente recurrente</p>
-            <p className="mt-1 text-xs text-mkt-ink-muted">
-              Ingresa solo teléfono para recuperar nombre/correo y aplicar descuento por captura completa.
-            </p>
-            <div className="mt-3 flex gap-2">
-              <input
-                name="phone"
-                defaultValue={recurrentPhone}
-                className="h-10 flex-1 rounded-lg border border-mkt-border bg-white px-3 text-sm text-mkt-ink"
-                placeholder="Teléfono"
-              />
-              <button
-                className="rounded-lg bg-mkt-slate px-4 text-sm font-semibold text-white transition hover:bg-mkt-slate-deep"
-                type="submit"
-              >
-                Buscar
-              </button>
-            </div>
-          </form>
         </div>
-        <ReservationForm action={createReservationAction} beds={beds ?? []} recurringGuest={recurringGuest} />
+        <ReservationForm action={createReservationAction} beds={beds ?? []} />
       </section>
 
       <section id="camas" className="border-y border-mkt-border bg-mkt-canvas-elevated px-4 py-12 md:px-6 md:py-14">
@@ -258,15 +226,6 @@ export default async function Home({
         </StaggerGrid>
       </section>
 
-      <section className="bg-mkt-canvas-elevated px-4 py-14 md:px-6 md:py-16">
-        <div className="mx-auto max-w-4xl rounded-3xl border border-mkt-border bg-mkt-card p-8 text-center shadow-sm">
-          <h2 className="text-3xl font-semibold tracking-tight text-mkt-ink">Suscríbete para ofertas exclusivas</h2>
-          <p className="mx-auto mt-2 max-w-xl text-sm text-mkt-ink-muted">
-            Recibe promociones y novedades. Mientras tanto, también puedes escribirnos por WhatsApp.
-          </p>
-          <NewsletterCta />
-        </div>
-      </section>
 
       <LandingFooter />
     </main>
