@@ -6,7 +6,7 @@ import { searchGuestByPhoneAction } from "@/actions/operations";
 type ReservationFormProps = {
   action: (formData: FormData) => Promise<void>;
   beds: { bed_number: number }[];
-  recurringGuest: {
+  recurringGuest?: {
     full_name?: string | null;
     email?: string | null;
     phone?: string | null;
@@ -52,12 +52,16 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
 
   useEffect(() => {
     if (recurringGuest) {
-      setValues((prev) => ({
-        ...prev,
-        full_name: recurringGuest.full_name || prev.full_name,
-        phone: recurringGuest.phone || prev.phone,
-        email: recurringGuest.email || prev.email,
-      }));
+      setGuests((prev) => {
+        const newGuests = [...prev];
+        newGuests[0] = {
+          ...newGuests[0],
+          full_name: recurringGuest.full_name || newGuests[0].full_name,
+          phone: recurringGuest.phone || newGuests[0].phone,
+          email: recurringGuest.email || newGuests[0].email,
+        };
+        return newGuests;
+      });
     }
   }, [recurringGuest]);
 
