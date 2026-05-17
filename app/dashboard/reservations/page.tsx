@@ -2,40 +2,59 @@ import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
+import { ft } from "@/components/ui/filterable-cell";
+import { ReservationGuestsAccordion } from "@/components/ui/reservation-guests-accordion";
 
 export default async function ReservationsPage() {
   const supabase = await createClient();
   const { data: reservations } = await supabase
     .from("reservations")
     .select(
-      "id,status,reservation_source,check_in_date,check_out_date,nights,notes,profiles(full_name),folios(folio_code,payment_status,balance_due),reservation_guests(guests(full_name,phone),beds(bed_number))",
+      "id,created_at,status,reservation_source,check_in_date,check_out_date,nights,notes,profiles(full_name),folios(folio_code,payment_status,balance_due,total_amount),reservation_guests(guest_id,guests(full_name,phone,email),beds(bed_number))",
     )
     .order("created_at", { ascending: false })
     .limit(40);
 
   const rows =
     reservations?.map((reservation) => {
-      const assignment = Array.isArray(reservation.reservation_guests) ? reservation.reservation_guests[0] : null;
+      const allGuests = Array.isArray(reservation.reservation_guests) ? reservation.reservation_guests : [];
+      const assignment = allGuests[0] ?? null;
       const guest = assignment?.guests as { full_name?: string; phone?: string } | undefined;
       const bed = assignment?.beds as { bed_number?: number } | undefined;
-      const folio = reservation.folios as { folio_code?: string; payment_status?: string; balance_due?: number } | undefined;
+      const folio = reservation.folios as { folio_code?: string; payment_status?: string; balance_due?: number; total_amount?: number } | undefined;
 
       const profile = reservation.profiles as { full_name?: string } | undefined;
       return [
-        folio?.folio_code ?? "Sin folio",
+        ft(
+          folio?.folio_code ?? "Sin folio",
+          <div key={`folio-${reservation.id}`}>
+            <span>{folio?.folio_code ?? "Sin folio"}</span>
+            <ReservationGuestsAccordion guests={allGuests} reservationId={reservation.id} />
+          </div>,
+        ),
         guest?.full_name ?? "Sin huésped",
         guest?.phone ?? "-",
         bed?.bed_number ? `Cama ${bed.bed_number}` : "Pendiente",
         `${reservation.check_in_date} -> ${reservation.check_out_date}`,
         `${reservation.nights} noche(s)`,
-        reservation.reservation_source === "cashier_counter" ? (
-          <Badge key={`${reservation.id}-src`} variant="warning">Caja ({profile?.full_name ?? "sin usuario"})</Badge>
-        ) : (
-          <Badge key={`${reservation.id}-src`} variant="success">App cliente</Badge>
+        reservation.created_at
+          ? new Date(reservation.created_at).toLocaleString("es-MX", { timeZone: "America/Mexico_City", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+          : "—",
+        ft(
+          reservation.reservation_source === "cashier_counter" ? "Caja" : "App cliente",
+          reservation.reservation_source === "cashier_counter" ? (
+            <Badge key={`${reservation.id}-src`} variant="warning">Caja ({profile?.full_name ?? "sin usuario"})</Badge>
+          ) : (
+            <Badge key={`${reservation.id}-src`} variant="success">App cliente</Badge>
+          ),
         ),
-        <Badge key={`${reservation.id}-pay`} variant={folio?.payment_status === "liquidated" ? "success" : "warning"}>
-          {folio?.payment_status ?? "pending"}
-        </Badge>,
+        ft(
+          folio?.payment_status ?? "pending",
+          <Badge key={`${reservation.id}-pay`} variant={folio?.payment_status === "liquidated" ? "success" : "warning"}>
+            {folio?.payment_status ?? "pending"}
+          </Badge>,
+        ),
+        folio?.total_amount ? `$${Number(folio.total_amount).toFixed(2)}` : "$0.00",
         folio?.balance_due ? `$${Number(folio.balance_due).toFixed(2)}` : "$0.00",
       ];
     }) ?? [];
@@ -49,7 +68,7 @@ export default async function ReservationsPage() {
         </p>
       </Card>
       <ResponsiveTable
-        headers={["Folio", "Huésped", "Teléfono", "Cama", "Fechas", "Noches", "Origen", "Pago", "Saldo"]}
+        headers={["Folio", "Huésped", "Teléfono", "Cama", "Fechas", "Noches", "Creada", "Origen", "Pago", "Total", "Saldo"]}
         rows={rows}
       />
     </div>

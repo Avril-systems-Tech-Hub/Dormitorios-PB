@@ -147,15 +147,17 @@ export default async function Home({
         </StaggerGrid>
       </section>
 
-      <section id="reserva" className="mx-auto grid max-w-6xl gap-8 px-4 py-12 md:grid-cols-2 md:px-6 md:py-14">
-        <div className="space-y-3">
+      <section id="reserva" className="mx-auto max-w-7xl px-4 py-12 md:px-6 md:py-14">
+        <div className="mb-8 max-w-2xl space-y-3">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-mkt-chocolate">Reserva tu cama</p>
           <h2 className="text-3xl font-semibold tracking-tight text-mkt-ink">Check-in rápido, control en caja</h2>
           <p className="text-mkt-ink-muted">
             Cliente nuevo o recurrente: captura datos, elige cama o autoasigna, genera folio y paga en caja.
           </p>
         </div>
-        <ReservationForm action={createReservationAction} beds={beds ?? []} />
+        <div className="mx-auto max-w-4xl">
+          <ReservationForm action={createReservationAction} beds={beds ?? []} />
+        </div>
       </section>
 
       <section id="camas" className="border-y border-mkt-border bg-mkt-canvas-elevated px-4 py-12 md:px-6 md:py-14">

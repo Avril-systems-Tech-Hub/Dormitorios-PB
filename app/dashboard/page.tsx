@@ -1,5 +1,9 @@
 import { receptionReservationPaymentAction } from "@/actions/operations";
 import { ReceptionPaymentToggleForm } from "@/components/forms/reception-payment-toggle-form";
+import { ReservationGuestsAccordion } from "@/components/ui/reservation-guests-accordion";
+import { ResendReceiptButton } from "@/components/ui/resend-receipt-button";
+import { ResponsiveTable } from "@/components/ui/responsive-table";
+import { ft } from "@/components/ui/filterable-cell";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
@@ -17,30 +21,10 @@ export default async function DashboardPage() {
     const { data: reservations } = await adminSupabase
       .from("reservations")
       .select(
-        "id,status,reservation_source,check_in_date,check_out_date,nights,notes,profiles(full_name),folios(id,folio_code,payment_status,balance_due),reservation_guests(guests(full_name,phone),beds(bed_number))",
+        "id,created_at,status,reservation_source,check_in_date,check_out_date,nights,notes,profiles(full_name),folios(id,folio_code,payment_status,balance_due,total_amount),reservation_guests(guest_id,guests(full_name,phone,email),beds(bed_number))",
       )
       .order("created_at", { ascending: false })
       .limit(40);
-
-    const { data: beds } = await adminSupabase
-      .from("beds")
-      .select("id,bed_number,status")
-      .order("bed_number", { ascending: true })
-      .limit(60);
-
-    const { data: occupiedRows } = await adminSupabase
-      .from("reservation_guests")
-      .select("bed_id,reservations!inner(status)")
-      .in(
-        "reservation_id",
-        (
-          await adminSupabase
-            .from("reservations")
-            .select("id")
-            .in("status", ["active", "confirmed"])
-        ).data?.map((r) => r.id) ?? [],
-      );
-    const occupiedSet = new Set((occupiedRows ?? []).map((row) => row.bed_id));
 
     return (
       <div className="space-y-4">
@@ -72,112 +56,71 @@ export default async function DashboardPage() {
         <Card>
           <h2 className="text-base font-semibold text-text-main">Reservaciones activas</h2>
           <p className="mt-1 text-sm text-text-muted">Control de check-in, cama asignada y estado de pago por folio.</p>
-          <div className="mt-3 overflow-hidden rounded-xl border border-border-soft bg-white shadow-sm">
-            {(reservations ?? []).length === 0 ? (
-              <p className="p-4 text-sm text-text-muted">No hay reservaciones activas para mostrar.</p>
-            ) : null}
-            <div className="overflow-x-auto">
-              <table className="min-w-[1120px] w-full text-sm">
-                <thead className="bg-surface-soft text-left text-text-muted">
-                  <tr>
-                    <th className="px-3 py-3 font-medium">Folio</th>
-                    <th className="px-3 py-3 font-medium">Huésped</th>
-                    <th className="px-3 py-3 font-medium">Teléfono</th>
-                    <th className="px-3 py-3 font-medium">Cama</th>
-                    <th className="px-3 py-3 font-medium">Fechas</th>
-                    <th className="px-3 py-3 font-medium">Noches</th>
-                    <th className="px-3 py-3 font-medium">Origen</th>
-                    <th className="px-3 py-3 font-medium">Pago</th>
-                    <th className="px-3 py-3 font-medium">Saldo</th>
-                    <th className="px-3 py-3 font-medium">Actualizar pago</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(reservations ?? []).map((reservation) => {
-                      const assignment = Array.isArray(reservation.reservation_guests) ? reservation.reservation_guests[0] : null;
-                      const guest = assignment?.guests as { full_name?: string; phone?: string } | undefined;
-                      const bed = assignment?.beds as { bed_number?: number } | undefined;
-                      const folio = reservation.folios as {
-                        id?: string;
-                        folio_code?: string;
-                        balance_due?: number;
-                        payment_status?: string;
-                      } | undefined;
+          <div className="mt-3">
+            <ResponsiveTable
+              headers={["Folio", "Huésped", "Teléfono", "Cama", "Fechas", "Noches", "Creada", "Origen", "Pago", "Total", "Saldo", "Actualizar pago"]}
+              rows={(reservations ?? []).map((reservation) => {
+                const allGuests = Array.isArray(reservation.reservation_guests) ? reservation.reservation_guests : [];
+                const assignment = allGuests[0] ?? null;
+                const guest = assignment?.guests as { full_name?: string; phone?: string } | undefined;
+                const bed = assignment?.beds as { bed_number?: number } | undefined;
+                const folio = reservation.folios as {
+                  id?: string;
+                  folio_code?: string;
+                  balance_due?: number;
+                  total_amount?: number;
+                  payment_status?: string;
+                } | undefined;
 
-                      return (
-                        <tr key={reservation.id} className="border-t border-border-soft align-top">
-                          <td className="px-3 py-3 text-text-main">{folio?.folio_code ?? "Sin folio"}</td>
-                          <td className="px-3 py-3 text-text-main">{guest?.full_name ?? "Sin huésped"}</td>
-                          <td className="px-3 py-3 text-text-main">{guest?.phone ?? "-"}</td>
-                          <td className="px-3 py-3 text-text-main">{bed?.bed_number ? `Cama ${bed.bed_number}` : "Pendiente"}</td>
-                          <td className="px-3 py-3 text-text-main">
-                            {reservation.check_in_date} {"->"} {reservation.check_out_date}
-                          </td>
-                          <td className="px-3 py-3 text-text-main">{reservation.nights} noche(s)</td>
-                          <td className="px-3 py-3">
-                            {reservation.reservation_source === "cashier_counter" ? (
-                              <Badge variant="warning">Caja</Badge>
-                            ) : (
-                              <Badge variant="success">App cliente</Badge>
-                            )}
-                          </td>
-                          <td className="px-3 py-3">
-                            <Badge variant={folio?.payment_status === "liquidated" ? "success" : "warning"}>
-                              {folio?.payment_status ?? "pending"}
-                            </Badge>
-                          </td>
-                          <td className="px-3 py-3 text-text-main">${Number(folio?.balance_due ?? 0).toFixed(2)}</td>
-                          <td className="px-3 py-3">
-                            {folio?.id ? (
-                              <ReceptionPaymentToggleForm
-                                action={receptionReservationPaymentAction}
-                                folioId={folio.id}
-                              />
-                            ) : (
-                              <span className="text-xs text-red-600">Sin folio</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                return [
+                  ft(
+                    folio?.folio_code ?? "Sin folio",
+                    <div key={`f-${reservation.id}`}>
+                      <span>{folio?.folio_code ?? "Sin folio"}</span>
+                      <ReservationGuestsAccordion guests={allGuests} reservationId={reservation.id} />
+                    </div>,
+                  ),
+                  guest?.full_name ?? "Sin huésped",
+                  guest?.phone ?? "-",
+                  bed?.bed_number ? `Cama ${bed.bed_number}` : "Pendiente",
+                  `${reservation.check_in_date} -> ${reservation.check_out_date}`,
+                  `${reservation.nights} noche(s)`,
+                  reservation.created_at
+                    ? new Date(reservation.created_at).toLocaleString("es-MX", { timeZone: "America/Mexico_City", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+                    : "—",
+                  ft(
+                    reservation.reservation_source === "cashier_counter" ? "Caja" : "App cliente",
+                    reservation.reservation_source === "cashier_counter" ? (
+                      <Badge key={`s-${reservation.id}`} variant="warning">Caja</Badge>
+                    ) : (
+                      <Badge key={`s-${reservation.id}`} variant="success">App cliente</Badge>
+                    ),
+                  ),
+                  ft(
+                    folio?.payment_status ?? "pending",
+                    <Badge key={`p-${reservation.id}`} variant={folio?.payment_status === "liquidated" ? "success" : "warning"}>
+                      {folio?.payment_status ?? "pending"}
+                    </Badge>,
+                  ),
+                  `$${Number(folio?.total_amount ?? 0).toFixed(2)}`,
+                  `$${Number(folio?.balance_due ?? 0).toFixed(2)}`,
+                  folio?.payment_status === "liquidated" && folio?.id ? (
+                    <ResendReceiptButton key={`rr-${reservation.id}`} folioId={folio.id} />
+                  ) : folio?.id ? (
+                    <ReceptionPaymentToggleForm
+                      key={`pay-${reservation.id}`}
+                      action={receptionReservationPaymentAction}
+                      folioId={folio.id}
+                    />
+                  ) : (
+                    <span key={`np-${reservation.id}`} className="text-xs text-red-600">Sin folio</span>
+                  ),
+                ];
+              })}
+            />
           </div>
         </Card>
 
-        <Card>
-          <details>
-            <summary className="cursor-pointer list-none text-base font-semibold text-text-main">
-              Mapa de camas (mostrar/ocultar)
-            </summary>
-            <p className="mt-2 text-sm text-text-muted">Se muestra colapsado para reducir ruido visual en operación.</p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-4 lg:grid-cols-6">
-              {(beds ?? []).map((bed) => {
-                const isBlocked = bed.status === "blocked";
-                const isOccupied = occupiedSet.has(bed.id);
-                return (
-                  <div key={bed.id} className="rounded-xl border border-border-soft bg-white px-3 py-2 text-sm">
-                    <p className="font-semibold text-text-main">Cama {bed.bed_number}</p>
-                    {isBlocked ? (
-                      <Badge variant="danger" className="mt-2">
-                        Bloqueada
-                      </Badge>
-                    ) : isOccupied ? (
-                      <Badge variant="warning" className="mt-2">
-                        Ocupada
-                      </Badge>
-                    ) : (
-                      <Badge variant="success" className="mt-2">
-                        Libre
-                      </Badge>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </details>
-        </Card>
       </div>
     );
   }

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { searchGuestByPhoneAction } from "@/actions/operations";
+import { DateRangeCalendar } from "@/components/ui/date-range-calendar";
 
 type ReservationFormProps = {
   action: (formData: FormData) => Promise<void>;
@@ -83,6 +84,7 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
           };
           return newGuests;
         });
+
       } else {
         setSearchError("No se encontró el número.");
       }
@@ -111,34 +113,44 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
     });
   };
 
-  const handleWhatsappSubmit = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitAttempted(true);
+    setSubmitResult(null);
 
     // Verificar si hay errores antes de enviar
     const hasErrors = Object.keys(errors).length > 0;
     if (hasErrors) return;
 
-    let text = `Hola, estos son los datos de mi reservación en Dormitorios Plaza Basilica.\n\n`;
-    text += `Entrada: ${reservationData.check_in_date}\n`;
-    text += `Salida: ${reservationData.check_out_date}\n`;
-    text += `Personas: ${guestCount}\n\n`;
-
-    guests.forEach((g, i) => {
-      text += `--- Huésped ${i + 1} ---\n`;
-      text += `Nombre: ${g.full_name}\n`;
-      text += `WhatsApp: ${g.phone}\n`;
-      text += `Correo: ${g.email}\n`;
-      text += `Sexo: ${g.sex === "unknown" ? "No especificado" : g.sex}\n\n`;
-    });
-
-    if (reservationData.notes) {
-      text += `Notas: ${reservationData.notes}\n`;
+    const hasEmptyGuests = guests.some(g => !g.full_name.trim() || !g.phone.trim());
+    if (hasEmptyGuests) {
+      setSubmitResult({ success: false, message: "Todos los huéspedes deben tener nombre y teléfono." });
+      return;
     }
 
-    const encodedText = encodeURIComponent(text);
-    const url = `https://api.whatsapp.com/send/?phone=527712929008&text=${encodedText}`;
-    window.open(url, "_blank");
+    setIsSubmitting(true);
+
+    try {
+      const formData = new FormData();
+      formData.set("guests_data", JSON.stringify(guests));
+      formData.set("check_in_date", reservationData.check_in_date);
+      formData.set("check_out_date", reservationData.check_out_date);
+      formData.set("notes", reservationData.notes);
+      formData.set("reservation_source", "guest_app");
+      formData.set("return_to", "/");
+
+      await action(formData);
+    } catch (err: unknown) {
+      // Next.js redirect() lanza un error especial que debemos relanzar
+      if (err instanceof Error && err.message === "NEXT_REDIRECT") throw err;
+      if (typeof err === "object" && err !== null && "digest" in err && (err as { digest?: string }).digest?.startsWith("NEXT_REDIRECT")) throw err;
+      setSubmitResult({ success: false, message: "Ocurrió un error al registrar la reservación." });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const showError = (name: keyof FieldErrors) => (submitAttempted || touched[name]) && Boolean(errors[name]);
@@ -172,39 +184,25 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
       </div>
 
       <form
-        className="rounded-3xl border border-mkt-border bg-mkt-card p-6 shadow-sm"
-        onSubmit={handleWhatsappSubmit}
+        className="rounded-3xl border border-mkt-border bg-mkt-card p-4 shadow-sm sm:p-6"
+        onSubmit={handleSubmit}
         noValidate
       >
         {/* Rango de Fechas y Personas (Nivel Reservación) */}
-        <div className="mb-6 grid gap-3 md:grid-cols-3">
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-mkt-ink-muted">Entrada</label>
-            <input
-              name="check_in_date"
-              type="date"
-              className="w-full rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink"
-              required
-              value={reservationData.check_in_date}
-              onChange={(e) => setReservationData((prev) => ({ ...prev, check_in_date: e.target.value }))}
-              onBlur={() => setTouched((prev) => ({ ...prev, check_in_date: true }))}
-            />
-            {showError("check_in_date") ? <p className="mt-1 text-xs text-red-600">{errors.check_in_date}</p> : null}
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-mkt-ink-muted">Salida</label>
-            <input
-              name="check_out_date"
-              type="date"
-              className="w-full rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink"
-              required
-              value={reservationData.check_out_date}
-              onChange={(e) => setReservationData((prev) => ({ ...prev, check_out_date: e.target.value }))}
-              onBlur={() => setTouched((prev) => ({ ...prev, check_out_date: true }))}
-            />
-            {showError("check_out_date") ? <p className="mt-1 text-xs text-red-600">{errors.check_out_date}</p> : null}
-          </div>
-          <div>
+        <div className="mb-6 space-y-3">
+          <label className="block text-xs font-semibold text-mkt-ink-muted">Rango de fechas</label>
+          <DateRangeCalendar
+            checkInDate={reservationData.check_in_date}
+            checkOutDate={reservationData.check_out_date}
+            onChange={(checkIn, checkOut) => {
+              setReservationData((prev) => ({ ...prev, check_in_date: checkIn, check_out_date: checkOut }));
+              setTouched((prev) => ({ ...prev, check_in_date: true, check_out_date: true }));
+            }}
+          />
+          {(showError("check_in_date") || showError("check_out_date")) && (
+            <p className="mt-1 text-xs text-red-600">{errors.check_in_date || errors.check_out_date}</p>
+          )}
+          <div className="max-w-[140px]">
             <label className="mb-1 block text-xs font-semibold text-mkt-ink-muted">Personas</label>
             <input
               type="number"
@@ -270,14 +268,23 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
           value={reservationData.notes}
           onChange={(e) => setReservationData(prev => ({ ...prev, notes: e.target.value }))}
         />
-        <p className="mt-3 text-xs text-mkt-ink-muted">Las camas serán asignadas por el recepcionista a su llegada.</p>
-        <button type="submit" className="mt-4 flex h-11 w-full items-center justify-center rounded-lg bg-[#25D366] px-4 font-semibold text-white transition-colors hover:bg-[#1DA851]">
-          <svg viewBox="0 0 24 24" className="mr-2 h-5 w-5 fill-current" aria-hidden="true">
-            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.888-.788-1.489-1.761-1.663-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z" />
-          </svg>
-          Enviar reservación
+        <p className="mt-3 text-xs text-mkt-ink-muted">Las camas serán asignadas automáticamente al registrar tu reservación.</p>
+
+        {submitResult && (
+          <div className={`mt-3 rounded-lg p-3 text-sm ${submitResult.success ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+            {submitResult.message}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="mt-4 flex h-11 w-full items-center justify-center rounded-lg bg-mkt-slate px-4 font-semibold text-white transition-colors hover:bg-mkt-slate-deep disabled:opacity-50"
+        >
+          {isSubmitting ? "Registrando..." : "Registrar reservación"}
         </button>
-      </form >
+      </form>
+
     </div >
   );
 }

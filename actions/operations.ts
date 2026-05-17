@@ -11,6 +11,8 @@ import type {
   PaymentMethod,
 } from "@/types/domain";
 import { parseTsvToRows } from "@/lib/imports/tsv";
+import { sendWhatsAppTemplateMessage, sendWhatsAppDocumentWithTemplate, sendWhatsAppDocument, buildPaymentConfirmationMessage } from "@/lib/ycloud";
+import { generatePaymentConfirmationPdf } from "@/lib/payment-pdf";
 
 const BASE_NIGHTLY_RATE = 120;
 const BED_DATA_DISCOUNT = 10;
@@ -113,30 +115,59 @@ export async function pickAvailableBeds({
   checkOutDate: string;
 }) {
   const supabase = createAdminClient();
-  const { data: allBeds } = await supabase.from("beds").select("id, bed_number, status").eq("status", "available");
 
-  if (!allBeds?.length) return [];
+  // 1. Get ALL beds (not just "available" status — status may be stale)
+  const { data: allBeds } = await supabase.from("beds").select("id, bed_number, status").order("bed_number");
 
-  const { data: overlappingReservations } = await supabase
-    .from("reservations")
-    .select("id")
-    .lt("check_in_date", checkOutDate)
-    .gt("check_out_date", checkInDate)
-    .in("status", ["active", "confirmed"]);
+  // Filter out only blocked beds
+  const usableBeds = (allBeds ?? []).filter(b => b.status !== "blocked");
+  if (!usableBeds.length) return [];
 
-  const overlappingIds = overlappingReservations?.map((r) => r.id) ?? [];
-  if (!overlappingIds.length) {
-    const freeBeds = [...allBeds].sort((a, b) => a.bed_number - b.bed_number);
-    return freeBeds.slice(0, count).map(b => b.id);
+  // 2. Get ALL reservation_guests entries (not null bed_id)
+  const { data: allRg } = await supabase
+    .from("reservation_guests")
+    .select("bed_id, reservation_id")
+    .not("bed_id", "is", null);
+
+  if (!allRg?.length) {
+    // No assignments at all — all usable beds are free
+    return usableBeds.slice(0, count).map(b => b.id);
   }
 
-  const { data: occupiedRows } = await supabase
-    .from("reservation_guests")
-    .select("bed_id")
-    .in("reservation_id", overlappingIds);
+  // 3. Get ALL non-cancelled reservations that overlap with the requested dates
+  const { data: overlappingReservations } = await supabase
+    .from("reservations")
+    .select("id, check_in_date, check_out_date, status")
+    .neq("status", "cancelled");
 
-  const occupied = new Set((occupiedRows ?? []).map((row) => row.bed_id));
-  const freeBeds = allBeds.filter((bed) => !occupied.has(bed.id)).sort((a, b) => a.bed_number - b.bed_number);
+  // Filter in JS for date overlap (more reliable than complex Supabase filters)
+  const overlappingResMap = new Map<string, { check_in_date: string; check_out_date: string }>();
+  for (const res of overlappingReservations ?? []) {
+    // Overlap: res.check_in_date < checkOutDate && res.check_out_date > checkInDate
+    if (res.check_in_date < checkOutDate && res.check_out_date > checkInDate) {
+      overlappingResMap.set(res.id, res);
+    }
+  }
+
+  console.log("[pickAvailableBeds] Requested dates:", checkInDate, "->", checkOutDate, "count:", count);
+  console.log("[pickAvailableBeds] Usable beds:", usableBeds.length);
+  console.log("[pickAvailableBeds] Total reservation_guests:", allRg.length);
+  console.log("[pickAvailableBeds] Overlapping reservations:", overlappingResMap.size);
+
+  // 4. Find beds occupied by overlapping reservations
+  const occupiedBedIds = new Set<string>();
+  for (const rg of allRg) {
+    if (!rg.bed_id) continue;
+    if (overlappingResMap.has(rg.reservation_id)) {
+      occupiedBedIds.add(rg.bed_id);
+    }
+  }
+
+  console.log("[pickAvailableBeds] Occupied bed IDs in date range:", occupiedBedIds.size, [...occupiedBedIds]);
+
+  // 5. Filter free beds
+  const freeBeds = usableBeds.filter(bed => !occupiedBedIds.has(bed.id));
+  console.log("[pickAvailableBeds] Free beds:", freeBeds.length, freeBeds.map(b => `Cama ${b.bed_number}`));
 
   return freeBeds.slice(0, count).map(b => b.id);
 }
@@ -426,6 +457,111 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
       override_reason: overrideReason || null,
     },
   });
+
+  // --- Generar PDF y enviar WhatsApp automático al huésped ---
+  try {
+    const { data: reservationForFolio } = await supabase
+      .from("reservations")
+      .select("id, check_in_date, check_out_date, nights, reservation_guests(guests(id, full_name, phone))")
+      .eq("folio_id", folioId)
+      .limit(1)
+      .maybeSingle();
+
+    if (reservationForFolio) {
+      const guestRows = Array.isArray(reservationForFolio.reservation_guests)
+        ? reservationForFolio.reservation_guests
+        : [];
+      const mainGuestRow = guestRows[0] as {
+        guests?: { id?: string; full_name?: string; phone?: string };
+      } | undefined;
+      const mainGuest = mainGuestRow?.guests;
+
+      if (mainGuest?.phone) {
+        const guestPhone = normalizePhone(mainGuest.phone);
+        if (guestPhone) {
+          // 1. Generar PDF de confirmación de pago
+          const pdfBytes = await generatePaymentConfirmationPdf({
+            guestName: mainGuest.full_name ?? "Huésped",
+            folioCode: folio.folio_code,
+            amount,
+            method,
+            balanceDue: newBalance,
+            paymentStatus: newStatus,
+            checkInDate: reservationForFolio.check_in_date,
+            checkOutDate: reservationForFolio.check_out_date,
+            nights: reservationForFolio.nights,
+            guestCount: guestRows.length,
+            totalAmount: expectedTotal,
+          });
+
+          // 2. Subir PDF a Supabase Storage
+          const bucketName = "whatsapp-pdfs";
+          await supabase.storage.createBucket(bucketName, { public: true }).catch(() => {});
+          const pdfFileName = `pago-${folio.folio_code}.pdf`;
+          const { error: uploadError } = await supabase.storage
+            .from(bucketName)
+            .upload(pdfFileName, pdfBytes, { contentType: "application/pdf", upsert: true });
+
+          let waResult;
+          if (!uploadError) {
+            const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(pdfFileName);
+            const pdfPublicUrl = publicUrlData.publicUrl;
+
+            // 3. Construir caption del mensaje
+            const isLiquidated = newStatus === "liquidated";
+            const caption = isLiquidated
+              ? `Hola ${mainGuest.full_name ?? "Huésped"}, tu pago ha sido registrado con éxito. Tu reservación está confirmada.\nFolio: ${folio.folio_code}\nMonto: $${amount.toFixed(2)} MXN\nAdjuntamos tu comprobante de pago.`
+              : `Hola ${mainGuest.full_name ?? "Huésped"}, hemos recibido un pago parcial de tu reservación.\nFolio: ${folio.folio_code}\nMonto: $${amount.toFixed(2)} MXN\nSaldo pendiente: $${newBalance.toFixed(2)} MXN\nAdjuntamos tu comprobante de pago.`;
+
+            // 4. Enviar confirmación por WhatsApp usando template con enlace del PDF
+            // Template: Body tiene {{1}} = nombre, {{2}} = folio, {{3}} = monto, {{4}} = URL PDF
+            waResult = await sendWhatsAppTemplateMessage(
+              guestPhone,
+              process.env.YCLOUD_TEMPLATE_NAME || "payment_confirmation",
+              process.env.YCLOUD_TEMPLATE_LANGUAGE || "es",
+              [mainGuest.full_name ?? "Huésped", folio.folio_code, `$${amount.toFixed(2)} MXN`, pdfPublicUrl],
+            );
+          } else {
+            // Fallback: enviar solo texto si falla la subida del PDF
+            console.error("[registerPaymentAction] Error subiendo PDF:", uploadError);
+            const whatsappMessage = buildPaymentConfirmationMessage({
+              guestName: mainGuest.full_name ?? "Huésped",
+              folioCode: folio.folio_code,
+              amount,
+              method,
+              balanceDue: newBalance,
+              paymentStatus: newStatus,
+              checkInDate: reservationForFolio.check_in_date,
+              checkOutDate: reservationForFolio.check_out_date,
+              nights: reservationForFolio.nights,
+            });
+            const { sendWhatsAppTextMessage } = await import("@/lib/ycloud");
+            waResult = await sendWhatsAppTextMessage(guestPhone, whatsappMessage);
+          }
+
+          // Registrar el mensaje en whatsapp_messages
+          await supabase.from("whatsapp_messages").insert({
+            guest_id: mainGuest.id ?? null,
+            reservation_id: reservationForFolio.id,
+            folio_id: folioId,
+            status: waResult.success ? "sent" : "failed",
+            phone: guestPhone,
+            payload: {
+              folio_code: folio.folio_code,
+              amount,
+              method,
+              ycloud_result: waResult,
+            },
+            delivered_at: waResult.success ? new Date().toISOString() : null,
+            error_message: waResult.error ?? null,
+          });
+        }
+      }
+    }
+  } catch (waError) {
+    // No bloquear el flujo principal si falla WhatsApp
+    console.error("[registerPaymentAction] Error enviando WhatsApp:", waError);
+  }
 
   revalidatePath("/dashboard/payments");
   revalidatePath("/dashboard/folios");
@@ -804,6 +940,254 @@ export async function commitImportedBatchAction(formData: FormData): Promise<voi
 
   revalidatePath("/dashboard/imported-records");
   return redirectWithResult(returnTo, "success", "Lote archivado como importado.");
+}
+
+export async function resendPaymentReceiptAction(formData: FormData): Promise<void> {
+  const supabase = createAdminClient();
+  const actorId = await getActorProfileId();
+  const returnTo = String(formData.get("return_to") ?? "/dashboard");
+  const folioId = String(formData.get("folio_id") ?? "");
+
+  if (!folioId) {
+    return redirectWithResult(returnTo, "error", "Folio requerido.");
+  }
+
+  const { data: folio } = await supabase
+    .from("folios")
+    .select("id, folio_code, total_amount, paid_amount, balance_due, payment_status")
+    .eq("id", folioId)
+    .single();
+
+  if (!folio) {
+    return redirectWithResult(returnTo, "error", "Folio no encontrado.");
+  }
+
+  const { data: reservationForFolio } = await supabase
+    .from("reservations")
+    .select("id, check_in_date, check_out_date, nights, reservation_guests(guests(id, full_name, phone))")
+    .eq("folio_id", folioId)
+    .limit(1)
+    .maybeSingle();
+
+  if (!reservationForFolio) {
+    return redirectWithResult(returnTo, "error", "No se encontró reservación para ese folio.");
+  }
+
+  const guestRows = Array.isArray(reservationForFolio.reservation_guests)
+    ? reservationForFolio.reservation_guests
+    : [];
+  const mainGuestRow = guestRows[0] as {
+    guests?: { id?: string; full_name?: string; phone?: string };
+  } | undefined;
+  const mainGuest = mainGuestRow?.guests;
+
+  if (!mainGuest?.phone) {
+    return redirectWithResult(returnTo, "error", "No hay teléfono válido para enviar el comprobante.");
+  }
+
+  const guestPhone = normalizePhone(mainGuest.phone);
+  if (!guestPhone) {
+    return redirectWithResult(returnTo, "error", "Teléfono inválido.");
+  }
+
+  const amount = Number(folio.paid_amount ?? 0);
+
+  // Generate PDF
+  const pdfBytes = await generatePaymentConfirmationPdf({
+    guestName: mainGuest.full_name ?? "Huésped",
+    folioCode: folio.folio_code,
+    amount,
+    method: "cash",
+    balanceDue: Number(folio.balance_due ?? 0),
+    paymentStatus: folio.payment_status,
+    checkInDate: reservationForFolio.check_in_date,
+    checkOutDate: reservationForFolio.check_out_date,
+    nights: reservationForFolio.nights,
+    guestCount: guestRows.length,
+    totalAmount: Number(folio.total_amount ?? 0),
+  });
+
+  // Upload PDF
+  const bucketName = "whatsapp-pdfs";
+  await supabase.storage.createBucket(bucketName, { public: true }).catch(() => {});
+  const pdfFileName = `pago-${folio.folio_code}.pdf`;
+  const { error: uploadError } = await supabase.storage
+    .from(bucketName)
+    .upload(pdfFileName, pdfBytes, { contentType: "application/pdf", upsert: true });
+
+  let waResult;
+  if (!uploadError) {
+    const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(pdfFileName);
+    const pdfPublicUrl = publicUrlData.publicUrl;
+
+    waResult = await sendWhatsAppTemplateMessage(
+      guestPhone,
+      process.env.YCLOUD_TEMPLATE_NAME || "payment_confirmation",
+      process.env.YCLOUD_TEMPLATE_LANGUAGE || "es",
+      [mainGuest.full_name ?? "Huésped", folio.folio_code, `$${amount.toFixed(2)} MXN`, pdfPublicUrl],
+    );
+  } else {
+    console.error("[resendPaymentReceipt] Error subiendo PDF:", uploadError);
+    const whatsappMessage = buildPaymentConfirmationMessage({
+      guestName: mainGuest.full_name ?? "Huésped",
+      folioCode: folio.folio_code,
+      amount,
+      method: "cash",
+      balanceDue: Number(folio.balance_due ?? 0),
+      paymentStatus: folio.payment_status,
+      checkInDate: reservationForFolio.check_in_date,
+      checkOutDate: reservationForFolio.check_out_date,
+      nights: reservationForFolio.nights,
+    });
+    const { sendWhatsAppTextMessage } = await import("@/lib/ycloud");
+    waResult = await sendWhatsAppTextMessage(guestPhone, whatsappMessage);
+  }
+
+  await supabase.from("whatsapp_messages").insert({
+    guest_id: mainGuest.id ?? null,
+    reservation_id: reservationForFolio.id,
+    folio_id: folioId,
+    status: waResult.success ? "sent" : "failed",
+    phone: guestPhone,
+    payload: {
+      folio_code: folio.folio_code,
+      amount,
+      type: "resend_receipt",
+      ycloud_result: waResult,
+    },
+    delivered_at: waResult.success ? new Date().toISOString() : null,
+    error_message: waResult.error ?? null,
+  });
+
+  await supabase.from("audit_logs").insert({
+    actor_user_id: actorId,
+    action: "payment_receipt_resent",
+    entity_type: "folio",
+    entity_id: folioId,
+    metadata: { folio_code: folio.folio_code, phone: guestPhone, success: waResult.success },
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/reservations");
+
+  return redirectWithResult(
+    returnTo,
+    waResult.success ? "success" : "error",
+    waResult.success
+      ? `Comprobante reenviado a ${guestPhone} para folio ${folio.folio_code}.`
+      : `Error al reenviar comprobante: ${waResult.error ?? "desconocido"}`,
+  );
+}
+
+export async function getBedsMapForChange() {
+  const supabase = createAdminClient();
+
+  const { data: beds } = await supabase
+    .from("beds")
+    .select("id, bed_number, status")
+    .order("bed_number", { ascending: true });
+
+  const { data: rgRows } = await supabase
+    .from("reservation_guests")
+    .select("bed_id, reservation_id, guests(full_name)")
+    .not("bed_id", "is", null);
+
+  const bedGuestMap = new Map<string, string>();
+  for (const rg of rgRows ?? []) {
+    if (rg.bed_id && !bedGuestMap.has(rg.bed_id)) {
+      const guest = rg.guests as { full_name?: string } | undefined;
+      bedGuestMap.set(rg.bed_id, guest?.full_name ?? "Ocupada");
+    }
+  }
+
+  return (beds ?? []).map((bed) => ({
+    id: bed.id,
+    bed_number: bed.bed_number,
+    status: bed.status,
+    occupied_by: bedGuestMap.get(bed.id) ?? null,
+  }));
+}
+
+export async function reassignBedAction(formData: FormData): Promise<void> {
+  const supabase = createAdminClient();
+  const actorId = await getActorProfileId();
+  const returnTo = String(formData.get("return_to") ?? "/dashboard/reservations");
+  const reservationId = String(formData.get("reservation_id") ?? "");
+  const guestId = String(formData.get("guest_id") ?? "");
+  const newBedId = String(formData.get("new_bed_id") ?? "");
+
+  if (!reservationId || !guestId || !newBedId) {
+    return redirectWithResult(returnTo, "error", "Faltan datos para reasignar la cama.");
+  }
+
+  // Verify the bed is not blocked
+  const { data: bed } = await supabase.from("beds").select("id, status, bed_number").eq("id", newBedId).single();
+  if (!bed || bed.status === "blocked") {
+    return redirectWithResult(returnTo, "error", "La cama seleccionada no está disponible.");
+  }
+
+  // Verify no overlapping reservation occupies this bed
+  const { data: reservation } = await supabase
+    .from("reservations")
+    .select("check_in_date, check_out_date")
+    .eq("id", reservationId)
+    .single();
+  if (!reservation) {
+    return redirectWithResult(returnTo, "error", "Reservación no encontrada.");
+  }
+
+  const { data: overlappingRg } = await supabase
+    .from("reservation_guests")
+    .select("reservation_id, reservations!inner(check_in_date, check_out_date)")
+    .eq("bed_id", newBedId)
+    .neq("reservation_id", reservationId);
+
+  for (const rg of overlappingRg ?? []) {
+    const overlap = rg.reservations as unknown as { check_in_date: string; check_out_date: string };
+    if (overlap.check_in_date < reservation.check_out_date && overlap.check_out_date > reservation.check_in_date) {
+      return redirectWithResult(returnTo, "error", `Cama ${bed.bed_number} está ocupada en esas fechas.`);
+    }
+  }
+
+  // Get old bed for audit
+  const { data: currentRg } = await supabase
+    .from("reservation_guests")
+    .select("bed_id, beds(bed_number)")
+    .eq("reservation_id", reservationId)
+    .eq("guest_id", guestId)
+    .single();
+
+  const oldBedNumber = (currentRg?.beds as { bed_number?: number } | undefined)?.bed_number;
+
+  // Update the assignment
+  const { error: updateError } = await supabase
+    .from("reservation_guests")
+    .update({ bed_id: newBedId })
+    .eq("reservation_id", reservationId)
+    .eq("guest_id", guestId);
+
+  if (updateError) {
+    return redirectWithResult(returnTo, "error", "No se pudo actualizar la asignación de cama.");
+  }
+
+  await supabase.from("audit_logs").insert({
+    actor_user_id: actorId,
+    action: "bed_reassigned",
+    entity_type: "reservation",
+    entity_id: reservationId,
+    metadata: {
+      guest_id: guestId,
+      old_bed: oldBedNumber ?? "Sin cama",
+      new_bed: bed.bed_number,
+    },
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/beds");
+  revalidatePath("/dashboard/folios");
+
+  return redirectWithResult(returnTo, "success", `Cama cambiada a ${bed.bed_number}.`);
 }
 
 function deriveAnomalyFlagsForRecord(record: {
