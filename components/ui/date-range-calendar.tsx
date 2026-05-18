@@ -91,7 +91,7 @@ export function DateRangeCalendar({
           onMonthChange={setMonth}
           locale={es}
           disabled={{ before: today }}
-          min={minNights + 1}
+          min={minNights}
           showOutsideDays
           captionLayout="label"
           style={{ width: "100%" }}
