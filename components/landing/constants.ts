@@ -1,6 +1,11 @@
-export const SITE_URL = "https://dormitoriosplazabasilica.mx";
-export const WHATSAPP_DISPLAY = "55 2083 6006";
-export const WHATSAPP_E164 = "525520836006";
+/** TrustStrip / reserva card — slate gradient background */
+export const UBICACION_SURFACE_CLASS =
+  "bg-gradient-to-br from-mkt-slate-deep via-mkt-slate to-mkt-slate text-white";
+
+export const SITE_URL = "https://dormitorios.plazabasilica.cc";
+export const SITE_HOST = "dormitorios.plazabasilica.cc";
+export const WHATSAPP_DISPLAY = "771 291 9008";
+export const WHATSAPP_E164 = "527712919008";
 export const WHATSAPP_HREF = `https://wa.me/${WHATSAPP_E164}`;
 export const ADDRESS_LINE = "Arica 91, Col. Tepeyac Insurgentes, Gustavo A. Madero, Ciudad de México";
 export const MAP_SEARCH_HREF =

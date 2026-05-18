@@ -2,6 +2,7 @@ import Image from "next/image";
 import {
   ADDRESS_LINE,
   MAP_SEARCH_HREF,
+  SITE_HOST,
   SITE_URL,
   WHATSAPP_DISPLAY,
   WHATSAPP_HREF,
@@ -56,7 +57,7 @@ export function LandingFooter() {
             </li>
             <li>
               <a href={SITE_URL} className="rounded hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mkt-terracotta" target="_blank" rel="noopener noreferrer">
-                {SITE_URL.replace(/^https:\/\//, "")}
+                {SITE_HOST}
               </a>
             </li>
             <li>

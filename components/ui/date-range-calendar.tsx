@@ -52,14 +52,11 @@ export function DateRangeCalendar({
   today.setHours(0, 0, 0, 0);
 
   return (
-    <div className="w-full max-w-full overflow-hidden rounded-2xl border border-mkt-border bg-mkt-card p-3 shadow-sm sm:p-4">
-      {/* Resumen visual de la selección */}
+    <div className="w-full max-w-full space-y-3">
       <div className="mb-3 flex items-center gap-2">
         <div className="min-w-0 flex-1 rounded-xl border border-mkt-border bg-white p-2 text-center sm:p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-mkt-ink-muted">
-            Entrada
-          </p>
-          <p className="mt-0.5 text-xs font-bold text-mkt-ink sm:text-sm">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-mkt-terracotta">Entrada</p>
+          <p className="mt-0.5 text-xs font-bold text-mkt-slate sm:text-sm">
             {checkInDate
               ? new Date(checkInDate + "T12:00:00").toLocaleDateString("es-MX", {
                   day: "numeric",
@@ -68,14 +65,12 @@ export function DateRangeCalendar({
               : "—"}
           </p>
         </div>
-        <div className="flex-shrink-0 text-mkt-ink-muted">
+        <div className="flex-shrink-0 text-white/50">
           <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" />
         </div>
         <div className="min-w-0 flex-1 rounded-xl border border-mkt-border bg-white p-2 text-center sm:p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-mkt-ink-muted">
-            Salida
-          </p>
-          <p className="mt-0.5 text-xs font-bold text-mkt-ink sm:text-sm">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-mkt-terracotta">Salida</p>
+          <p className="mt-0.5 text-xs font-bold text-mkt-slate sm:text-sm">
             {checkOutDate
               ? new Date(checkOutDate + "T12:00:00").toLocaleDateString("es-MX", {
                   day: "numeric",
@@ -86,8 +81,7 @@ export function DateRangeCalendar({
         </div>
       </div>
 
-      {/* Calendario */}
-      <div className="rdp-wrapper w-full">
+      <div className="rdp-wrapper w-full rounded-xl border border-mkt-border bg-white p-2 sm:p-3">
         <DayPicker
           mode="range"
           selected={selected}
@@ -106,31 +100,27 @@ export function DateRangeCalendar({
             months: "flex w-full justify-center",
             month: "w-full space-y-1",
             month_caption: "flex items-center justify-between px-1 py-1",
-            caption_label: "text-xs font-semibold text-mkt-ink sm:text-sm",
+            caption_label: "text-xs font-semibold uppercase tracking-wide text-mkt-terracotta sm:text-sm",
             nav: "flex items-center gap-1",
             button_previous:
-              "inline-flex h-6 w-6 items-center justify-center rounded-md border border-mkt-border bg-white text-mkt-ink transition hover:bg-gray-50 sm:h-7 sm:w-7",
+              "inline-flex h-6 w-6 items-center justify-center rounded-md border border-mkt-border bg-white text-mkt-slate transition hover:bg-mkt-sky/60 sm:h-7 sm:w-7",
             button_next:
-              "inline-flex h-6 w-6 items-center justify-center rounded-md border border-mkt-border bg-white text-mkt-ink transition hover:bg-gray-50 sm:h-7 sm:w-7",
+              "inline-flex h-6 w-6 items-center justify-center rounded-md border border-mkt-border bg-white text-mkt-slate transition hover:bg-mkt-sky/60 sm:h-7 sm:w-7",
             month_grid: "w-full border-collapse",
             weekdays: "grid grid-cols-7",
             weekday:
-              "text-center text-[9px] font-semibold uppercase tracking-wide text-mkt-ink-muted sm:text-[10px]",
+              "text-center text-[9px] font-semibold uppercase tracking-wide text-mkt-terracotta sm:text-[10px]",
             week: "grid grid-cols-7 mt-0.5",
             day: "aspect-square p-0",
             day_button:
-              "h-full w-full flex items-center justify-center rounded-md text-[11px] transition-colors focus:outline-none focus:ring-1 focus:ring-mkt-slate/30 sm:text-sm",
-            range_start:
-              "bg-mkt-slate text-white rounded-l-md",
-            range_end:
-              "bg-mkt-slate text-white rounded-r-md",
-            range_middle:
-              "bg-mkt-slate/10 text-mkt-ink",
-            selected:
-              "!bg-mkt-slate text-white font-bold",
-            today: "font-bold text-mkt-slate",
-            disabled: "text-gray-300 opacity-50",
-            outside: "text-gray-300",
+              "h-full w-full flex items-center justify-center rounded-md text-[11px] text-mkt-ink transition-colors hover:bg-mkt-sky/50 focus:outline-none focus:ring-2 focus:ring-mkt-slate/25 sm:text-sm",
+            range_start: "bg-mkt-slate text-white rounded-l-md",
+            range_end: "bg-mkt-slate text-white rounded-r-md",
+            range_middle: "bg-mkt-sky/70 text-mkt-slate-deep",
+            selected: "!bg-mkt-slate text-white font-bold",
+            today: "font-bold text-mkt-slate ring-1 ring-mkt-slate/30 ring-inset",
+            disabled: "text-mkt-ink-muted/40 opacity-50",
+            outside: "text-mkt-ink-muted/35",
             hidden: "invisible",
           }}
           components={{
@@ -142,9 +132,8 @@ export function DateRangeCalendar({
         />
       </div>
 
-      {/* Indicador de noches */}
       {checkInDate && checkOutDate && (
-        <p className="mt-2 text-center text-xs text-mkt-ink-muted">
+        <p className="mt-2 text-center text-xs font-medium text-white/85">
           {Math.max(
             1,
             Math.round(

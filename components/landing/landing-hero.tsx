@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
+import { HeroCarousel } from "./hero-carousel";
 import { FadeIn } from "./motion";
 import { PriceBadge } from "./price-badge";
 
@@ -40,16 +40,7 @@ export function LandingHero() {
       </div>
       <FadeIn delay={0.06} className="order-first md:order-none">
         <div className="overflow-hidden rounded-[1.75rem] border border-mkt-border bg-mkt-card p-2 shadow-lg shadow-mkt-slate/10">
-          <div className="relative aspect-[4/5] w-full overflow-hidden rounded-2xl bg-mkt-canvas-elevated md:aspect-[3/4]">
-            <Image
-              src="/marketing/ad-descansar.png"
-              alt="¿Necesitas descansar? Dormitorios Plaza Basílica"
-              fill
-              className="object-cover object-top"
-              sizes="(max-width: 768px) 100vw, 50vw"
-              priority
-            />
-          </div>
+          <HeroCarousel />
         </div>
       </FadeIn>
     </section>

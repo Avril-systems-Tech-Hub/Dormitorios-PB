@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { searchGuestByPhoneAction } from "@/actions/operations";
+import { UBICACION_SURFACE_CLASS } from "@/components/landing/constants";
 import { DateRangeCalendar } from "@/components/ui/date-range-calendar";
 
 type ReservationFormProps = {
@@ -158,16 +159,16 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
   return (
     <div className="flex flex-col gap-4">
       {/* Buscador de Cliente Recurrente (Client-side, sin recargar página) */}
-      <div className="rounded-2xl border border-mkt-border bg-mkt-card p-4 shadow-sm">
-        <p className="text-sm font-semibold text-mkt-ink">Cliente recurrente</p>
-        <p className="mt-1 text-xs text-mkt-ink-muted">
-          Ingresa teléfono para autocompletar y aplicar descuento.
-        </p>
+      <div
+        className={`rounded-2xl border border-white/15 p-4 shadow-md shadow-mkt-slate-deep/20 ${UBICACION_SURFACE_CLASS}`}
+      >
+        <p className="text-sm font-semibold text-mkt-terracotta">Cliente recurrente</p>
+        <p className="mt-1 text-xs text-white/75">Ingresa teléfono para autocompletar y aplicar descuento.</p>
         <div className="mt-3 flex gap-2">
           <input
             value={searchPhone}
             onChange={(e) => setSearchPhone(e.target.value)}
-            className="h-10 flex-1 rounded-lg border border-mkt-border bg-white px-3 text-sm text-mkt-ink outline-none focus:border-mkt-slate"
+            className="h-10 flex-1 rounded-lg border border-mkt-border bg-white px-3 text-sm text-mkt-ink outline-none focus:border-mkt-terracotta"
             placeholder="Teléfono (ej. 7712...)"
             onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
           />
@@ -175,22 +176,24 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
             type="button"
             onClick={handleSearch}
             disabled={isSearching}
-            className="rounded-lg bg-mkt-slate px-4 text-sm font-semibold text-white transition hover:bg-mkt-slate-deep disabled:opacity-50"
+            className="rounded-full bg-mkt-terracotta px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-mkt-terracotta-hover disabled:opacity-50"
           >
             {isSearching ? "Buscando..." : "Buscar"}
           </button>
         </div>
-        {searchError && <p className="mt-2 text-xs text-red-500">{searchError}</p>}
+        {searchError && <p className="mt-2 text-xs text-red-300">{searchError}</p>}
       </div>
 
       <form
-        className="rounded-3xl border border-mkt-border bg-mkt-card p-4 shadow-sm sm:p-6"
+        className={`rounded-3xl border border-white/15 p-4 shadow-md shadow-mkt-slate-deep/20 sm:p-6 ${UBICACION_SURFACE_CLASS}`}
         onSubmit={handleSubmit}
         noValidate
       >
         {/* Rango de Fechas y Personas (Nivel Reservación) */}
         <div className="mb-6 space-y-3">
-          <label className="block text-xs font-semibold text-mkt-ink-muted">Rango de fechas</label>
+          <label className="block text-xs font-semibold uppercase tracking-[0.14em] text-mkt-terracotta">
+            Rango de fechas
+          </label>
           <DateRangeCalendar
             checkInDate={reservationData.check_in_date}
             checkOutDate={reservationData.check_out_date}
@@ -200,15 +203,17 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
             }}
           />
           {(showError("check_in_date") || showError("check_out_date")) && (
-            <p className="mt-1 text-xs text-red-600">{errors.check_in_date || errors.check_out_date}</p>
+            <p className="mt-1 text-xs text-red-300">{errors.check_in_date || errors.check_out_date}</p>
           )}
           <div className="max-w-[140px]">
-            <label className="mb-1 block text-xs font-semibold text-mkt-ink-muted">Personas</label>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-mkt-terracotta">
+              Personas
+            </label>
             <input
               type="number"
               min="1"
               max="20"
-              className="w-full rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink"
+              className="w-full rounded-xl border border-mkt-border bg-white px-3 py-2 text-sm text-mkt-ink"
               value={guestCount}
               onChange={(e) => setGuestCount(Number(e.target.value) || 1)}
             />
@@ -217,9 +222,9 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
 
         {/* Tarjetas de Huéspedes Dinámicas */}
         <div className="space-y-4">
-          <p className="text-xs text-mkt-ink-muted">* Nota: El Husped 1 sera el Huesped Principal</p>
+          <p className="text-xs text-white/70">* Nota: El Husped 1 sera el Huesped Principal</p>
           {guests.map((guest, index) => (
-            <div key={index} className="rounded-xl border border-mkt-border bg-gray-50/50 p-4">
+            <div key={index} className="rounded-xl border border-mkt-border bg-white p-4">
               <h4 className="mb-3 text-sm font-semibold text-mkt-ink">Huésped {index + 1}</h4>
               <div className="grid gap-3 md:grid-cols-2">
                 <input
@@ -263,12 +268,12 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
         {/* Notas Generales */}
         <textarea
           name="notes"
-          className="mt-6 min-h-20 w-full rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink"
+          className="mt-6 min-h-20 w-full rounded-xl border border-mkt-border bg-white px-3 py-2 text-sm text-mkt-ink"
           placeholder="Notas de la reservación (opcional)"
           value={reservationData.notes}
           onChange={(e) => setReservationData(prev => ({ ...prev, notes: e.target.value }))}
         />
-        <p className="mt-3 text-xs text-mkt-ink-muted">Las camas serán asignadas automáticamente al registrar tu reservación.</p>
+        <p className="mt-3 text-xs text-white/70">Las camas serán asignadas automáticamente al registrar tu reservación.</p>
 
         {submitResult && (
           <div className={`mt-3 rounded-lg p-3 text-sm ${submitResult.success ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
@@ -279,7 +284,7 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
         <button
           type="submit"
           disabled={isSubmitting}
-          className="mt-4 flex h-11 w-full items-center justify-center rounded-lg bg-mkt-slate px-4 font-semibold text-white transition-colors hover:bg-mkt-slate-deep disabled:opacity-50"
+          className="mt-4 flex h-11 w-full items-center justify-center rounded-full bg-mkt-terracotta px-4 font-semibold text-white shadow-sm transition hover:bg-mkt-terracotta-hover disabled:opacity-50"
         >
           {isSubmitting ? "Registrando..." : "Registrar reservación"}
         </button>
