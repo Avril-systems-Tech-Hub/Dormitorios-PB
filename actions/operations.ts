@@ -11,7 +11,7 @@ import type {
   PaymentMethod,
 } from "@/types/domain";
 import { parseTsvToRows } from "@/lib/imports/tsv";
-import { sendWhatsAppTemplateMessage, sendWhatsAppDocumentWithTemplate, sendWhatsAppDocument, buildPaymentConfirmationMessage } from "@/lib/ycloud";
+import { sendWhatsAppTemplateMessage, sendWhatsAppDocument, buildPaymentConfirmationMessage } from "@/lib/ycloud";
 import { generatePaymentConfirmationPdf } from "@/lib/payment-pdf";
 
 const BASE_NIGHTLY_RATE = 120;
@@ -507,14 +507,6 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
             const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(pdfFileName);
             const pdfPublicUrl = publicUrlData.publicUrl;
 
-            // 3. Construir caption del mensaje
-            const isLiquidated = newStatus === "liquidated";
-            const caption = isLiquidated
-              ? `Hola ${mainGuest.full_name ?? "Huésped"}, tu pago ha sido registrado con éxito. Tu reservación está confirmada.\nFolio: ${folio.folio_code}\nMonto: $${amount.toFixed(2)} MXN\nAdjuntamos tu comprobante de pago.`
-              : `Hola ${mainGuest.full_name ?? "Huésped"}, hemos recibido un pago parcial de tu reservación.\nFolio: ${folio.folio_code}\nMonto: $${amount.toFixed(2)} MXN\nSaldo pendiente: $${newBalance.toFixed(2)} MXN\nAdjuntamos tu comprobante de pago.`;
-
-            // 4. Enviar confirmación por WhatsApp usando template con enlace del PDF
-            // Template: Body tiene {{1}} = nombre, {{2}} = folio, {{3}} = monto, {{4}} = URL PDF
             waResult = await sendWhatsAppTemplateMessage(
               guestPhone,
               process.env.YCLOUD_TEMPLATE_NAME || "payment_confirmation",
@@ -1077,6 +1069,44 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
       ? `Comprobante reenviado a ${guestPhone} para folio ${folio.folio_code}.`
       : `Error al reenviar comprobante: ${waResult.error ?? "desconocido"}`,
   );
+}
+
+export async function getBedReservations(bedId: string) {
+  const supabase = createAdminClient();
+
+  const { data: rgRows } = await supabase
+    .from("reservation_guests")
+    .select("reservation_id, reservations!inner(check_in_date, check_out_date, status, reservation_guests(guests(full_name)))")
+    .eq("bed_id", bedId)
+    .neq("reservations.status", "cancelled");
+
+  if (!rgRows?.length) return [];
+
+  const results: Array<{
+    checkIn: string;
+    checkOut: string;
+    guestName: string;
+    status: string;
+  }> = [];
+
+  for (const rg of rgRows) {
+    const res = rg.reservations as unknown as {
+      check_in_date: string;
+      check_out_date: string;
+      status: string;
+      reservation_guests: Array<{ guests?: { full_name?: string } }>;
+    };
+    const mainGuestRow = res.reservation_guests?.[0];
+    const guestName = (mainGuestRow?.guests as { full_name?: string } | undefined)?.full_name ?? "Huésped";
+    results.push({
+      checkIn: res.check_in_date,
+      checkOut: res.check_out_date,
+      guestName,
+      status: res.status,
+    });
+  }
+
+  return results;
 }
 
 export async function getBedsMapForChange() {
