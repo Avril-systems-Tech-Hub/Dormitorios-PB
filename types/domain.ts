@@ -20,6 +20,23 @@ export type CashMovementCategory =
   | "contadora"
   | "other";
 
+export type ExpenseConcept =
+  | "sueldos"
+  | "lavanderia"
+  | "limpieza"
+  | "papeleria"
+  | "papel_bano"
+  | "basura"
+  | "medicamento"
+  | "jabon_bano"
+  | "gas"
+  | "mantenimiento"
+  | "internet"
+  | "agua"
+  | "luz"
+  | "cobijas"
+  | "extras";
+
 export type WhatsAppStatus = "queued" | "sent" | "failed";
 export type ReservationSource = "guest_app" | "cashier_counter";
 

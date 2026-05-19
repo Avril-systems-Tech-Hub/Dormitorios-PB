@@ -18,11 +18,31 @@ type ReservationFormProps = {
 
 type FieldErrors = Partial<Record<"full_name" | "phone" | "email" | "check_in_date" | "check_out_date", string>>;
 
+const LOCKER_DAILY_PRICE = 30;
+
+type GuestFormRow = {
+  full_name: string;
+  phone: string;
+  email: string;
+  sex: string;
+  add_locker: "no" | "yes";
+  locker_days: number;
+};
+
+function emptyGuest(): GuestFormRow {
+  return { full_name: "", phone: "", email: "", sex: "unknown", add_locker: "no", locker_days: 1 };
+}
+
+function nightsBetween(checkIn: string, checkOut: string) {
+  if (!checkIn || !checkOut || checkOut <= checkIn) return 1;
+  const from = new Date(`${checkIn}T00:00:00`);
+  const to = new Date(`${checkOut}T00:00:00`);
+  return Math.max(1, Math.floor((to.getTime() - from.getTime()) / (24 * 60 * 60 * 1000)));
+}
+
 export function ReservationForm({ action, beds, recurringGuest }: ReservationFormProps) {
   const [guestCount, setGuestCount] = useState(1);
-  const [guests, setGuests] = useState([
-    { full_name: "", phone: "", email: "", sex: "unknown" }
-  ]);
+  const [guests, setGuests] = useState<GuestFormRow[]>([emptyGuest()]);
 
   const [reservationData, setReservationData] = useState({
     check_in_date: "",
@@ -39,7 +59,7 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
       const newGuests = [...prev];
       if (guestCount > prev.length) {
         for (let i = prev.length; i < guestCount; i++) {
-          newGuests.push({ full_name: "", phone: "", email: "", sex: "unknown" });
+          newGuests.push(emptyGuest());
         }
       } else if (guestCount < prev.length) {
         newGuests.splice(guestCount);
@@ -96,6 +116,21 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
     }
   };
 
+  const stayNights = useMemo(
+    () => nightsBetween(reservationData.check_in_date, reservationData.check_out_date),
+    [reservationData.check_in_date, reservationData.check_out_date],
+  );
+
+  useEffect(() => {
+    setGuests((prev) =>
+      prev.map((guest) => {
+        if (guest.add_locker !== "yes") return guest;
+        const locker_days = Math.min(Math.max(1, guest.locker_days), stayNights);
+        return { ...guest, locker_days };
+      }),
+    );
+  }, [stayNights]);
+
   const errors = useMemo<FieldErrors>(() => {
     const next: FieldErrors = {};
     if (!reservationData.check_in_date) next.check_in_date = "Selecciona fecha de entrada.";
@@ -106,10 +141,23 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
     return next;
   }, [reservationData]);
 
-  const updateGuest = (index: number, field: string, value: string) => {
-    setGuests(prev => {
+  const updateGuest = (index: number, field: keyof GuestFormRow, value: string | number) => {
+    setGuests((prev) => {
       const newGuests = [...prev];
-      newGuests[index] = { ...newGuests[index], [field]: value };
+      const current = { ...newGuests[index] };
+      if (field === "add_locker") {
+        const addLocker = value === "yes" ? "yes" : "no";
+        current.add_locker = addLocker;
+        if (addLocker === "yes") {
+          current.locker_days = stayNights;
+        }
+      } else if (field === "locker_days") {
+        const days = Number(value);
+        current.locker_days = Math.min(Math.max(1, Number.isFinite(days) ? days : 1), stayNights);
+      } else {
+        (current as Record<string, string | number>)[field] = value;
+      }
+      newGuests[index] = current;
       return newGuests;
     });
   };
@@ -260,6 +308,39 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
                   <option value="m">Masculino</option>
                   <option value="x">Otro</option>
                 </select>
+                <div className="md:col-span-2">
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-mkt-terracotta">
+                    Añadir locker
+                  </label>
+                  <select
+                    className="w-full rounded-xl border border-mkt-border bg-white px-3 py-2 text-sm text-mkt-ink"
+                    value={guest.add_locker}
+                    onChange={(e) => updateGuest(index, "add_locker", e.target.value)}
+                  >
+                    <option value="no">No</option>
+                    <option value="yes">Sí (+${LOCKER_DAILY_PRICE}/día)</option>
+                  </select>
+                </div>
+                {guest.add_locker === "yes" && (
+                  <div className="md:col-span-2">
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-mkt-terracotta">
+                      Días de locker a pagar
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={stayNights}
+                      className="w-full max-w-[140px] rounded-xl border border-mkt-border px-3 py-2 text-sm text-mkt-ink"
+                      value={guest.locker_days}
+                      onChange={(e) => updateGuest(index, "locker_days", e.target.value)}
+                    />
+                    <p className="mt-1 text-xs text-mkt-ink/70">
+                      Máximo {stayNights} noche{stayNights === 1 ? "" : "s"} de estancia. Cargo: $
+                      {(guest.locker_days * LOCKER_DAILY_PRICE).toFixed(0)} MXN (
+                      {guest.locker_days} × ${LOCKER_DAILY_PRICE}).
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           ))}

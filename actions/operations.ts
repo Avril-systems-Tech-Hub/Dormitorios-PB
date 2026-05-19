@@ -8,14 +8,18 @@ import type {
   AnomalyFlag,
   CashMovementCategory,
   CashMovementDirection,
+  ExpenseConcept,
   PaymentMethod,
 } from "@/types/domain";
+import { EXPENSE_CONCEPTS } from "@/lib/expense-concepts";
+import { getMexicoCityDateString } from "@/lib/dates";
 import { parseTsvToRows } from "@/lib/imports/tsv";
 import { sendWhatsAppTemplateMessage, sendWhatsAppDocument, buildPaymentConfirmationMessage } from "@/lib/ycloud";
 import { generatePaymentConfirmationPdf } from "@/lib/payment-pdf";
 
 const BASE_NIGHTLY_RATE = 120;
 const BED_DATA_DISCOUNT = 10;
+const LOCKER_DAILY_PRICE = 30;
 
 function normalizePhone(value: string) {
   return value.replace(/\D/g, "");
@@ -201,7 +205,14 @@ export async function createReservationAction(formData: FormData): Promise<void>
   const requestedSource = String(formData.get("reservation_source") ?? "").trim();
 
   const guestsJson = String(formData.get("guests_data") ?? "[]");
-  let guests: { full_name: string; phone: string; email: string; sex: string }[] = [];
+  let guests: {
+    full_name: string;
+    phone: string;
+    email: string;
+    sex: string;
+    add_locker?: string;
+    locker_days?: number;
+  }[] = [];
   try {
     guests = JSON.parse(guestsJson);
   } catch (e) {}
@@ -281,9 +292,23 @@ export async function createReservationAction(formData: FormData): Promise<void>
   const nightlyRate = BASE_NIGHTLY_RATE;
   const discountAmount = BED_DATA_DISCOUNT;
   const finalRate = Math.max(0, nightlyRate - discountAmount);
-  
-  // Total = (tarifa final x noches) x numero de huespedes
-  const totalAmount = finalRate * nights * guestIds.length;
+
+  const lockerByGuest = guests.slice(0, guestIds.length).map((guest) => {
+    const wantsLocker = guest.add_locker === "yes";
+    if (!wantsLocker) {
+      return { locker_days: 0, locker_price: 0, locker_amount: 0 };
+    }
+    const requestedDays = Number(guest.locker_days ?? nights);
+    const locker_days = Math.min(Math.max(1, requestedDays), nights);
+    return {
+      locker_days,
+      locker_price: LOCKER_DAILY_PRICE,
+      locker_amount: locker_days * LOCKER_DAILY_PRICE,
+    };
+  });
+
+  const lockerTotal = lockerByGuest.reduce((sum, row) => sum + row.locker_amount, 0);
+  const totalAmount = finalRate * nights * guestIds.length + lockerTotal;
 
   const { data: folio, error: folioError } = await supabase
     .from("folios")
@@ -327,19 +352,22 @@ export async function createReservationAction(formData: FormData): Promise<void>
     return redirectWithResult(returnTo, "error", "No se pudo crear la reservación.");
   }
 
-  const guestInserts = guestIds.map((gId, i) => ({
-    reservation_id: reservation.id,
-    guest_id: gId,
-    bed_id: bedIds[i],
-    nightly_rate: nightlyRate,
-    discount_amount: discountAmount,
-    final_rate: finalRate,
-    locker_number: null,
-    locker_price: 0,
-    locker_days: 0,
-    locker_amount: 0,
-    social_bonus_status: "captured",
-  }));
+  const guestInserts = guestIds.map((gId, i) => {
+    const locker = lockerByGuest[i] ?? { locker_days: 0, locker_price: 0, locker_amount: 0 };
+    return {
+      reservation_id: reservation.id,
+      guest_id: gId,
+      bed_id: bedIds[i],
+      nightly_rate: nightlyRate,
+      discount_amount: discountAmount,
+      final_rate: finalRate,
+      locker_number: null,
+      locker_price: locker.locker_price,
+      locker_days: locker.locker_days,
+      locker_amount: locker.locker_amount,
+      social_bonus_status: "captured",
+    };
+  });
 
   const { error: guestReservationError } = await supabase.from("reservation_guests").insert(guestInserts);
 
@@ -359,6 +387,7 @@ export async function createReservationAction(formData: FormData): Promise<void>
       auto_assign: true,
       nights,
       total_amount: totalAmount,
+      locker_total: lockerTotal,
       reservation_source: reservationSource,
     },
   });
@@ -634,6 +663,115 @@ export async function createCashMovementAction(formData: FormData): Promise<void
   return redirectWithResult(returnTo, "success", "Movimiento de caja registrado.");
 }
 
+const EXPENSE_RECEIPTS_BUCKET = "expense-receipts";
+
+function isExpenseConcept(value: string): value is ExpenseConcept {
+  return (EXPENSE_CONCEPTS as readonly string[]).includes(value);
+}
+
+export async function createExpenseAction(formData: FormData): Promise<void> {
+  const supabase = await createClient();
+  const adminSupabase = createAdminClient();
+  const actor = await getActorProfile();
+  const actorId = actor?.id ?? null;
+
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return redirectWithResult("/dashboard", "error", "No tienes permiso para registrar gastos.");
+  }
+
+  const returnTo = String(formData.get("return_to") ?? "/dashboard");
+  const expenseConcept = String(formData.get("expense_concept") ?? "");
+  const conceptDetail = String(formData.get("concept_detail") ?? "").trim();
+  const amount = Number(formData.get("amount") ?? 0);
+  const method = String(formData.get("method") ?? "cash") as PaymentMethod;
+  const notes = String(formData.get("notes") ?? "").trim();
+  const receiptFile = formData.get("receipt_image");
+
+  if (!isExpenseConcept(expenseConcept)) {
+    return redirectWithResult(returnTo, "error", "Selecciona un concepto de gasto válido.");
+  }
+  if (amount <= 0 || Number.isNaN(amount)) {
+    return redirectWithResult(returnTo, "error", "El monto debe ser mayor a cero.");
+  }
+  if (expenseConcept === "extras" && conceptDetail.length < 3) {
+    return redirectWithResult(returnTo, "error", "Para extras, describe el gasto (mínimo 3 caracteres).");
+  }
+  if (!["cash", "transfer", "card"].includes(method)) {
+    return redirectWithResult(returnTo, "error", "Método de pago no válido.");
+  }
+
+  const movementDate = getMexicoCityDateString();
+
+  const { data: openShift } = await supabase
+    .from("shifts")
+    .select("id")
+    .eq("status", "open")
+    .order("opened_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const movementId = crypto.randomUUID();
+  const { error: insertError } = await adminSupabase.from("cash_movements").insert({
+    id: movementId,
+    movement_date: movementDate,
+    responsible_profile_id: actorId,
+    direction: "expense",
+    category: "gasto_operativo",
+    expense_concept: expenseConcept,
+    concept_detail: expenseConcept === "extras" ? conceptDetail : null,
+    amount,
+    method,
+    notes: notes || null,
+    shift_id: openShift?.id ?? null,
+  });
+
+  if (insertError) {
+    console.error("[createExpenseAction] insert failed:", insertError.message, insertError);
+    return redirectWithResult(
+      returnTo,
+      "error",
+      `No se pudo registrar el gasto: ${insertError.message}`,
+    );
+  }
+
+  const movement = { id: movementId };
+
+  if (receiptFile instanceof File && receiptFile.size > 0) {
+    await adminSupabase.storage.createBucket(EXPENSE_RECEIPTS_BUCKET, { public: false }).catch(() => {});
+    const extension = receiptFile.name.split(".").pop()?.toLowerCase() || "jpg";
+    const objectPath = `${movementDate}/${movement.id}.${extension}`;
+    const fileBuffer = Buffer.from(await receiptFile.arrayBuffer());
+    const contentType = receiptFile.type || "image/jpeg";
+
+    const { error: uploadError } = await adminSupabase.storage
+      .from(EXPENSE_RECEIPTS_BUCKET)
+      .upload(objectPath, fileBuffer, { contentType, upsert: true });
+
+    if (!uploadError) {
+      await adminSupabase.from("cash_movements").update({ receipt_image_path: objectPath }).eq("id", movement.id);
+    }
+  }
+
+  await adminSupabase.from("audit_logs").insert({
+    actor_user_id: actorId,
+    action: "expense_created",
+    entity_type: "cash_movement",
+    entity_id: movement.id,
+    metadata: {
+      expense_concept: expenseConcept,
+      concept_detail: expenseConcept === "extras" ? conceptDetail : null,
+      amount,
+      method,
+      movement_date: movementDate,
+    },
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/cash-cuts");
+  revalidatePath("/dashboard/expenses");
+  return redirectWithResult(returnTo, "success", "Gasto registrado correctamente.");
+}
+
 export async function createDailyCashCutAction(): Promise<void> {
   const supabase = createAdminClient();
   const actorId = await getActorProfileId();
@@ -666,7 +804,10 @@ export async function createDailyCashCutAction(): Promise<void> {
     .filter((m) => m.direction === "expense")
     .reduce((sum, m) => sum + Number(m.amount), 0);
 
-  const totalIncome = totalCash + totalTransfer + totalCard + movementIncome - movementExpense;
+  const totalGuestIncome = totalCash + totalTransfer + totalCard;
+  const totalExpenses = movementExpense;
+  const netResult = Number((totalGuestIncome + movementIncome - totalExpenses).toFixed(2));
+  const totalIncome = netResult;
 
   const { data: liquidatedFolios } = await supabase
     .from("folios")
@@ -709,6 +850,9 @@ export async function createDailyCashCutAction(): Promise<void> {
     total_transfer: totalTransfer,
     total_card: totalCard,
     total_income: totalIncome,
+    total_guest_income: totalGuestIncome,
+    total_expenses: totalExpenses,
+    net_result: netResult,
     expected_income: expectedIncome,
     actual_cash_counted: actualCashCounted,
     difference,
@@ -728,6 +872,9 @@ export async function createDailyCashCutAction(): Promise<void> {
     metadata: {
       date: today,
       total_income: totalIncome,
+      total_guest_income: totalGuestIncome,
+      total_expenses: totalExpenses,
+      net_result: netResult,
       expected_income: expectedIncome,
       difference,
       leakage_flag: leakageFlag,

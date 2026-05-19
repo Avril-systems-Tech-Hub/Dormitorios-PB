@@ -1,10 +1,32 @@
 "use client";
 
 import { useState } from "react";
-import { DayPicker } from "react-day-picker";
-import type { DateRange } from "react-day-picker";
+import { DayButton, DayPicker } from "react-day-picker";
+import type { DateRange, DayButtonProps } from "react-day-picker";
 import { es } from "date-fns/locale/es";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+function CalendarDayButton({ className, modifiers, ...props }: DayButtonProps) {
+  const isInRange =
+    modifiers.selected ||
+    modifiers.range_start ||
+    modifiers.range_end ||
+    modifiers.range_middle;
+
+  return (
+    <DayButton
+      {...props}
+      modifiers={modifiers}
+      className={cn(
+        "flex h-full w-full items-center justify-center rounded-md text-[11px] transition-colors focus:outline-none focus:ring-2 focus:ring-mkt-slate/25 sm:text-sm",
+        isInRange && "font-bold text-white",
+        !isInRange && "text-mkt-ink hover:bg-mkt-sky/50",
+        className
+      )}
+    />
+  );
+}
 
 type DateRangeCalendarProps = {
   checkInDate: string;
@@ -112,18 +134,18 @@ export function DateRangeCalendar({
               "text-center text-[9px] font-semibold uppercase tracking-wide text-mkt-terracotta sm:text-[10px]",
             week: "grid grid-cols-7 mt-0.5",
             day: "aspect-square p-0",
-            day_button:
-              "h-full w-full flex items-center justify-center rounded-md text-[11px] text-mkt-ink transition-colors hover:bg-mkt-sky/50 focus:outline-none focus:ring-2 focus:ring-mkt-slate/25 sm:text-sm",
-            range_start: "bg-mkt-slate text-white rounded-l-md",
-            range_end: "bg-mkt-slate text-white rounded-r-md",
-            range_middle: "bg-mkt-sky/70 text-mkt-slate-deep",
-            selected: "!bg-mkt-slate text-white font-bold",
+            day_button: "",
+            range_start: "rounded-l-md bg-mkt-slate",
+            range_end: "rounded-r-md bg-mkt-slate",
+            range_middle: "bg-mkt-slate",
+            selected: "bg-mkt-slate font-bold",
             today: "font-bold text-mkt-slate ring-1 ring-mkt-slate/30 ring-inset",
             disabled: "text-mkt-ink-muted/40 opacity-50",
             outside: "text-mkt-ink-muted/35",
             hidden: "invisible",
           }}
           components={{
+            DayButton: CalendarDayButton,
             Chevron: ({ orientation }) => {
               if (orientation === "left") return <ChevronLeft className="h-3 w-3 sm:h-4 sm:w-4" />;
               return <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" />;

@@ -13,6 +13,7 @@ const dashboardLinks: DashboardLink[] = [
   { href: "/dashboard/beds", label: "Camas", roles: ["admin", "reception"] },
   { href: "/dashboard/guests", label: "Huéspedes", roles: ["admin", "reception"] },
   { href: "/dashboard/payments", label: "Pagos", roles: ["admin", "reception"] },
+  { href: "/dashboard/expenses", label: "Gastos", roles: ["admin"] },
   { href: "/dashboard/imported-records", label: "Importados", roles: ["admin"] },
   { href: "/dashboard/shifts", label: "Turnos", roles: ["admin", "reception"] },
   { href: "/dashboard/cash-cuts", label: "Cortes", roles: ["admin", "reception"] },

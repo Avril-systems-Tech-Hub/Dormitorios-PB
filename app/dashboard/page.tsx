@@ -1,4 +1,6 @@
-import { receptionReservationPaymentAction } from "@/actions/operations";
+import { createExpenseAction, receptionReservationPaymentAction } from "@/actions/operations";
+import { ReceptionExpensePanel } from "@/components/dashboard/reception-expense-panel";
+import { ExpenseCaptureForm } from "@/components/forms/expense-capture-form";
 import { ReceptionPaymentToggleForm } from "@/components/forms/reception-payment-toggle-form";
 import { ReservationGuestsAccordion } from "@/components/ui/reservation-guests-accordion";
 import { ResendReceiptButton } from "@/components/ui/resend-receipt-button";
@@ -9,11 +11,14 @@ import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSessionProfile } from "@/lib/auth/guards";
+import { getDayFinanceSummary } from "@/lib/day-finance";
+import { getMexicoCityDateString } from "@/lib/dates";
+import { getExpenseConceptLabel } from "@/lib/expense-concepts";
 
 export default async function DashboardPage() {
   const profile = await getSessionProfile();
   const supabase = await createClient();
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City" }).format(new Date());
+  const today = getMexicoCityDateString();
 
   if (profile.role === "reception") {
     const adminSupabase = createAdminClient();
@@ -52,6 +57,8 @@ export default async function DashboardPage() {
             </p>
           </Card>
         </div>
+
+        <ReceptionExpensePanel />
 
         <Card>
           <h2 className="text-base font-semibold text-text-main">Reservaciones activas</h2>
@@ -125,6 +132,15 @@ export default async function DashboardPage() {
     );
   }
 
+  const finance = await getDayFinanceSummary(supabase, today);
+
+  const { data: recentExpenses } = await supabase
+    .from("cash_movements")
+    .select("movement_date,expense_concept,concept_detail,amount,recorded_at")
+    .eq("direction", "expense")
+    .order("recorded_at", { ascending: false })
+    .limit(8);
+
   const { count: availableBeds } = await supabase
     .from("beds")
     .select("id", { count: "exact", head: true })
@@ -133,26 +149,40 @@ export default async function DashboardPage() {
     .from("folios")
     .select("id", { count: "exact", head: true })
     .neq("payment_status", "liquidated");
-  const { data: todayPayments } = await supabase
-    .from("payments")
-    .select("amount")
-    .gte("received_at", `${today}T00:00:00`)
-    .lte("received_at", `${today}T23:59:59`);
   const { data: openShift } = await supabase.from("shifts").select("id,status").eq("status", "open").maybeSingle();
   const { data: todayReservations } = await supabase
     .from("reservations")
     .select("id,reservation_source,created_at")
     .gte("created_at", `${today}T00:00:00`)
     .lte("created_at", `${today}T23:59:59`);
-  const totalDayIncome = (todayPayments ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
   const totalReservationsToday = (todayReservations ?? []).length;
   const appCreatedCount = (todayReservations ?? []).filter((r) => r.reservation_source === "guest_app").length;
   const cashierCreatedCount = (todayReservations ?? []).filter((r) => r.reservation_source === "cashier_counter").length;
   const appCreatedPct = totalReservationsToday > 0 ? (appCreatedCount / totalReservationsToday) * 100 : 0;
   const cashierCreatedPct = totalReservationsToday > 0 ? (cashierCreatedCount / totalReservationsToday) * 100 : 0;
 
+  const expenseRows =
+    (recentExpenses ?? []).map((expense) => {
+      const conceptLabel = getExpenseConceptLabel(expense.expense_concept);
+      const detail =
+        expense.expense_concept === "extras" && expense.concept_detail
+          ? `${conceptLabel}: ${expense.concept_detail}`
+          : conceptLabel;
+      return [
+        expense.movement_date,
+        detail,
+        `$${Number(expense.amount).toFixed(2)}`,
+        new Date(expense.recorded_at).toLocaleTimeString("es-MX", {
+          timeZone: "America/Mexico_City",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      ];
+    }) ?? [];
+
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+    <div className="space-y-4">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-8">
       <Card>
         <p className="text-sm text-text-muted">Camas disponibles</p>
         <p className="mt-1 text-2xl font-semibold">{availableBeds ?? 0}</p>
@@ -167,9 +197,23 @@ export default async function DashboardPage() {
       </Card>
       <Card>
         <p className="text-sm text-text-muted">Ingresos del día</p>
-        <p className="mt-1 text-2xl font-semibold">${totalDayIncome.toFixed(2)}</p>
+        <p className="mt-1 text-2xl font-semibold">${finance.totalGuestIncome.toFixed(2)}</p>
         <Badge variant="success" className="mt-2">
-          Actualizado
+          Pagos huéspedes
+        </Badge>
+      </Card>
+      <Card>
+        <p className="text-sm text-text-muted">Gastos del día</p>
+        <p className="mt-1 text-2xl font-semibold">${finance.totalExpenses.toFixed(2)}</p>
+        <Badge variant="warning" className="mt-2">
+          Operación
+        </Badge>
+      </Card>
+      <Card>
+        <p className="text-sm text-text-muted">Resultado neto</p>
+        <p className="mt-1 text-2xl font-semibold">${finance.netResult.toFixed(2)}</p>
+        <Badge variant={finance.netResult >= 0 ? "success" : "warning"} className="mt-2">
+          {finance.netResult >= 0 ? "Positivo" : "Negativo"}
         </Badge>
       </Card>
       <Card>
@@ -191,6 +235,28 @@ export default async function DashboardPage() {
           {cashierCreatedPct.toFixed(1)}%
         </Badge>
       </Card>
+    </div>
+
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Card>
+        <h2 className="text-base font-semibold text-text-main">Registrar gasto</h2>
+        <p className="mt-1 text-sm text-text-muted">Un concepto por registro. Foto opcional.</p>
+        <div className="mt-4">
+          <ExpenseCaptureForm action={createExpenseAction} returnTo="/dashboard" />
+        </div>
+      </Card>
+      <Card>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-text-main">Últimos gastos</h2>
+          <a href="/dashboard/expenses" className="text-sm text-brand-primary underline">
+            Ver todos
+          </a>
+        </div>
+        <div className="mt-3">
+          <ResponsiveTable headers={["Fecha", "Concepto", "Monto", "Hora"]} rows={expenseRows} />
+        </div>
+      </Card>
+    </div>
     </div>
   );
 }

@@ -4,9 +4,12 @@ import { ResponsiveTable } from "@/components/ui/responsive-table";
 import {
   createCashMovementAction,
   createDailyCashCutAction,
+  createExpenseAction,
 } from "@/actions/operations";
 import { createClient } from "@/lib/supabase/server";
 import { CashMovementForm } from "@/components/forms/cash-movement-form";
+import { ExpenseCaptureForm } from "@/components/forms/expense-capture-form";
+import { getExpenseConceptLabel } from "@/lib/expense-concepts";
 
 export default async function CashCutsPage() {
   const supabase = await createClient();
@@ -18,7 +21,9 @@ export default async function CashCutsPage() {
 
   const { data: movements } = await supabase
     .from("cash_movements")
-    .select("id,movement_date,direction,category,amount,notes,profiles:responsible_profile_id(full_name)")
+    .select(
+      "id,movement_date,direction,category,expense_concept,concept_detail,amount,notes,profiles:responsible_profile_id(full_name)",
+    )
     .order("recorded_at", { ascending: false })
     .limit(30);
 
@@ -42,10 +47,16 @@ export default async function CashCutsPage() {
   const movementRows =
     movements?.map((movement) => {
       const profile = movement.profiles as { full_name?: string } | undefined;
+      const categoryLabel =
+        movement.direction === "expense" && movement.expense_concept
+          ? movement.expense_concept === "extras" && movement.concept_detail
+            ? `Extras: ${movement.concept_detail}`
+            : getExpenseConceptLabel(movement.expense_concept)
+          : movement.category;
       return [
         movement.movement_date,
-        movement.direction,
-        movement.category,
+        movement.direction === "income" ? "Ingreso" : "Egreso",
+        categoryLabel,
         `$${Number(movement.amount).toFixed(2)}`,
         profile?.full_name ?? "Sin usuario",
         movement.notes ?? "-",
@@ -59,11 +70,18 @@ export default async function CashCutsPage() {
         <p className="mt-1 text-sm text-text-muted">
           Registra ingresos/egresos manuales y genera corte con responsable y trazabilidad.
         </p>
-        <div className="mt-4 flex flex-col gap-3 md:flex-row">
+        <div className="mt-4 flex flex-col gap-4">
           <form action={createDailyCashCutAction}>
             <Button type="submit">Generar corte del día</Button>
           </form>
           <CashMovementForm action={createCashMovementAction} />
+        </div>
+      </Card>
+      <Card>
+        <h3 className="text-base font-semibold text-text-main">Registrar gasto operativo</h3>
+        <p className="mt-1 text-sm text-text-muted">Conceptos de operación diaria. Un concepto por registro.</p>
+        <div className="mt-4">
+          <ExpenseCaptureForm action={createExpenseAction} returnTo="/dashboard/cash-cuts" />
         </div>
       </Card>
       <Card>
@@ -79,7 +97,7 @@ export default async function CashCutsPage() {
         <h3 className="text-base font-semibold text-text-main">Movimientos de caja</h3>
         <div className="mt-3">
           <ResponsiveTable
-            headers={["Fecha", "Tipo", "Categoría", "Monto", "Responsable", "Notas"]}
+            headers={["Fecha", "Tipo", "Concepto", "Monto", "Responsable", "Notas"]}
             rows={movementRows}
           />
         </div>
