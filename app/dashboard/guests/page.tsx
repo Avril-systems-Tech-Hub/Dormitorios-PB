@@ -39,24 +39,23 @@ function unwrap<T>(value: T | T[] | null | undefined): T | undefined {
 
 function getStays(guest: GuestRecord): GuestStaySummary[] {
   const rows = Array.isArray(guest.reservation_guests) ? guest.reservation_guests : [];
-  return rows
-    .map((row) => {
-      const reservation = unwrap(row.reservations);
-      if (!reservation?.check_in_date) return null;
-      const bed = unwrap(row.beds);
-      const folio = unwrap(reservation.folios);
-      return {
-        checkIn: reservation.check_in_date,
-        checkOut: reservation.check_out_date ?? "—",
-        nights: reservation.nights ?? 0,
-        bedNumber: bed?.bed_number,
-        lockerNumber: row.locker_number,
-        folioCode: folio?.folio_code,
-        paymentStatus: folio?.payment_status,
-        source: reservation.reservation_source ?? "guest_app",
-      };
-    })
-    .filter((stay): stay is GuestStaySummary => stay !== null);
+  return rows.flatMap((row): GuestStaySummary[] => {
+    const reservation = unwrap(row.reservations);
+    if (!reservation?.check_in_date) return [];
+    const bed = unwrap(row.beds);
+    const folio = unwrap(reservation.folios);
+    const stay: GuestStaySummary = {
+      checkIn: reservation.check_in_date,
+      checkOut: reservation.check_out_date ?? "—",
+      nights: reservation.nights ?? 0,
+      source: reservation.reservation_source ?? "guest_app",
+    };
+    if (bed?.bed_number != null) stay.bedNumber = bed.bed_number;
+    if (row.locker_number !== undefined) stay.lockerNumber = row.locker_number;
+    if (folio?.folio_code) stay.folioCode = folio.folio_code;
+    if (folio?.payment_status) stay.paymentStatus = folio.payment_status;
+    return [stay];
+  });
 }
 
 export default async function GuestsPage() {

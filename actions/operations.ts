@@ -19,7 +19,6 @@ import { generatePaymentConfirmationPdf } from "@/lib/payment-pdf";
 import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
 
 const BASE_NIGHTLY_RATE = 120;
-const BED_DATA_DISCOUNT = 10;
 const LOCKER_DAILY_PRICE = 30;
 
 function normalizePhone(value: string) {
@@ -312,8 +311,8 @@ export async function createReservationAction(
 
   const folioCode = generateFolioCode();
   const nightlyRate = BASE_NIGHTLY_RATE;
-  const discountAmount = BED_DATA_DISCOUNT;
-  const finalRate = Math.max(0, nightlyRate - discountAmount);
+  const discountAmount = 0;
+  const finalRate = nightlyRate;
 
   const lockerByGuest = guests.slice(0, guestIds.length).map((guest) => {
     const wantsLocker = guest.add_locker === "yes";
