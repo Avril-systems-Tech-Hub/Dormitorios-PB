@@ -3,10 +3,12 @@
 import { useMemo, useState, useEffect } from "react";
 import { searchGuestByPhoneAction } from "@/actions/operations";
 import { UBICACION_SURFACE_CLASS } from "@/components/landing/constants";
+import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
 import { DateRangeCalendar } from "@/components/ui/date-range-calendar";
 
 type ReservationFormProps = {
-  action: (formData: FormData) => Promise<void>;
+  action: (formData: FormData) => Promise<CreateGuestReservationResult | void>;
+  onConfirmed?: (data: GuestConfirmationPayload) => void;
   beds: { bed_number: number }[];
   recurringGuest?: {
     full_name?: string | null;
@@ -40,7 +42,7 @@ function nightsBetween(checkIn: string, checkOut: string) {
   return Math.max(1, Math.floor((to.getTime() - from.getTime()) / (24 * 60 * 60 * 1000)));
 }
 
-export function ReservationForm({ action, beds, recurringGuest }: ReservationFormProps) {
+export function ReservationForm({ action, onConfirmed, beds, recurringGuest }: ReservationFormProps) {
   const [guestCount, setGuestCount] = useState(1);
   const [guests, setGuests] = useState<GuestFormRow[]>([emptyGuest()]);
 
@@ -191,9 +193,17 @@ export function ReservationForm({ action, beds, recurringGuest }: ReservationFor
       formData.set("reservation_source", "guest_app");
       formData.set("return_to", "/");
 
-      await action(formData);
+      const result = await action(formData);
+      if (result) {
+        if (result.ok) {
+          onConfirmed?.(result.confirmation);
+          return;
+        }
+        setSubmitResult({ success: false, message: result.error });
+        return;
+      }
     } catch (err: unknown) {
-      // Next.js redirect() lanza un error especial que debemos relanzar
+      // Next.js redirect() lanza un error especial que debemos relanzar (flujo caja/dashboard)
       if (err instanceof Error && err.message === "NEXT_REDIRECT") throw err;
       if (typeof err === "object" && err !== null && "digest" in err && (err as { digest?: string }).digest?.startsWith("NEXT_REDIRECT")) throw err;
       setSubmitResult({ success: false, message: "Ocurrió un error al registrar la reservación." });

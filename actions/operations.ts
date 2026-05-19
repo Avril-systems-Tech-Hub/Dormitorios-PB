@@ -16,6 +16,7 @@ import { getMexicoCityDateString } from "@/lib/dates";
 import { parseTsvToRows } from "@/lib/imports/tsv";
 import { sendWhatsAppTemplateMessage, sendWhatsAppDocument, buildPaymentConfirmationMessage } from "@/lib/ycloud";
 import { generatePaymentConfirmationPdf } from "@/lib/payment-pdf";
+import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
 
 const BASE_NIGHTLY_RATE = 120;
 const BED_DATA_DISCOUNT = 10;
@@ -63,6 +64,21 @@ function buildRedirectPath(basePath: string, status: "success" | "error", messag
 
 function redirectWithResult(basePath: string, status: "success" | "error", message: string): never {
   redirect(buildRedirectPath(basePath, status, message));
+}
+
+function isGuestAppReservation(formData: FormData) {
+  return String(formData.get("reservation_source") ?? "").trim() === "guest_app";
+}
+
+function reservationFlowError(
+  formData: FormData,
+  returnTo: string,
+  message: string,
+): CreateGuestReservationResult | never {
+  if (isGuestAppReservation(formData)) {
+    return { ok: false, error: message };
+  }
+  return redirectWithResult(returnTo, "error", message);
 }
 
 async function getActorProfileId() {
@@ -198,7 +214,9 @@ export async function searchGuestByPhoneAction(phoneRaw: string) {
   return { success: false, guest: null };
 }
 
-export async function createReservationAction(formData: FormData): Promise<void> {
+export async function createReservationAction(
+  formData: FormData,
+): Promise<CreateGuestReservationResult | void> {
   const supabase = createAdminClient();
   const actorId = await getActorProfileId();
   const returnTo = String(formData.get("return_to") ?? "/");
@@ -218,7 +236,7 @@ export async function createReservationAction(formData: FormData): Promise<void>
   } catch (e) {}
 
   if (!guests.length) {
-    return redirectWithResult(returnTo, "error", "Se requiere al menos un huésped para crear la reserva.");
+    return reservationFlowError(formData, returnTo, "Se requiere al menos un huésped para crear la reserva.");
   }
 
   const checkInDate = String(formData.get("check_in_date") ?? "");
@@ -226,14 +244,18 @@ export async function createReservationAction(formData: FormData): Promise<void>
   const notes = String(formData.get("notes") ?? "").trim();
 
   if (!checkInDate || !checkOutDate) {
-    return redirectWithResult(returnTo, "error", "Faltan las fechas de reservación.");
+    return reservationFlowError(formData, returnTo, "Faltan las fechas de reservación.");
   }
 
   const nights = dateDiffInNights(checkInDate, checkOutDate);
   const bedIds = await pickAvailableBeds({ count: guests.length, checkInDate, checkOutDate });
 
   if (bedIds.length < guests.length) {
-    return redirectWithResult(returnTo, "error", `Solo hay ${bedIds.length} camas disponibles para esas fechas.`);
+    return reservationFlowError(
+      formData,
+      returnTo,
+      `Solo hay ${bedIds.length} camas disponibles para esas fechas.`,
+    );
   }
 
   const guestIds: string[] = [];
@@ -278,14 +300,14 @@ export async function createReservationAction(formData: FormData): Promise<void>
         .single();
 
       if (guestError || !newGuest) {
-        return redirectWithResult(returnTo, "error", `No se pudo registrar al huésped ${fullName}.`);
+        return reservationFlowError(formData, returnTo, `No se pudo registrar al huésped ${fullName}.`);
       }
       guestIds.push(newGuest.id);
     }
   }
 
   if (guestIds.length === 0) {
-    return redirectWithResult(returnTo, "error", "Datos de huéspedes inválidos.");
+    return reservationFlowError(formData, returnTo, "Datos de huéspedes inválidos.");
   }
 
   const folioCode = generateFolioCode();
@@ -323,7 +345,7 @@ export async function createReservationAction(formData: FormData): Promise<void>
     .single();
 
   if (folioError || !folio) {
-    return redirectWithResult(returnTo, "error", "No se pudo crear el folio.");
+    return reservationFlowError(formData, returnTo, "No se pudo crear el folio.");
   }
 
   const reservationSource =
@@ -349,7 +371,7 @@ export async function createReservationAction(formData: FormData): Promise<void>
     .single();
 
   if (reservationError || !reservation) {
-    return redirectWithResult(returnTo, "error", "No se pudo crear la reservación.");
+    return reservationFlowError(formData, returnTo, "No se pudo crear la reservación.");
   }
 
   const guestInserts = guestIds.map((gId, i) => {
@@ -372,7 +394,7 @@ export async function createReservationAction(formData: FormData): Promise<void>
   const { error: guestReservationError } = await supabase.from("reservation_guests").insert(guestInserts);
 
   if (guestReservationError) {
-    return redirectWithResult(returnTo, "error", "No se pudo guardar la asignación de camas.");
+    return reservationFlowError(formData, returnTo, "No se pudo guardar la asignación de camas.");
   }
 
   await supabase.from("audit_logs").insert({
@@ -397,6 +419,34 @@ export async function createReservationAction(formData: FormData): Promise<void>
   revalidatePath("/dashboard/reservations");
   revalidatePath("/dashboard/folios");
   revalidatePath("/dashboard/beds");
+
+  const bedSubtotal = finalRate * nights * guestIds.length;
+
+  if (reservationSource === "guest_app") {
+    const { data: bedsData } = await supabase.from("beds").select("id, bed_number").in("id", bedIds);
+    const bedNumberById = new Map((bedsData ?? []).map((bed) => [bed.id, bed.bed_number]));
+
+    const confirmationPayload: GuestConfirmationPayload = {
+      folio: folioCode,
+      check_in: checkInDate,
+      check_out: checkOutDate,
+      nights,
+      bed_subtotal: bedSubtotal,
+      locker_total: lockerTotal,
+      total_amount: totalAmount,
+      notes: notes || undefined,
+      guests: guests.slice(0, guestIds.length).map((guest, index) => ({
+        full_name: guest.full_name.trim(),
+        phone: guest.phone.trim(),
+        email: guest.email.trim(),
+        locker_days: lockerByGuest[index]?.locker_days ?? 0,
+        locker_amount: lockerByGuest[index]?.locker_amount ?? 0,
+        bed_number: bedNumberById.get(bedIds[index]),
+      })),
+    };
+
+    return { ok: true, confirmation: confirmationPayload };
+  }
 
   return redirectWithResult(returnTo, "success", `Reserva registrada. Folio ${folioCode}.`);
 }
@@ -599,23 +649,42 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
 }
 
 export async function receptionReservationPaymentAction(formData: FormData): Promise<void> {
+  const actor = await getActorProfile();
   const returnTo = String(formData.get("return_to") ?? "/dashboard");
   const folioId = String(formData.get("folio_id") ?? "");
-  const paymentState = String(formData.get("payment_state") ?? "not_paid");
-  const amount = Number(formData.get("amount") ?? 0);
   const method = String(formData.get("method") ?? "cash") as PaymentMethod;
   const notes = String(formData.get("notes") ?? "").trim();
+
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return redirectWithResult(returnTo, "error", "No tienes permiso para registrar cobros.");
+  }
 
   if (!folioId) {
     return redirectWithResult(returnTo, "error", "No se encontró el folio para esta reservación.");
   }
 
-  if (paymentState !== "paid") {
-    return redirectWithResult(returnTo, "success", "Reservación marcada como no pagada.");
+  const supabase = createAdminClient();
+  const { data: folio } = await supabase
+    .from("folios")
+    .select("balance_due, payment_status, folio_code")
+    .eq("id", folioId)
+    .single();
+
+  if (!folio) {
+    return redirectWithResult(returnTo, "error", "No se encontró el folio.");
   }
 
+  if (folio.payment_status === "liquidated") {
+    return redirectWithResult(returnTo, "error", `El folio ${folio.folio_code} ya está pagado.`);
+  }
+
+  const amount = Number(folio.balance_due);
   if (!amount || Number.isNaN(amount) || amount <= 0) {
-    return redirectWithResult(returnTo, "error", "Para marcar como pagada, captura un monto válido.");
+    return redirectWithResult(
+      returnTo,
+      "error",
+      "No hay saldo pendiente en este folio. Revisa el total de la reservación.",
+    );
   }
 
   const paymentFormData = new FormData();
@@ -623,7 +692,10 @@ export async function receptionReservationPaymentAction(formData: FormData): Pro
   paymentFormData.set("folio_id", folioId);
   paymentFormData.set("amount", String(amount));
   paymentFormData.set("method", method);
-  paymentFormData.set("notes", notes || "Pago registrado desde dashboard recepción.");
+  paymentFormData.set(
+    "notes",
+    notes || `Pago registrado desde dashboard ${actor.role === "admin" ? "admin" : "recepción"}.`,
+  );
 
   return registerPaymentAction(paymentFormData);
 }

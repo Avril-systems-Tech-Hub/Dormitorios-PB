@@ -10,7 +10,8 @@ import { ServicesSection } from "@/components/landing/services-section";
 import { TestimonialsSection } from "@/components/landing/testimonials-section";
 import { TrustStrip } from "@/components/landing/trust-strip";
 import { NIGHTLY_PRICE_MXN } from "@/components/landing/constants";
-import { ReservationForm } from "@/components/forms/reservation-form";
+import { ReservationBookingSection } from "@/components/forms/reservation-booking-section";
+import { Suspense } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const iconClassName = "h-5 w-5";
@@ -94,13 +95,15 @@ export default async function Home({
       <MotionSection id="reserva" className="mx-auto max-w-7xl px-4 py-12 md:px-6 md:py-14">
         <FadeInView className="mb-8 max-w-2xl space-y-3">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-mkt-terracotta">Reserva tu cama</p>
-          <h2 className="text-3xl font-semibold tracking-tight text-mkt-terracotta">Check-in rápido, control en caja</h2>
+          <h2 className="text-3xl font-semibold tracking-tight text-mkt-terracotta">Check-in rápido y sencillo</h2>
           <p className="text-mkt-ink-muted">
             Cliente nuevo o recurrente: captura datos, elige cama o autoasigna, genera folio y paga en caja.
           </p>
         </FadeInView>
         <FadeInView className="mx-auto max-w-4xl" delay={0.08}>
-          <ReservationForm action={createReservationAction} beds={beds ?? []} />
+          <Suspense fallback={<div className="h-96 animate-pulse rounded-3xl bg-mkt-slate/30" />}>
+            <ReservationBookingSection action={createReservationAction} beds={beds ?? []} />
+          </Suspense>
         </FadeInView>
       </MotionSection>
 

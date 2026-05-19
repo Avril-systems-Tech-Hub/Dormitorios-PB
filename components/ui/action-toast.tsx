@@ -11,6 +11,9 @@ export function ActionToast() {
   const lastToastKey = useRef<string | null>(null);
 
   useEffect(() => {
+    // Guest reservation flow shows an inline confirmation page instead of a toast.
+    if (searchParams.get("confirmed") === "1") return;
+
     const status = searchParams.get("status");
     const message = searchParams.get("message");
     if (!status || !message) return;
