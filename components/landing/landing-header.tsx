@@ -3,10 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { ReservationWizardTrigger } from "@/components/forms/reservation-wizard-trigger";
 import { LogoMark } from "./logo-mark";
 
 const nav = [
-  { href: "#reserva", label: "Reservar" },
   { href: "#camas", label: "Camas" },
   { href: "#asi-somos", label: "Así somos" },
   { href: "#servicios", label: "Servicios" },
@@ -37,6 +37,9 @@ export function LandingHeader() {
         </a>
 
         <nav className="hidden items-center gap-5 text-sm font-medium text-mkt-ink md:flex" aria-label="Principal">
+          <ReservationWizardTrigger className="rounded-md px-1 py-0.5 transition hover:text-mkt-terracotta focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mkt-terracotta">
+            Reservar
+          </ReservationWizardTrigger>
           {nav.map(({ href, label }) => (
             <a
               key={href}
@@ -77,6 +80,12 @@ export function LandingHeader() {
         className={`border-t border-mkt-border bg-mkt-card px-4 py-3 md:hidden ${open ? "block" : "hidden"}`}
       >
         <nav className="flex flex-col gap-1 text-sm font-medium text-mkt-ink" aria-label="Móvil">
+          <ReservationWizardTrigger
+            className="rounded-lg px-3 py-2.5 hover:bg-mkt-canvas focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mkt-terracotta"
+            onClick={() => setOpen(false)}
+          >
+            Reservar
+          </ReservationWizardTrigger>
           {nav.map(({ href, label }) => (
             <a
               key={href}

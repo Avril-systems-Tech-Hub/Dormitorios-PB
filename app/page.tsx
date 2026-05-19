@@ -10,7 +10,9 @@ import { ServicesSection } from "@/components/landing/services-section";
 import { TestimonialsSection } from "@/components/landing/testimonials-section";
 import { TrustStrip } from "@/components/landing/trust-strip";
 import { NIGHTLY_PRICE_MXN } from "@/components/landing/constants";
+import { getGuestConfirmationFromSearchParams } from "@/lib/guest-reservation-confirmation";
 import { ReservationBookingSection } from "@/components/forms/reservation-booking-section";
+import { ReservationWizardProvider } from "@/components/forms/reservation-wizard-provider";
 import { Suspense } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -61,6 +63,8 @@ export default async function Home({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const params = await searchParams;
+  const initialConfirmation = getGuestConfirmationFromSearchParams(params);
   const supabase = createAdminClient();
 
   const { data: beds } = await supabase
@@ -71,6 +75,7 @@ export default async function Home({
     .limit(60);
 
   return (
+    <ReservationWizardProvider action={createReservationAction}>
     <main className="landing-marketing min-h-screen font-sans antialiased">
       <LandingHeader />
       <LandingHero />
@@ -102,7 +107,11 @@ export default async function Home({
         </FadeInView>
         <FadeInView className="mx-auto max-w-4xl" delay={0.08}>
           <Suspense fallback={<div className="h-96 animate-pulse rounded-3xl bg-mkt-slate/30" />}>
-            <ReservationBookingSection action={createReservationAction} beds={beds ?? []} />
+            <ReservationBookingSection
+              action={createReservationAction}
+              beds={beds ?? []}
+              initialConfirmation={initialConfirmation}
+            />
           </Suspense>
         </FadeInView>
       </MotionSection>
@@ -120,5 +129,6 @@ export default async function Home({
 
       <LandingFooter />
     </main>
+    </ReservationWizardProvider>
   );
 }

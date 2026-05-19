@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { ReservationWizardTrigger } from "@/components/forms/reservation-wizard-trigger";
 import { NIGHTLY_PRICE_MXN } from "./constants";
 import { FadeInView, MotionSection } from "./motion";
 import { PriceBadge } from "./price-badge";
@@ -52,12 +53,9 @@ export function RestCtaSection() {
           <PriceBadge className="w-fit shadow-md shadow-black/10" />
 
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-            <a
-              href="#reserva"
-              className="inline-flex h-12 w-full items-center justify-center rounded-full bg-mkt-terracotta px-7 text-sm font-semibold text-white shadow-md shadow-black/15 transition hover:bg-mkt-terracotta-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:w-auto sm:min-w-[200px]"
-            >
+            <ReservationWizardTrigger className="inline-flex h-12 w-full items-center justify-center rounded-full bg-mkt-terracotta px-7 text-sm font-semibold text-white shadow-md shadow-black/15 transition hover:bg-mkt-terracotta-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:w-auto sm:min-w-[200px]">
               Reservar ahora
-            </a>
+            </ReservationWizardTrigger>
             <a
               href="#camas"
               className="inline-flex h-12 w-full items-center justify-center rounded-full border border-white/30 bg-white/5 px-7 text-sm font-semibold text-white transition hover:border-white/45 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:w-auto"

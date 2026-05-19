@@ -34,6 +34,16 @@ export function encodeGuestConfirmationPayload(payload: GuestConfirmationPayload
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+export function getGuestConfirmationFromSearchParams(
+  params: Record<string, string | string[] | undefined>,
+): GuestConfirmationPayload | null {
+  if (params.confirmed !== "1") return null;
+  const raw = params.confirmation;
+  const encoded = typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : undefined;
+  if (!encoded) return null;
+  return decodeGuestConfirmationPayload(encoded);
+}
+
 export function decodeGuestConfirmationPayload(encoded: string): GuestConfirmationPayload | null {
   try {
     let json: string;

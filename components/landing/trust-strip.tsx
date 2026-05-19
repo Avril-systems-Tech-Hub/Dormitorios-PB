@@ -1,12 +1,12 @@
 import Image from "next/image";
 import type { ReactNode } from "react";
+import { ReservationWizardTrigger } from "@/components/forms/reservation-wizard-trigger";
 import { FadeInView, MotionSection, StaggerGrid, StaggerItem } from "./motion";
 import {
   ADDRESS_LINE,
   MAP_SEARCH_HREF,
   METRO_COPY,
   SITE_HOST,
-  SITE_URL,
   WHATSAPP_DISPLAY,
   WHATSAPP_HREF,
 } from "./constants";
@@ -137,10 +137,10 @@ export function TrustStrip() {
                   <IconWhatsApp className="h-5 w-5" />
                   WhatsApp +52 {WHATSAPP_DISPLAY}
                 </a>
-                <a href={SITE_URL} target="_blank" rel="noopener noreferrer" className={`${linkButtonClass} w-full sm:w-auto`}>
+                <ReservationWizardTrigger className={`${linkButtonClass} w-full sm:w-auto`}>
                   <IconGlobe className="h-4 w-4 opacity-90" />
                   {SITE_HOST}
-                </a>
+                </ReservationWizardTrigger>
                 <a href={MAP_SEARCH_HREF} target="_blank" rel="noopener noreferrer" className={`${linkButtonClass} w-full sm:w-auto`}>
                   <IconMap className="h-4 w-4 opacity-90" />
                   Ver en mapa

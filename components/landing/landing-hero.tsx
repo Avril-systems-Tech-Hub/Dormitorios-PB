@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ReservationWizardTrigger } from "@/components/forms/reservation-wizard-trigger";
 import { HeroCarousel } from "./hero-carousel";
 import { FadeIn } from "./motion";
 import { PriceBadge } from "./price-badge";
@@ -24,18 +24,15 @@ export function LandingHero() {
           <PriceBadge />
         </FadeIn>
         <FadeIn delay={0.12} className="flex flex-wrap gap-3">
+          <ReservationWizardTrigger className="inline-flex h-11 items-center justify-center rounded-full bg-mkt-terracotta px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-mkt-terracotta-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mkt-terracotta">
+            Reservar ahora
+          </ReservationWizardTrigger>
           <a
             href="#reserva"
-            className="inline-flex h-11 items-center justify-center rounded-full bg-mkt-terracotta px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-mkt-terracotta-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mkt-terracotta"
-          >
-            Reservar ahora
-          </a>
-          <Link
-            href="/dashboard"
             className="inline-flex h-11 items-center justify-center rounded-full border-2 border-mkt-slate bg-transparent px-6 text-sm font-semibold text-mkt-slate transition hover:bg-mkt-slate/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mkt-terracotta"
           >
             Ver disponibilidad
-          </Link>
+          </a>
         </FadeIn>
       </div>
       <FadeIn delay={0.06} className="order-first md:order-none">

@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { ReservationWizardTrigger } from "@/components/forms/reservation-wizard-trigger";
 import {
   ADDRESS_LINE,
   MAP_SEARCH_HREF,
@@ -41,9 +42,9 @@ export function LandingFooter() {
               </a>
             </li>
             <li>
-              <a href="#reserva" className="rounded hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mkt-terracotta">
+              <ReservationWizardTrigger className="rounded hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mkt-terracotta">
                 Reservar
-              </a>
+              </ReservationWizardTrigger>
             </li>
           </ul>
         </div>

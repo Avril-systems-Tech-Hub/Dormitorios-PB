@@ -32,11 +32,15 @@ export function ReservationConfirmation({ data, onNewReservation }: ReservationC
           </span>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-mkt-terracotta">Confirmación</p>
           <h3 className="mt-2 text-2xl font-semibold text-white">¡Reservación registrada!</h3>
-          <p className="mt-2 text-sm text-white/75">
-            Guarda tu folio. Presenta este número en recepción para pagar y hacer check-in.
+          <p className="mt-2 text-sm leading-relaxed text-white/75">
+            Al llegar, pasa por caja: con tu nombre, celular o correo te ubicamos en el sistema. No necesitas
+            memorizar el folio.
           </p>
           <p className="mt-4 rounded-xl bg-white/10 px-4 py-2 font-mono text-lg font-semibold tracking-wide text-white">
             Folio {data.folio}
+          </p>
+          <p className="mt-2 max-w-sm text-xs text-white/60">
+            Si lo tienes a la mano, también puedes dar este folio en recepción para pagar y hacer check-in.
           </p>
         </div>
 
@@ -139,8 +143,9 @@ export function ReservationConfirmation({ data, onNewReservation }: ReservationC
               <span>${data.total_amount.toFixed(0)} MXN</span>
             </li>
           </ul>
-          <p className="mt-3 text-xs text-white/65">
-            El pago se realiza en caja al llegar. El total final puede incluir descuentos aplicados en recepción.
+          <p className="mt-3 text-xs leading-relaxed text-white/65">
+            El pago es en caja al llegar. Di tu nombre, celular o correo — o tu folio si lo traes. El total final
+            puede incluir descuentos aplicados en recepción.
           </p>
         </section>
 

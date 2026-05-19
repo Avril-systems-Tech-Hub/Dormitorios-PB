@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ReservationForm } from "@/components/forms/reservation-form";
 import { ReservationConfirmation } from "@/components/forms/reservation-confirmation";
@@ -13,27 +13,30 @@ import {
 type ReservationBookingSectionProps = {
   action: (formData: FormData) => Promise<CreateGuestReservationResult | void>;
   beds: { bed_number: number }[];
+  /** Decoded on the server from searchParams so SSR and hydration match. */
+  initialConfirmation?: GuestConfirmationPayload | null;
 };
 
-export function ReservationBookingSection({ action, beds }: ReservationBookingSectionProps) {
+export function ReservationBookingSection({
+  action,
+  beds,
+  initialConfirmation = null,
+}: ReservationBookingSectionProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [confirmationData, setConfirmationData] = useState<GuestConfirmationPayload | null>(null);
-
-  const confirmationFromUrl = useMemo(() => {
-    if (searchParams.get("confirmed") !== "1") return null;
-    const encoded = searchParams.get("confirmation");
-    if (!encoded) return null;
-    return decodeGuestConfirmationPayload(encoded);
-  }, [searchParams]);
+  const [confirmationData, setConfirmationData] = useState<GuestConfirmationPayload | null>(
+    initialConfirmation,
+  );
 
   useEffect(() => {
-    if (confirmationFromUrl) {
-      setConfirmationData(confirmationFromUrl);
-    }
-  }, [confirmationFromUrl]);
+    if (searchParams.get("confirmed") !== "1") return;
+    const encoded = searchParams.get("confirmation");
+    if (!encoded) return;
+    const decoded = decodeGuestConfirmationPayload(encoded);
+    if (decoded) setConfirmationData(decoded);
+  }, [searchParams]);
 
-  const activeConfirmation = confirmationData ?? confirmationFromUrl;
+  const activeConfirmation = confirmationData;
 
   useEffect(() => {
     if (activeConfirmation) {
