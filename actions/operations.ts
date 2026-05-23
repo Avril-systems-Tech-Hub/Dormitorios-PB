@@ -589,7 +589,9 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
               guestPhone,
               process.env.YCLOUD_TEMPLATE_NAME || "payment_confirmation",
               process.env.YCLOUD_TEMPLATE_LANGUAGE || "es",
-              [mainGuest.full_name ?? "Huésped", folio.folio_code, `$${amount.toFixed(2)} MXN`, pdfPublicUrl],
+              [mainGuest.full_name ?? "Huésped", folio.folio_code, `$${amount.toFixed(2)} MXN`],
+              undefined,
+              { pdfUrl: pdfPublicUrl, filename: `comprobante-${folio.folio_code}.pdf` },
             );
           } else {
             // Fallback: enviar solo texto si falla la subida del PDF
@@ -1234,7 +1236,9 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
       guestPhone,
       process.env.YCLOUD_TEMPLATE_NAME || "payment_confirmation",
       process.env.YCLOUD_TEMPLATE_LANGUAGE || "es",
-      [mainGuest.full_name ?? "Huésped", folio.folio_code, `$${amount.toFixed(2)} MXN`, pdfPublicUrl],
+      [mainGuest.full_name ?? "Huésped", folio.folio_code, `$${amount.toFixed(2)} MXN`],
+      undefined,
+      { pdfUrl: pdfPublicUrl, filename: `comprobante-${folio.folio_code}.pdf` },
     );
   } else {
     console.error("[resendPaymentReceipt] Error subiendo PDF:", uploadError);

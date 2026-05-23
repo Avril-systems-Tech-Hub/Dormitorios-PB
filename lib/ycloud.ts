@@ -174,6 +174,10 @@ export async function sendWhatsAppDocument(
  * Los template messages son necesarios para contactar usuarios que NUNCA han
  * enviado un mensaje al número de WhatsApp Business (business-initiated).
  * Requiere que el template esté creado y aprobado en WhatsApp Manager > Templates.
+ *
+ * Si se pasa `documentHeader`, el header del template se envía como tipo DOCUMENT
+ * con la URL del PDF y el filename. El template debe tener un header de tipo DOCUMENT
+ * configurado en Meta Business Manager.
  */
 export async function sendWhatsAppTemplateMessage(
   toPhone: string,
@@ -181,6 +185,7 @@ export async function sendWhatsAppTemplateMessage(
   languageCode: string,
   bodyParameters?: string[],
   headerParameters?: string[],
+  documentHeader?: { pdfUrl: string; filename: string },
 ): Promise<YCloudResponse> {
   const apiKey = process.env.YCLOUD_API_KEY;
   const fromPhone = process.env.YCLOUD_FROM_PHONE;
@@ -196,12 +201,24 @@ export async function sendWhatsAppTemplateMessage(
   const cleanFrom = fromPhone.replace(/\+|\s|-/g, "");
 
   // Construir componentes: header y body por separado
-  const components: Array<{
-    type: "body" | "header" | "button";
-    parameters: Array<{ type: "text"; text: string }>;
-  }> = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const components: Array<any> = [];
 
-  if (headerParameters?.length) {
+  // Header: documento PDF o texto
+  if (documentHeader) {
+    components.push({
+      type: "header",
+      parameters: [
+        {
+          type: "document",
+          document: {
+            link: documentHeader.pdfUrl,
+            filename: documentHeader.filename,
+          },
+        },
+      ],
+    });
+  } else if (headerParameters?.length) {
     components.push({
       type: "header",
       parameters: headerParameters.map((text) => ({
@@ -221,7 +238,8 @@ export async function sendWhatsAppTemplateMessage(
     });
   }
 
-  const payload: YCloudTemplateMessagePayload = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const payload: any = {
     from: cleanFrom,
     to: cleanTo,
     type: "template",

@@ -128,7 +128,7 @@ export function TrustStrip() {
             <FadeInView delay={0.12} className="border-t border-white/10 pt-8">
               <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-white/60">Contacto</h3>
               <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                <a
+                {/*<a
                   href={WHATSAPP_HREF}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -136,7 +136,7 @@ export function TrustStrip() {
                 >
                   <IconWhatsApp className="h-5 w-5" />
                   WhatsApp +52 {WHATSAPP_DISPLAY}
-                </a>
+                </a>*/}
                 <ReservationWizardTrigger className={`${linkButtonClass} w-full sm:w-auto`}>
                   <IconGlobe className="h-4 w-4 opacity-90" />
                   {SITE_HOST}

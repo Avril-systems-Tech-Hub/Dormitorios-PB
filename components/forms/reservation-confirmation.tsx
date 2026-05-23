@@ -157,14 +157,14 @@ export function ReservationConfirmation({ data, onNewReservation }: ReservationC
           >
             Hacer otra reservación
           </button>
-          <Link
+          {/*<Link
             href={WHATSAPP_HREF}
             target="_blank"
             rel="noopener noreferrer"
             className="flex h-11 flex-1 items-center justify-center rounded-full bg-mkt-terracotta px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-mkt-terracotta-hover"
           >
             Contactar por WhatsApp
-          </Link>
+          </Link>*/}
         </div>
       </div>
     </div>
