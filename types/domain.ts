@@ -1,4 +1,4 @@
-export type UserRole = "admin" | "reception";
+export type UserRole = string;
 
 export type BedStatus = "available" | "blocked";
 

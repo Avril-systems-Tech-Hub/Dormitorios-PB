@@ -1,19 +1,31 @@
 import Link from "next/link";
 import { getDashboardLinks } from "@/lib/navigation";
 import type { UserRole } from "@/types/domain";
+import type { SystemModule } from "@/lib/auth/permissions";
 import { Button } from "@/components/ui/button";
+
+type DashboardLink = {
+  href: string;
+  label: string;
+};
 
 export function DashboardShell({
   title,
   role,
+  modules,
   children,
 }: {
   title: string;
   role: UserRole;
+  modules?: SystemModule[];
   children: React.ReactNode;
 }) {
-  const links = getDashboardLinks(role);
-  const isReception = role === "reception";
+  // Si hay módulos dinámicos del RBAC, usar esos; si no, fallback al estático
+  const links: DashboardLink[] = modules?.length
+    ? modules.map((m) => ({ href: m.href, label: m.label }))
+    : getDashboardLinks(role);
+
+  const showSidebar = role === "admin" || (modules !== undefined && modules.length > 0);
 
   return (
     <div className="min-h-screen bg-surface">
@@ -37,8 +49,8 @@ export function DashboardShell({
           </div>
         </div>
       </header>
-      <div className={`mx-auto max-w-7xl gap-4 px-4 py-4 ${isReception ? "" : "grid md:grid-cols-[220px_1fr]"}`}>
-        {isReception ? null : (
+      <div className={`mx-auto max-w-7xl gap-4 px-4 py-4 ${showSidebar ? "grid md:grid-cols-[220px_1fr]" : ""}`}>
+        {showSidebar ? (
           <aside className="overflow-x-auto rounded-xl border border-border-soft bg-white p-2">
             <nav className="flex gap-2 md:flex-col">
               {links.map((item) => (
@@ -52,7 +64,7 @@ export function DashboardShell({
               ))}
             </nav>
           </aside>
-        )}
+        ) : null}
         <main className="space-y-4">{children}</main>
       </div>
     </div>
