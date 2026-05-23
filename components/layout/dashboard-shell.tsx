@@ -12,11 +12,15 @@ type DashboardLink = {
 export function DashboardShell({
   title,
   role,
+  userName,
+  roleLabel,
   modules,
   children,
 }: {
   title: string;
   role: UserRole;
+  userName?: string;
+  roleLabel?: string;
   modules?: SystemModule[];
   children: React.ReactNode;
 }) {
@@ -38,8 +42,13 @@ export function DashboardShell({
             <h1 className="text-lg font-semibold text-text-main">{title}</h1>
           </div>
           <div className="flex items-center gap-2">
+            {userName && (
+              <span className="text-sm font-medium text-text-main">
+                {userName}
+              </span>
+            )}
             <span className="rounded-full bg-surface-soft px-2 py-1 text-xs text-text-main">
-              {role === "admin" ? "Admin" : "Recepción"}
+              {roleLabel ?? (role === "admin" ? "Admin" : "Recepción")}
             </span>
             <form action="/api/auth/signout" method="post">
               <Button variant="outline" type="submit">

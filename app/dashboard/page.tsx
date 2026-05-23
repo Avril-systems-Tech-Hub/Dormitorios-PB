@@ -14,7 +14,7 @@ export default async function DashboardPage() {
   const supabase = await createClient();
   const today = getMexicoCityDateString();
 
-  if (profile.role === "reception") {
+  if (profile.role !== "admin") {
     return (
       <div className="space-y-4">
         <ActiveReservationsPanel />

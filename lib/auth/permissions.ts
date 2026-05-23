@@ -100,6 +100,20 @@ export async function getAllModules(): Promise<SystemModule[]> {
 }
 
 /**
+ * Obtiene el label de un rol por su ID.
+ */
+export async function getRoleLabel(roleId: string | null | undefined): Promise<string | null> {
+  if (!roleId) return null;
+  const adminSupabase = createAdminClient();
+  const { data: role } = await adminSupabase
+    .from("system_roles")
+    .select("label")
+    .eq("id", roleId)
+    .single();
+  return role?.label ?? null;
+}
+
+/**
  * Obtiene los módulos asignados a un rol específico.
  */
 export async function getRoleModules(roleId: string): Promise<SystemModule[]> {
