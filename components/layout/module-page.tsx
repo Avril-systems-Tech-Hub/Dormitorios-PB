@@ -5,9 +5,11 @@ import { EmptyState } from "@/components/ui/state";
 export function ModulePage({
   title,
   description,
+  children,
 }: {
   title: string;
   description: string;
+  children?: React.ReactNode;
 }) {
   return (
     <>
@@ -20,10 +22,12 @@ export function ModulePage({
           <Badge variant="success">Etapa 1</Badge>
         </div>
       </Card>
-      <EmptyState
-        title="Módulo base listo"
-        description="Esta pantalla ya está conectada al layout, navegación y permisos base."
-      />
+      {children ?? (
+        <EmptyState
+          title="Módulo base listo"
+          description="Esta pantalla ya está conectada al layout, navegación y permisos base."
+        />
+      )}
     </>
   );
 }

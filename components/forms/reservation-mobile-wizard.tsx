@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { applyDiscount } from "@/lib/discount-rules";
 import { ReservationConfirmation } from "@/components/forms/reservation-confirmation";
 import { ReservationGuestFields } from "@/components/forms/reservation-guest-fields";
 import { NIGHTLY_PRICE_MXN, UBICACION_SURFACE_CLASS } from "@/components/landing/constants";
@@ -285,6 +286,10 @@ export function ReservationWizard({ open, onOpenChange, action }: ReservationWiz
               bedTotal={bedTotal}
               lockerTotal={lockerTotal}
               stepError={stepError}
+              goToStep={(stepId) => {
+                const idx = stepOrder.indexOf(stepId);
+                if (idx >= 0) setStepIndex(idx);
+              }}
             />
           )}
         </div>
@@ -348,6 +353,7 @@ function WizardStepContent({
   bedTotal,
   lockerTotal,
   stepError,
+  goToStep,
 }: {
   step: WizardStepId;
   form: ReturnType<typeof useReservationForm>;
@@ -356,6 +362,7 @@ function WizardStepContent({
   bedTotal: number;
   lockerTotal: number;
   stepError: string | null;
+  goToStep: (stepId: WizardStepId) => void;
 }) {
   const panelClass = `rounded-2xl border border-white/15 p-4 shadow-md shadow-mkt-slate-deep/20 md:p-6 ${UBICACION_SURFACE_CLASS}`;
 
@@ -520,11 +527,19 @@ function WizardStepContent({
         </div>
       );
 
-    case "summary":
+    case "summary": {
+      const editBtnClass =
+        "rounded-full border border-mkt-terracotta/50 px-3 py-1 text-xs font-semibold text-mkt-terracotta transition hover:bg-mkt-terracotta/15";
       return (
         <div className="space-y-4">
+          {/* Estancia y precios */}
           <div className={panelClass}>
-            <h3 className="text-base font-semibold text-white">Revisa tu reservación</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-white">Estancia</h3>
+              <button type="button" className={editBtnClass} onClick={() => goToStep(form.recurringGuestMatched ? "returning" : "stay")}>
+                ✏️ Editar
+              </button>
+            </div>
             <dl className="mt-4 space-y-3 text-sm">
               <div className="flex justify-between gap-3 border-b border-white/10 pb-3">
                 <dt className="text-white/65">Entrada</dt>
@@ -562,27 +577,81 @@ function WizardStepContent({
                   <dd className="font-medium text-white">${lockerTotal.toFixed(0)} MXN</dd>
                 </div>
               ) : null}
-              <div className="flex justify-between gap-3 pt-1 text-base">
-                <dt className="font-semibold text-white">Total estimado</dt>
-                <dd className="font-semibold text-mkt-terracotta">
-                  ${(bedTotal + lockerTotal).toFixed(0)} MXN
-                </dd>
-              </div>
+              {form.applicableDiscount ? (() => {
+                const subtotal = bedTotal + lockerTotal;
+                const disc = applyDiscount(subtotal, form.applicableDiscount.rule.discount_percent);
+                return (
+                  <>
+                    <div className="flex justify-between gap-3 border-b border-white/10 pb-3">
+                      <dt className="text-white/65">Subtotal</dt>
+                      <dd className="font-medium text-white">${subtotal.toFixed(0)} MXN</dd>
+                    </div>
+                    <div className="flex justify-between gap-3 border-b border-white/10 pb-3 text-green-300">
+                      <dt>
+                        Descuento ({form.applicableDiscount.rule.discount_percent}%)
+                        <br />
+                        <span className="text-xs text-green-200/70">{form.applicableDiscount.reason}</span>
+                      </dt>
+                      <dd className="font-medium">-${disc.discountAmount.toFixed(0)} MXN</dd>
+                    </div>
+                    <div className="flex justify-between gap-3 pt-1 text-base">
+                      <dt className="font-semibold text-white">Total con descuento</dt>
+                      <dd className="font-semibold text-mkt-terracotta">${disc.finalTotal.toFixed(0)} MXN</dd>
+                    </div>
+                  </>
+                );
+              })() : (
+                <div className="flex justify-between gap-3 pt-1 text-base">
+                  <dt className="font-semibold text-white">Total estimado</dt>
+                  <dd className="font-semibold text-mkt-terracotta">
+                    ${(bedTotal + lockerTotal).toFixed(0)} MXN
+                  </dd>
+                </div>
+              )}
             </dl>
             <p className="mt-4 text-xs text-white/60">
               Pago en caja al llegar. El total final puede incluir descuentos en recepción.
             </p>
           </div>
-          <ul className="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/80">
-            {form.guests.map((g, i) => (
-              <li key={i}>
-                {i === 0 ? "Principal" : `Huésped ${i + 1}`}: {g.full_name || "—"} · {g.phone || "—"}
-              </li>
-            ))}
-          </ul>
+
+          {/* Huéspedes */}
+          <div className={panelClass}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-white">Huéspedes</h3>
+              <button type="button" className={editBtnClass} onClick={() => goToStep(form.guestCount > 1 ? "additional" : "principal")}>
+                ✏️ Editar
+              </button>
+            </div>
+            <ul className="mt-3 space-y-2">
+              {form.guests.map((g, i) => (
+                <li key={i} className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white/90">
+                  <span className="text-xs font-semibold text-mkt-terracotta">
+                    {i === 0 ? "Principal" : `Huésped ${i + 1}`}
+                  </span>
+                  <p className="mt-1 font-medium">{g.full_name || "—"}</p>
+                  <p className="text-xs text-white/60">{g.phone || "—"}{g.email ? ` · ${g.email}` : ""}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Notas */}
+          <div className={panelClass}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-white">Notas</h3>
+              <button type="button" className={editBtnClass} onClick={() => goToStep("notes")}>
+                ✏️ Editar
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-white/80">
+              {form.reservationData.notes || <span className="italic text-white/50">Sin notas</span>}
+            </p>
+          </div>
+
           {stepError ? <p className="text-xs text-red-300">{stepError}</p> : null}
         </div>
       );
+    }
 
     default:
       return null;

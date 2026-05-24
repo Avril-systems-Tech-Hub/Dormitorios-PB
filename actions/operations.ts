@@ -1685,3 +1685,14 @@ export async function addFolioExtraServiceAction(formData: FormData): Promise<vo
   revalidatePath("/dashboard/payments");
   return redirectWithResult(returnTo, "success", "Extra service agregado al folio.");
 }
+
+/**
+ * Consulta descuentos aplicables para una fecha de check-in y teléfono de huésped.
+ * Retorna el mejor descuento encontrado (mayor porcentaje).
+ */
+export async function getApplicableDiscountsAction(checkInDate: string, guestPhone?: string) {
+  "use server";
+  const { getApplicableDiscounts, getBestDiscount } = await import("@/lib/discount-rules");
+  const discounts = await getApplicableDiscounts(checkInDate, guestPhone);
+  return getBestDiscount(discounts);
+}

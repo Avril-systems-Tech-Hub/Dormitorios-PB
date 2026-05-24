@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { searchGuestByPhoneAction } from "@/actions/operations";
+import { searchGuestByPhoneAction, getApplicableDiscountsAction } from "@/actions/operations";
 import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
+import type { ApplicableDiscount } from "@/lib/discount-rules";
 
 export const LOCKER_DAILY_PRICE = 30;
 
@@ -63,6 +64,7 @@ export function useReservationForm({ action, onConfirmed, recurringGuest }: UseR
   const [recurringGuestMatched, setRecurringGuestMatched] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [applicableDiscount, setApplicableDiscount] = useState<ApplicableDiscount | null>(null);
 
   const resetForm = useCallback(() => {
     setGuestCount(1);
@@ -74,6 +76,7 @@ export function useReservationForm({ action, onConfirmed, recurringGuest }: UseR
     setSearchError("");
     setRecurringGuestMatched(false);
     setSubmitResult(null);
+    setApplicableDiscount(null);
   }, []);
 
   useEffect(() => {
@@ -109,6 +112,25 @@ export function useReservationForm({ action, onConfirmed, recurringGuest }: UseR
     () => nightsBetween(reservationData.check_in_date, reservationData.check_out_date),
     [reservationData.check_in_date, reservationData.check_out_date],
   );
+
+  // Fetch applicable discounts when check_in_date changes or guest phone is known
+  useEffect(() => {
+    if (!reservationData.check_in_date) {
+      setApplicableDiscount(null);
+      return;
+    }
+    const phone = guests[0]?.phone?.replace(/\D/g, "") || undefined;
+    if (!phone) {
+      // Only fetch date-range discounts (no phone)
+    }
+    let cancelled = false;
+    getApplicableDiscountsAction(reservationData.check_in_date, phone).then((discount) => {
+      if (!cancelled) setApplicableDiscount(discount);
+    }).catch(() => {
+      if (!cancelled) setApplicableDiscount(null);
+    });
+    return () => { cancelled = true; };
+  }, [reservationData.check_in_date, guests[0]?.phone]);
 
   useEffect(() => {
     setGuests((prev) =>
@@ -291,5 +313,6 @@ export function useReservationForm({ action, onConfirmed, recurringGuest }: UseR
     resetForm,
     estimatedBedTotal,
     estimatedLockerTotal,
+    applicableDiscount,
   };
 }

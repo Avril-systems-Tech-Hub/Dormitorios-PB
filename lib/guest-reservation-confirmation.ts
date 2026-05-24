@@ -19,6 +19,9 @@ export type GuestConfirmationPayload = {
   bed_subtotal: number;
   locker_total: number;
   total_amount: number;
+  discount_percent?: number;
+  discount_amount?: number;
+  original_total?: number;
   notes?: string;
   guests: GuestConfirmationGuest[];
 };
