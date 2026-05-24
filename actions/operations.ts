@@ -311,8 +311,10 @@ export async function createReservationAction(
 
   const folioCode = generateFolioCode();
   const nightlyRate = BASE_NIGHTLY_RATE;
-  const discountAmount = 0;
-  const finalRate = nightlyRate;
+  const discountRuleId = String(formData.get("discount_rule_id") ?? "") || null;
+  const discountPercent = Number(formData.get("discount_percent") ?? 0) || 0;
+  const discountAmountPerNight = Math.round(nightlyRate * discountPercent) / 100;
+  const finalRate = nightlyRate - discountAmountPerNight;
 
   const lockerByGuest = guests.slice(0, guestIds.length).map((guest) => {
     const wantsLocker = guest.add_locker === "yes";
@@ -364,6 +366,8 @@ export async function createReservationAction(
       nights,
       status: "active",
       reservation_source: reservationSource,
+      discount_rule_id: discountRuleId,
+      discount_percent: discountPercent,
       notes,
     })
     .select("id")
@@ -380,7 +384,7 @@ export async function createReservationAction(
       guest_id: gId,
       bed_id: bedIds[i],
       nightly_rate: nightlyRate,
-      discount_amount: discountAmount,
+      discount_amount: discountAmountPerNight,
       final_rate: finalRate,
       locker_number: null,
       locker_price: locker.locker_price,
@@ -402,15 +406,17 @@ export async function createReservationAction(
     actor_role: actorId ? undefined : "reception",
     entity_type: "reservation",
     entity_id: reservation.id,
-    metadata: {
-      folio_code: folioCode,
-      guests_count: guestIds.length,
-      auto_assign: true,
-      nights,
-      total_amount: totalAmount,
-      locker_total: lockerTotal,
-      reservation_source: reservationSource,
-    },
+      metadata: {
+        folio_code: folioCode,
+        guests_count: guestIds.length,
+        auto_assign: true,
+        nights,
+        total_amount: totalAmount,
+        locker_total: lockerTotal,
+        reservation_source: reservationSource,
+        discount_rule_id: discountRuleId,
+        discount_percent: discountPercent,
+      },
   });
 
   revalidatePath("/");
@@ -433,6 +439,9 @@ export async function createReservationAction(
       bed_subtotal: bedSubtotal,
       locker_total: lockerTotal,
       total_amount: totalAmount,
+      discount_percent: discountPercent > 0 ? discountPercent : undefined,
+      discount_amount: discountPercent > 0 ? (nightlyRate * guestIds.length * nights) - bedSubtotal : undefined,
+      original_total: discountPercent > 0 ? (nightlyRate * guestIds.length * nights) + lockerTotal : undefined,
       notes: notes || undefined,
       guests: guests.slice(0, guestIds.length).map((guest, index) => ({
         full_name: guest.full_name.trim(),
@@ -540,7 +549,7 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
   try {
     const { data: reservationForFolio } = await supabase
       .from("reservations")
-      .select("id, check_in_date, check_out_date, nights, reservation_guests(guests(id, full_name, phone))")
+      .select("id, check_in_date, check_out_date, nights, discount_percent, reservation_guests(guests(id, full_name, phone))")
       .eq("folio_id", folioId)
       .limit(1)
       .maybeSingle();
@@ -570,6 +579,13 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
             nights: reservationForFolio.nights,
             guestCount: guestRows.length,
             totalAmount: expectedTotal,
+            discountPercent: Number(reservationForFolio.discount_percent ?? 0) || undefined,
+            discountAmount: Number(reservationForFolio.discount_percent ?? 0) > 0
+              ? Math.round(BASE_NIGHTLY_RATE * Number(reservationForFolio.discount_percent) / 100 * guestRows.length * reservationForFolio.nights * 100) / 100
+              : undefined,
+            originalTotal: Number(reservationForFolio.discount_percent ?? 0) > 0
+              ? expectedTotal + Math.round(BASE_NIGHTLY_RATE * Number(reservationForFolio.discount_percent) / 100 * guestRows.length * reservationForFolio.nights * 100) / 100
+              : undefined,
           });
 
           // 2. Subir PDF a Supabase Storage
@@ -1176,7 +1192,7 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
 
   const { data: reservationForFolio } = await supabase
     .from("reservations")
-    .select("id, check_in_date, check_out_date, nights, reservation_guests(guests(id, full_name, phone))")
+    .select("id, check_in_date, check_out_date, nights, discount_percent, reservation_guests(guests(id, full_name, phone))")
     .eq("folio_id", folioId)
     .limit(1)
     .maybeSingle();
@@ -1203,6 +1219,11 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
   }
 
   const amount = Number(folio.paid_amount ?? 0);
+  const discPercent = Number(reservationForFolio.discount_percent ?? 0) || 0;
+  const discAmount = discPercent > 0
+    ? Math.round(BASE_NIGHTLY_RATE * discPercent / 100 * guestRows.length * reservationForFolio.nights * 100) / 100
+    : 0;
+  const originalTotal = discPercent > 0 ? Number(folio.total_amount ?? 0) + discAmount : 0;
 
   // Generate PDF
   const pdfBytes = await generatePaymentConfirmationPdf({
@@ -1217,6 +1238,9 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
     nights: reservationForFolio.nights,
     guestCount: guestRows.length,
     totalAmount: Number(folio.total_amount ?? 0),
+    discountPercent: discPercent || undefined,
+    discountAmount: discAmount || undefined,
+    originalTotal: originalTotal || undefined,
   });
 
   // Upload PDF

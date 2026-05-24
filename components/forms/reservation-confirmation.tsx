@@ -138,10 +138,27 @@ export function ReservationConfirmation({ data, onNewReservation }: ReservationC
                 <span className="shrink-0 font-medium">${lockerTotal.toFixed(0)} MXN</span>
               </li>
             ) : null}
-            <li className="flex justify-between gap-4 border-t border-white/15 pt-2 text-base font-semibold text-white">
-              <span>Total estimado</span>
-              <span>${data.total_amount.toFixed(0)} MXN</span>
-            </li>
+            {data.discount_percent && data.discount_percent > 0 ? (
+              <>
+                <li className="flex justify-between gap-4">
+                  <span>Subtotal</span>
+                  <span className="shrink-0">${(data.original_total ?? data.total_amount).toFixed(0)} MXN</span>
+                </li>
+                <li className="flex justify-between gap-4 text-green-300">
+                  <span>Descuento ({data.discount_percent}%)</span>
+                  <span className="shrink-0 font-medium">-${(data.discount_amount ?? 0).toFixed(0)} MXN</span>
+                </li>
+                <li className="flex justify-between gap-4 border-t border-white/15 pt-2 text-base font-semibold text-white">
+                  <span>Total con descuento</span>
+                  <span>${data.total_amount.toFixed(0)} MXN</span>
+                </li>
+              </>
+            ) : (
+              <li className="flex justify-between gap-4 border-t border-white/15 pt-2 text-base font-semibold text-white">
+                <span>Total estimado</span>
+                <span>${data.total_amount.toFixed(0)} MXN</span>
+              </li>
+            )}
           </ul>
           <p className="mt-3 text-xs leading-relaxed text-white/65">
             El pago es en caja al llegar. Di tu nombre, celular o correo — o tu folio si lo traes. El total final

@@ -246,6 +246,10 @@ export function useReservationForm({ action, onConfirmed, recurringGuest }: UseR
       formData.set("notes", reservationData.notes);
       formData.set("reservation_source", "guest_app");
       formData.set("return_to", "/");
+      if (applicableDiscount) {
+        formData.set("discount_rule_id", applicableDiscount.rule.id);
+        formData.set("discount_percent", String(applicableDiscount.rule.discount_percent));
+      }
 
       const result = await action(formData);
       if (result) {

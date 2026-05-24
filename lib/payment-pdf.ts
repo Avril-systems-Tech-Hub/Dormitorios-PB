@@ -19,6 +19,9 @@ export type PaymentPdfData = {
   nights: number;
   guestCount: number;
   totalAmount: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  originalTotal?: number;
 };
 
 const METHOD_LABELS: Record<string, string> = {
@@ -30,8 +33,12 @@ const METHOD_LABELS: Record<string, string> = {
 export async function generatePaymentConfirmationPdf(
   data: PaymentPdfData,
 ): Promise<Uint8Array> {
+  // Calculamos la altura necesaria según si hay descuento
+  const hasDiscount = !!(data.discountPercent && data.discountPercent > 0);
+  const offsetY = hasDiscount ? 60 : 0;
+  const pageHeight = 620 + offsetY;
   const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([400, 620]);
+  const page = pdfDoc.addPage([400, pageHeight]);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
@@ -44,7 +51,7 @@ export async function generatePaymentConfirmationPdf(
   const greenColor = rgb(0.15, 0.55, 0.25);
 
   // ---- Cabecera oscura ----
-  page.drawRectangle({ x: 0, y: 520, width: 400, height: 100, color: primaryColor });
+  page.drawRectangle({ x: 0, y: 520 + offsetY, width: 400, height: 100, color: primaryColor });
 
   // Logo
   let image;
@@ -58,32 +65,32 @@ export async function generatePaymentConfirmationPdf(
 
   if (image) {
     const dims = image.scaleToFit(55, 55);
-    page.drawImage(image, { x: 30, y: 540, width: dims.width, height: dims.height });
-    page.drawText("Dormitorios Plaza Basilica", { x: 100, y: 575, size: 15, font: boldFont, color: white });
-    page.drawText("CONFIRMACION DE PAGO", { x: 100, y: 555, size: 9, font: regularFont, color: rgb(0.8, 0.8, 0.8) });
+    page.drawImage(image, { x: 30, y: 540 + offsetY, width: dims.width, height: dims.height });
+    page.drawText("Dormitorios Plaza Basilica", { x: 100, y: 575 + offsetY, size: 15, font: boldFont, color: white });
+    page.drawText("CONFIRMACION DE PAGO", { x: 100, y: 555 + offsetY, size: 9, font: regularFont, color: rgb(0.8, 0.8, 0.8) });
   } else {
-    page.drawText("Dormitorios Plaza Basilica", { x: 40, y: 575, size: 15, font: boldFont, color: white });
-    page.drawText("CONFIRMACION DE PAGO", { x: 40, y: 555, size: 9, font: regularFont, color: rgb(0.8, 0.8, 0.8) });
+    page.drawText("Dormitorios Plaza Basilica", { x: 40, y: 575 + offsetY, size: 15, font: boldFont, color: white });
+    page.drawText("CONFIRMACION DE PAGO", { x: 40, y: 555 + offsetY, size: 9, font: regularFont, color: rgb(0.8, 0.8, 0.8) });
   }
 
   // ---- Folio Badge ----
   page.drawRectangle({
-    x: 40, y: 460, width: 320, height: 35,
+    x: 40, y: 460 + offsetY, width: 320, height: 35,
     color: lightGray, borderColor: rgb(0.8, 0.8, 0.8), borderWidth: 1,
   });
-  page.drawText("Folio de Reserva:", { x: 55, y: 472, size: 11, font: regularFont, color: grayText });
-  page.drawText(data.folioCode, { x: 160, y: 472, size: 14, font: boldFont, color: primaryColor });
+  page.drawText("Folio de Reserva:", { x: 55, y: 472 + offsetY, size: 11, font: regularFont, color: grayText });
+  page.drawText(data.folioCode, { x: 160, y: 472 + offsetY, size: 14, font: boldFont, color: primaryColor });
 
   // ---- Estado del pago ----
   const isLiquidated = data.paymentStatus === "liquidated";
   const statusLabel = isLiquidated ? "PAGADO" : "PAGO PARCIAL";
   const statusColor = isLiquidated ? greenColor : secondaryColor;
 
-  page.drawRectangle({ x: 40, y: 420, width: 320, height: 22, color: rgb(0.96, 0.98, 1) });
-  page.drawText(`Estado: ${statusLabel}`, { x: 55, y: 426, size: 12, font: boldFont, color: statusColor });
+  page.drawRectangle({ x: 40, y: 420 + offsetY, width: 320, height: 22, color: rgb(0.96, 0.98, 1) });
+  page.drawText(`Estado: ${statusLabel}`, { x: 55, y: 426 + offsetY, size: 12, font: boldFont, color: statusColor });
 
   // ---- Datos del huésped ----
-  const startY = 385;
+  const startY = 385 + offsetY;
 
   // Columna 1
   page.drawText("Titular:", { x: 40, y: startY, size: 10, font: regularFont, color: grayText });
@@ -120,16 +127,35 @@ export async function generatePaymentConfirmationPdf(
   page.drawText("Metodo:", { x: 40, y: payY - 42, size: 10, font: regularFont, color: grayText });
   page.drawText(METHOD_LABELS[data.method] || data.method, { x: 220, y: payY - 42, size: 12, font: boldFont, color: primaryColor });
 
-  page.drawText("Total de la reserva:", { x: 40, y: payY - 62, size: 10, font: regularFont, color: grayText });
-  page.drawText(`$${data.totalAmount.toFixed(2)} MXN`, { x: 220, y: payY - 62, size: 12, font: boldFont, color: primaryColor });
+  // Discount section (if applicable)
+  let discountLineOffset = 0;
+  if (data.discountPercent && data.discountPercent > 0) {
+    page.drawText("Subtotal:", { x: 40, y: payY - 62, size: 10, font: regularFont, color: grayText });
+    page.drawText(`$${(data.originalTotal ?? data.totalAmount).toFixed(2)} MXN`, { x: 220, y: payY - 62, size: 12, font: boldFont, color: primaryColor });
 
-  if (!isLiquidated && data.balanceDue > 0) {
-    page.drawText("Saldo pendiente:", { x: 40, y: payY - 82, size: 10, font: regularFont, color: grayText });
-    page.drawText(`$${data.balanceDue.toFixed(2)} MXN`, { x: 220, y: payY - 82, size: 12, font: boldFont, color: secondaryColor });
+    page.drawText(`Descuento (${data.discountPercent}%):`, { x: 40, y: payY - 82, size: 10, font: regularFont, color: grayText });
+    page.drawText(`-$${(data.discountAmount ?? 0).toFixed(2)} MXN`, { x: 220, y: payY - 82, size: 12, font: boldFont, color: greenColor });
+
+    page.drawText("Total con descuento:", { x: 40, y: payY - 102, size: 10, font: regularFont, color: grayText });
+    page.drawText(`$${data.totalAmount.toFixed(2)} MXN`, { x: 220, y: payY - 102, size: 12, font: boldFont, color: primaryColor });
+
+    if (!isLiquidated && data.balanceDue > 0) {
+      page.drawText("Saldo pendiente:", { x: 40, y: payY - 122, size: 10, font: regularFont, color: grayText });
+      page.drawText(`$${data.balanceDue.toFixed(2)} MXN`, { x: 220, y: payY - 122, size: 12, font: boldFont, color: secondaryColor });
+    }
+    discountLineOffset = 60;
+  } else {
+    page.drawText("Total de la reserva:", { x: 40, y: payY - 62, size: 10, font: regularFont, color: grayText });
+    page.drawText(`$${data.totalAmount.toFixed(2)} MXN`, { x: 220, y: payY - 62, size: 12, font: boldFont, color: primaryColor });
+
+    if (!isLiquidated && data.balanceDue > 0) {
+      page.drawText("Saldo pendiente:", { x: 40, y: payY - 82, size: 10, font: regularFont, color: grayText });
+      page.drawText(`$${data.balanceDue.toFixed(2)} MXN`, { x: 220, y: payY - 82, size: 12, font: boldFont, color: secondaryColor });
+    }
   }
 
   // ---- Caja de estado final ----
-  const boxY = payY - (isLiquidated ? 110 : 130);
+  const boxY = payY - (isLiquidated ? 110 : 130) - discountLineOffset;
   page.drawRectangle({ x: 40, y: boxY, width: 320, height: 35, color: rgb(0.96, 0.98, 1) });
   if (isLiquidated) {
     page.drawText("Reservacion confirmada - Pago completo", {
@@ -141,7 +167,7 @@ export async function generatePaymentConfirmationPdf(
     });
   }
 
-  // ---- QR Code ----
+  // ---- QR Code ---- (posiciones relativas a boxY para evitar sobreposición)
   try {
     const qrText = [
       `Folio: ${data.folioCode}`,
@@ -153,18 +179,21 @@ export async function generatePaymentConfirmationPdf(
       `Pagado: $${data.amount.toFixed(2)} MXN`,
     ].join("\n");
 
+    const qrSize = 80;
+    const qrY = boxY - 20 - qrSize;
     const qrBuffer = await QRCode.toBuffer(qrText, { errorCorrectionLevel: "M", margin: 1 });
     const qrImage = await pdfDoc.embedPng(qrBuffer);
-    page.drawImage(qrImage, { x: 270, y: 45, width: 85, height: 85 });
+    page.drawImage(qrImage, { x: 275, y: qrY, width: qrSize, height: qrSize });
 
-    page.drawText("Gracias por su pago!", { x: 40, y: 100, size: 13, font: boldFont, color: primaryColor });
-    page.drawText("Escanea el codigo QR para", { x: 40, y: 82, size: 10, font: regularFont, color: grayText });
-    page.drawText("verificar tu confirmacion.", { x: 40, y: 68, size: 10, font: regularFont, color: grayText });
+    const thanksY = qrY + qrSize - 10;
+    page.drawText("Gracias por su pago!", { x: 40, y: thanksY, size: 13, font: boldFont, color: primaryColor });
+    page.drawText("Escanea el codigo QR para", { x: 40, y: thanksY - 16, size: 10, font: regularFont, color: grayText });
+    page.drawText("verificar tu confirmacion.", { x: 40, y: thanksY - 30, size: 10, font: regularFont, color: grayText });
   } catch (qrError) {
     console.error("[payment-pdf] Error generando QR:", qrError);
   }
 
-  // ---- Pie de página ----
+  // ---- Pie de página ---- (fijo en la parte inferior)
   page.drawLine({ start: { x: 40, y: 30 }, end: { x: 360, y: 30 }, thickness: 1, color: rgb(0.9, 0.9, 0.9) });
   page.drawText("Dormitorios Plaza Basilica  •  Confirmacion de pago", {
     x: 80, y: 16, size: 8, font: regularFont, color: grayText,
