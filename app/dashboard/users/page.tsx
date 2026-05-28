@@ -4,20 +4,41 @@ import { getAllRoles, getAllModules, getRoleModules } from "@/lib/auth/permissio
 import { Card } from "@/components/ui/card";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
 import { UsersPanel } from "@/components/dashboard/users-panel";
+import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 
-export default async function UsersPage() {
+export default async function UsersPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const profile = await requireRole(["admin"]);
+  const params = await searchParams;
+  const { page, pageSize, q } = parsePagination(params);
+  const [from, to] = getRange(page, pageSize);
 
   const adminSupabase = createAdminClient();
 
-  // Obtener todos los perfiles con su rol
-  const { data: profiles } = await adminSupabase
+  // Página actual de perfiles con filtro de búsqueda
+  let profilesQuery = adminSupabase
+    .from("profiles")
+    .select("id, full_name, role, system_role_id, is_disabled, created_at", { count: "exact" });
+
+  if (q) {
+    profilesQuery = profilesQuery.ilike("full_name", `%${escapeIlike(q)}%`);
+  }
+
+  const { data: pagedProfiles, count } = await profilesQuery
+    .order("created_at", { ascending: true })
+    .range(from, to);
+
+  // Perfiles completos para el panel de gestión (no paginados, sin filtro)
+  const { data: allProfiles } = await adminSupabase
     .from("profiles")
     .select("id, full_name, role, system_role_id, is_disabled, created_at")
     .order("created_at", { ascending: true });
 
-  // Obtener emails de auth.users
-  const userIds = (profiles ?? []).map((p) => p.id);
+  // Emails solo para la página actual
+  const userIds = (pagedProfiles ?? []).map((p) => p.id);
   const emailMap = new Map<string, string>();
   for (const uid of userIds) {
     try {
@@ -40,7 +61,7 @@ export default async function UsersPage() {
   }
 
   // Construir filas de usuarios
-  const userRows = (profiles ?? []).map((p) => {
+  const userRows = (pagedProfiles ?? []).map((p) => {
     const email = emailMap.get(p.id) ?? "—";
     const systemRole = roles.find((r) => r.id === p.system_role_id);
     const roleLabel = systemRole?.label ?? p.role ?? "Sin rol";
@@ -73,12 +94,20 @@ export default async function UsersPage() {
         <ResponsiveTable
           headers={["Nombre", "Correo", "Rol", "Creado", "Estado"]}
           rows={userRows}
+          filterMode="global"
+          serverPagination={{
+            page,
+            pageSize,
+            totalCount: count ?? 0,
+            searchQuery: q,
+            searchPlaceholder: "Buscar por nombre…",
+          }}
         />
       </Card>
 
       {/* Panel de gestión */}
       <UsersPanel
-        profiles={profiles ?? []}
+        profiles={allProfiles ?? []}
         roles={nonAdminRoles}
         allModules={allModules}
         roleModulesMap={roleModulesMap}

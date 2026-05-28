@@ -24,7 +24,7 @@ export function ReservationGuestFields({
       ) : null}
       <input
         className="w-full rounded-xl border border-mkt-border bg-white px-3 py-2.5 text-sm text-mkt-ink"
-        placeholder="Nombre completo"
+        placeholder="Nombre completo *"
         value={guest.full_name}
         required
         autoComplete={isPrincipal ? "name" : "off"}
@@ -33,7 +33,7 @@ export function ReservationGuestFields({
       <input
         type="tel"
         className="w-full rounded-xl border border-mkt-border bg-white px-3 py-2.5 text-sm text-mkt-ink"
-        placeholder="Teléfono"
+        placeholder="Teléfono *"
         value={guest.phone}
         required
         autoComplete={isPrincipal ? "tel" : "off"}
@@ -42,17 +42,19 @@ export function ReservationGuestFields({
       <input
         type="email"
         className="w-full rounded-xl border border-mkt-border bg-white px-3 py-2.5 text-sm text-mkt-ink"
-        placeholder="Correo electrónico"
+        placeholder="Correo electrónico *"
         value={guest.email}
+        required
         autoComplete={isPrincipal ? "email" : "off"}
         onChange={(e) => onChange("email", e.target.value)}
       />
       <select
         className="w-full rounded-xl border border-mkt-border bg-white px-3 py-2.5 text-sm text-mkt-ink"
         value={guest.sex}
+        required
         onChange={(e) => onChange("sex", e.target.value)}
       >
-        <option value="unknown">Sexo</option>
+        <option value="unknown">Sexo *</option>
         <option value="f">Femenino</option>
         <option value="m">Masculino</option>
         <option value="x">Otro</option>

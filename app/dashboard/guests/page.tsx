@@ -6,7 +6,9 @@ import {
   GuestStatsCell,
   type GuestStaySummary,
 } from "@/components/dashboard/guest-history-detail";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { requireModulePermission } from "@/lib/auth/guards";
+import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 
 type ReservationInfo = {
   check_in_date?: string;
@@ -58,25 +60,37 @@ function getStays(guest: GuestRecord): GuestStaySummary[] {
   });
 }
 
-export default async function GuestsPage() {
-  const supabase = await createClient();
+export default async function GuestsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await requireModulePermission("guests");
+  const params = await searchParams;
+  const { page, pageSize, q } = parsePagination(params);
+  const [from, to] = getRange(page, pageSize);
 
-  const { data: guestsRaw } = await supabase
+  const supabase = createAdminClient();
+
+  let query = supabase
     .from("guests")
     .select(
-      "id,full_name,phone,email,created_at,reservation_guests(beds(bed_number),locker_number,reservations(check_in_date,check_out_date,nights,status,reservation_source,folios(folio_code,payment_status)))",
-    )
+      "id,full_name,phone,email,created_at,reservation_guests!inner(beds(bed_number),locker_number,reservations(check_in_date,check_out_date,nights,status,reservation_source,folios(folio_code,payment_status)))",
+      { count: "exact" },
+    );
+
+  if (q) {
+    const safe = escapeIlike(q);
+    query = query.or(`full_name.ilike.%${safe}%,phone.ilike.%${safe}%,email.ilike.%${safe}%`);
+  }
+
+  const { data: guestsRaw, count } = await query
     .order("full_name", { ascending: true })
-    .limit(500);
+    .range(from, to);
 
   const guestsWithStays = ((guestsRaw ?? []) as GuestRecord[])
     .map((guest) => ({ guest, stays: getStays(guest) }))
-    .filter(({ stays }) => stays.length > 0)
-    .sort((a, b) => {
-      const aLatest = a.stays.reduce((max, s) => (s.checkIn > max ? s.checkIn : max), "");
-      const bLatest = b.stays.reduce((max, s) => (s.checkIn > max ? s.checkIn : max), "");
-      return bLatest.localeCompare(aLatest);
-    });
+    .filter(({ stays }) => stays.length > 0);
 
   const rows = guestsWithStays.map(({ guest, stays }) => {
     const latest = stays.reduce((best, stay) => (stay.checkIn > best.checkIn ? stay : best), stays[0]);
@@ -129,7 +143,7 @@ export default async function GuestsPage() {
           necesites.
         </p>
         <p className="mt-2 text-sm text-text-muted">
-          <span className="font-medium text-text-main">{rows.length}</span> huéspedes con estadía registrada.
+          <span className="font-medium text-text-main">{count ?? 0}</span> huéspedes con estadía registrada.
         </p>
       </Card>
 
@@ -138,6 +152,13 @@ export default async function GuestsPage() {
         rows={rows}
         filterMode="global"
         dense
+        serverPagination={{
+          page,
+          pageSize,
+          totalCount: count ?? 0,
+          searchQuery: q,
+          searchPlaceholder: "Buscar por nombre, teléfono o email…",
+        }}
       />
     </div>
   );

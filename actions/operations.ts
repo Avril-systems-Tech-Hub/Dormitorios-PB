@@ -265,7 +265,13 @@ export async function createReservationAction(
     const email = guest.email.trim().toLowerCase();
     const sex = guest.sex || "unknown";
 
-    if (!fullName || !phone) continue;
+    if (!fullName || !phone || !email || sex === "unknown") {
+      return reservationFlowError(
+        formData,
+        returnTo,
+        `Datos incompletos para ${fullName || "huésped"}: nombre, teléfono, correo y sexo son obligatorios.`,
+      );
+    }
 
     const { data: existingGuest } = await supabase
       .from("guests")
@@ -312,9 +318,12 @@ export async function createReservationAction(
   const folioCode = generateFolioCode();
   const nightlyRate = BASE_NIGHTLY_RATE;
   const discountRuleId = String(formData.get("discount_rule_id") ?? "") || null;
+  const promoCode = String(formData.get("promo_code") ?? "") || null;
   const discountPercent = Number(formData.get("discount_percent") ?? 0) || 0;
   const discountAmountPerNight = Math.round(nightlyRate * discountPercent) / 100;
   const finalRate = nightlyRate - discountAmountPerNight;
+
+  const lockerPriceWithDiscount = Math.round(LOCKER_DAILY_PRICE * (100 - discountPercent)) / 100;
 
   const lockerByGuest = guests.slice(0, guestIds.length).map((guest) => {
     const wantsLocker = guest.add_locker === "yes";
@@ -325,8 +334,8 @@ export async function createReservationAction(
     const locker_days = Math.min(Math.max(1, requestedDays), nights);
     return {
       locker_days,
-      locker_price: LOCKER_DAILY_PRICE,
-      locker_amount: locker_days * LOCKER_DAILY_PRICE,
+      locker_price: lockerPriceWithDiscount,
+      locker_amount: locker_days * lockerPriceWithDiscount,
     };
   });
 
@@ -400,6 +409,21 @@ export async function createReservationAction(
     return reservationFlowError(formData, returnTo, "No se pudo guardar la asignación de camas.");
   }
 
+  // Redeem promo code if one was used
+  if (promoCode) {
+    try {
+      const { redeemPromoCode } = await import("@/lib/promo-codes");
+      const redeemResult = await redeemPromoCode(promoCode);
+      if (!redeemResult.valid) {
+        console.warn("[createReservationAction] Promo code redemption returned invalid:", redeemResult.error);
+      } else {
+        console.log("[createReservationAction] Promo code redeemed successfully:", promoCode, "current_uses:", redeemResult.promo?.current_uses);
+      }
+    } catch (redeemErr) {
+      console.error("[createReservationAction] Error redeeming promo code:", redeemErr);
+    }
+  }
+
   await supabase.from("audit_logs").insert({
     actor_user_id: actorId,
     action: "reservation_created",
@@ -416,6 +440,7 @@ export async function createReservationAction(
         reservation_source: reservationSource,
         discount_rule_id: discountRuleId,
         discount_percent: discountPercent,
+        promo_code: promoCode || null,
       },
   });
 
@@ -426,6 +451,8 @@ export async function createReservationAction(
   revalidatePath("/dashboard/beds");
 
   const bedSubtotal = finalRate * nights * guestIds.length;
+  const originalBedTotal = nightlyRate * nights * guestIds.length;
+  const originalLockerTotal = lockerByGuest.reduce((s, r) => s + r.locker_days * LOCKER_DAILY_PRICE, 0);
 
   if (reservationSource === "guest_app") {
     const { data: bedsData } = await supabase.from("beds").select("id, bed_number").in("id", bedIds);
@@ -436,19 +463,19 @@ export async function createReservationAction(
       check_in: checkInDate,
       check_out: checkOutDate,
       nights,
-      bed_subtotal: bedSubtotal,
-      locker_total: lockerTotal,
+      bed_subtotal: originalBedTotal,
+      locker_total: originalLockerTotal,
       total_amount: totalAmount,
       discount_percent: discountPercent > 0 ? discountPercent : undefined,
-      discount_amount: discountPercent > 0 ? (nightlyRate * guestIds.length * nights) - bedSubtotal : undefined,
-      original_total: discountPercent > 0 ? (nightlyRate * guestIds.length * nights) + lockerTotal : undefined,
+      discount_amount: discountPercent > 0 ? (originalBedTotal + originalLockerTotal) - totalAmount : undefined,
+      original_total: discountPercent > 0 ? originalBedTotal + originalLockerTotal : undefined,
       notes: notes || undefined,
       guests: guests.slice(0, guestIds.length).map((guest, index) => ({
         full_name: guest.full_name.trim(),
         phone: guest.phone.trim(),
         email: guest.email.trim(),
         locker_days: lockerByGuest[index]?.locker_days ?? 0,
-        locker_amount: lockerByGuest[index]?.locker_amount ?? 0,
+        locker_amount: lockerByGuest[index] ? lockerByGuest[index].locker_days * LOCKER_DAILY_PRICE : 0,
         bed_number: bedNumberById.get(bedIds[index]),
       })),
     };
@@ -488,13 +515,15 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
   const expectedTotal = await getFolioExpectedTotal(supabase, folioId);
   const nextPaid = Number(folio.paid_amount) + amount;
   const paymentDifference = Number((nextPaid - expectedTotal).toFixed(2));
-  if (paymentDifference !== 0) {
+  // Solo rechazar si el usuario intenta pagar MÁS del total esperado (sobrepago)
+  // Pagos parciales (diferencia negativa) son permitidos
+  if (paymentDifference > 0) {
     const isAdmin = actor?.role === "admin";
     if (!isAdmin || !isOverride || !overrideReason) {
       return redirectWithResult(
         returnTo,
         "error",
-        `Monto inválido. Diferencia contra esperado: ${paymentDifference.toFixed(2)}.`,
+        `El monto excede el total de la reservación por $${paymentDifference.toFixed(2)}. Monto máximo: $${(expectedTotal - Number(folio.paid_amount)).toFixed(2)}.`,
       );
     }
   }
@@ -545,23 +574,30 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
     },
   });
 
-  // --- Generar PDF y enviar WhatsApp automático al huésped ---
+  // --- Generar PDF y enviar WhatsApp automático al huésped (solo al liquidar) ---
+  if (newStatus === "liquidated") {
   try {
     const { data: reservationForFolio } = await supabase
       .from("reservations")
-      .select("id, check_in_date, check_out_date, nights, discount_percent, reservation_guests(guests(id, full_name, phone))")
+      .select("id, check_in_date, check_out_date, nights, discount_percent, reservation_guests(locker_days, guests(id, full_name, phone))")
       .eq("folio_id", folioId)
       .limit(1)
       .maybeSingle();
 
     if (reservationForFolio) {
-      const guestRows = Array.isArray(reservationForFolio.reservation_guests)
+      const guestRows = (Array.isArray(reservationForFolio.reservation_guests)
         ? reservationForFolio.reservation_guests
-        : [];
-      const mainGuestRow = guestRows[0] as {
-        guests?: { id?: string; full_name?: string; phone?: string };
-      } | undefined;
+        : []) as Array<{
+          locker_days?: number | null;
+          guests?: { id?: string; full_name?: string; phone?: string };
+        }>;
+      const mainGuestRow = guestRows[0];
       const mainGuest = mainGuestRow?.guests;
+      const discPercent = Number(reservationForFolio.discount_percent ?? 0) || 0;
+      const totalLockerDays = guestRows.reduce((sum, row) => sum + Number(row.locker_days ?? 0), 0);
+      const bedDiscount = BASE_NIGHTLY_RATE * discPercent / 100 * guestRows.length * reservationForFolio.nights;
+      const lockerDiscount = LOCKER_DAILY_PRICE * discPercent / 100 * totalLockerDays;
+      const discAmount = discPercent > 0 ? Math.round((bedDiscount + lockerDiscount) * 100) / 100 : 0;
 
       if (mainGuest?.phone) {
         const guestPhone = normalizePhone(mainGuest.phone);
@@ -579,13 +615,9 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
             nights: reservationForFolio.nights,
             guestCount: guestRows.length,
             totalAmount: expectedTotal,
-            discountPercent: Number(reservationForFolio.discount_percent ?? 0) || undefined,
-            discountAmount: Number(reservationForFolio.discount_percent ?? 0) > 0
-              ? Math.round(BASE_NIGHTLY_RATE * Number(reservationForFolio.discount_percent) / 100 * guestRows.length * reservationForFolio.nights * 100) / 100
-              : undefined,
-            originalTotal: Number(reservationForFolio.discount_percent ?? 0) > 0
-              ? expectedTotal + Math.round(BASE_NIGHTLY_RATE * Number(reservationForFolio.discount_percent) / 100 * guestRows.length * reservationForFolio.nights * 100) / 100
-              : undefined,
+            discountPercent: discPercent || undefined,
+            discountAmount: discAmount || undefined,
+            originalTotal: discPercent > 0 ? expectedTotal + discAmount : undefined,
           });
 
           // 2. Subir PDF a Supabase Storage
@@ -650,6 +682,7 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
     // No bloquear el flujo principal si falla WhatsApp
     console.error("[registerPaymentAction] Error enviando WhatsApp:", waError);
   }
+  } // fin if liquidated
 
   revalidatePath("/dashboard/payments");
   revalidatePath("/dashboard/folios");
@@ -1192,7 +1225,7 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
 
   const { data: reservationForFolio } = await supabase
     .from("reservations")
-    .select("id, check_in_date, check_out_date, nights, discount_percent, reservation_guests(guests(id, full_name, phone))")
+    .select("id, check_in_date, check_out_date, nights, discount_percent, reservation_guests(locker_days, guests(id, full_name, phone))")
     .eq("folio_id", folioId)
     .limit(1)
     .maybeSingle();
@@ -1201,12 +1234,13 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
     return redirectWithResult(returnTo, "error", "No se encontró reservación para ese folio.");
   }
 
-  const guestRows = Array.isArray(reservationForFolio.reservation_guests)
+  const guestRows = (Array.isArray(reservationForFolio.reservation_guests)
     ? reservationForFolio.reservation_guests
-    : [];
-  const mainGuestRow = guestRows[0] as {
-    guests?: { id?: string; full_name?: string; phone?: string };
-  } | undefined;
+    : []) as Array<{
+      locker_days?: number | null;
+      guests?: { id?: string; full_name?: string; phone?: string };
+    }>;
+  const mainGuestRow = guestRows[0];
   const mainGuest = mainGuestRow?.guests;
 
   if (!mainGuest?.phone) {
@@ -1220,9 +1254,10 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
 
   const amount = Number(folio.paid_amount ?? 0);
   const discPercent = Number(reservationForFolio.discount_percent ?? 0) || 0;
-  const discAmount = discPercent > 0
-    ? Math.round(BASE_NIGHTLY_RATE * discPercent / 100 * guestRows.length * reservationForFolio.nights * 100) / 100
-    : 0;
+  const totalLockerDays = guestRows.reduce((sum, row) => sum + Number(row.locker_days ?? 0), 0);
+  const bedDiscount = BASE_NIGHTLY_RATE * discPercent / 100 * guestRows.length * reservationForFolio.nights;
+  const lockerDiscount = LOCKER_DAILY_PRICE * discPercent / 100 * totalLockerDays;
+  const discAmount = discPercent > 0 ? Math.round((bedDiscount + lockerDiscount) * 100) / 100 : 0;
   const originalTotal = discPercent > 0 ? Number(folio.total_amount ?? 0) + discAmount : 0;
 
   // Generate PDF
@@ -1719,4 +1754,14 @@ export async function getApplicableDiscountsAction(checkInDate: string, guestPho
   const { getApplicableDiscounts, getBestDiscount } = await import("@/lib/discount-rules");
   const discounts = await getApplicableDiscounts(checkInDate, guestPhone);
   return getBestDiscount(discounts);
+}
+
+/**
+ * Valida un código de descuento promo sin canjearlo.
+ * Retorna los datos del código si es válido.
+ */
+export async function validatePromoCodeAction(code: string) {
+  "use server";
+  const { validatePromoCode } = await import("@/lib/promo-codes");
+  return validatePromoCode(code);
 }

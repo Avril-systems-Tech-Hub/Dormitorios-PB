@@ -1,21 +1,38 @@
 import { requireRole } from "@/lib/auth/guards";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Card } from "@/components/ui/card";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
+import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 
-export default async function AuditPage() {
+export default async function AuditPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   await requireRole(["admin"]);
-  const supabase = await createClient();
+  const params = await searchParams;
+  const { page, pageSize, q } = parsePagination(params);
+  const [from, to] = getRange(page, pageSize);
+
   const adminSupabase = createAdminClient();
 
-  const { data: logs } = await supabase
+  let query = adminSupabase
     .from("audit_logs")
-    .select("id,action,entity_type,created_at,actor_user_id,profiles:actor_user_id(full_name),metadata")
-    .order("created_at", { ascending: false })
-    .limit(80);
+    .select(
+      "id,action,entity_type,created_at,actor_user_id,profiles:actor_user_id(full_name),metadata",
+      { count: "exact" },
+    );
 
-  // Obtener emails de los actores únicos
+  if (q) {
+    const safe = escapeIlike(q);
+    query = query.or(`action.ilike.%${safe}%,entity_type.ilike.%${safe}%`);
+  }
+
+  const { data: logs, count } = await query
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  // Obtener emails de los actores únicos (solo en la página actual)
   const actorIds = [...new Set((logs ?? []).map((l) => l.actor_user_id).filter(Boolean))] as string[];
   const emailMap = new Map<string, string>();
 
@@ -53,6 +70,14 @@ export default async function AuditPage() {
       <ResponsiveTable
         headers={["Fecha", "Actor", "Correo", "Acción", "Entidad", "Metadata"]}
         rows={rows}
+        filterMode="global"
+        serverPagination={{
+          page,
+          pageSize,
+          totalCount: count ?? 0,
+          searchQuery: q,
+          searchPlaceholder: "Buscar por acción o entidad…",
+        }}
       />
     </div>
   );

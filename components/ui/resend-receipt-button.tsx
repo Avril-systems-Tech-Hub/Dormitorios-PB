@@ -3,24 +3,35 @@
 import { useTransition } from "react";
 import { resendPaymentReceiptAction } from "@/actions/operations";
 
-export function ResendReceiptButton({ folioId }: { folioId: string }) {
+type ResendReceiptButtonProps = {
+  folioId: string;
+  returnTo?: string;
+  compact?: boolean;
+};
+
+export function ResendReceiptButton({ folioId, returnTo = "/dashboard", compact = false }: ResendReceiptButtonProps) {
   const [pending, startTransition] = useTransition();
 
   const handleResend = () => {
     startTransition(() => {
       const fd = new FormData();
       fd.set("folio_id", folioId);
-      fd.set("return_to", "/dashboard");
+      fd.set("return_to", returnTo);
       resendPaymentReceiptAction(fd);
     });
   };
+
+  const className = compact
+    ? "inline-flex w-full items-center justify-center gap-1 rounded bg-green-600 px-2 py-1 text-[11px] font-medium text-white transition hover:bg-green-700 disabled:opacity-40"
+    : "inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-green-700 disabled:opacity-40";
 
   return (
     <button
       type="button"
       disabled={pending}
       onClick={handleResend}
-      className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-green-700 disabled:opacity-40"
+      className={className}
+      title="Reenviar comprobante por WhatsApp"
     >
       {pending ? (
         <>
@@ -35,7 +46,7 @@ export function ResendReceiptButton({ folioId }: { folioId: string }) {
           <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
-          Reenviar comprobante
+          {compact ? "Reenviar" : "Reenviar comprobante"}
         </>
       )}
     </button>

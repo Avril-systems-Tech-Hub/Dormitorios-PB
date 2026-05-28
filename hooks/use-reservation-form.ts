@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { searchGuestByPhoneAction, getApplicableDiscountsAction } from "@/actions/operations";
+import { searchGuestByPhoneAction, getApplicableDiscountsAction, validatePromoCodeAction } from "@/actions/operations";
 import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
 import type { ApplicableDiscount } from "@/lib/discount-rules";
+import type { PromoCode } from "@/lib/promo-codes";
 
 export const LOCKER_DAILY_PRICE = 30;
 
@@ -34,6 +35,8 @@ export function nightsBetween(checkIn: string, checkOut: string) {
 export function validateGuestRow(guest: GuestFormRow): string | null {
   if (!guest.full_name.trim()) return "Ingresa el nombre completo.";
   if (!guest.phone.trim()) return "Ingresa el teléfono.";
+  if (!guest.email.trim()) return "Ingresa el correo electrónico.";
+  if (!guest.sex || guest.sex === "unknown") return "Selecciona el sexo.";
   return null;
 }
 
@@ -65,6 +68,30 @@ export function useReservationForm({ action, onConfirmed, recurringGuest }: UseR
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
   const [applicableDiscount, setApplicableDiscount] = useState<ApplicableDiscount | null>(null);
+  const [promoCodeInput, setPromoCodeInput] = useState("");
+  const [promoCodeValidating, setPromoCodeValidating] = useState(false);
+  const [promoCodeResult, setPromoCodeResult] = useState<{ valid: boolean; promo?: PromoCode; error?: string } | null>(null);
+
+  const validatePromo = useCallback(async (code: string) => {
+    if (!code || code.trim().length < 3) {
+      setPromoCodeResult(null);
+      return;
+    }
+    setPromoCodeValidating(true);
+    try {
+      const result = await validatePromoCodeAction(code.trim());
+      setPromoCodeResult(result);
+    } catch {
+      setPromoCodeResult({ valid: false, error: "Error al validar el código." });
+    } finally {
+      setPromoCodeValidating(false);
+    }
+  }, []);
+
+  const clearPromoCode = useCallback(() => {
+    setPromoCodeInput("");
+    setPromoCodeResult(null);
+  }, []);
 
   const resetForm = useCallback(() => {
     setGuestCount(1);
@@ -77,6 +104,8 @@ export function useReservationForm({ action, onConfirmed, recurringGuest }: UseR
     setRecurringGuestMatched(false);
     setSubmitResult(null);
     setApplicableDiscount(null);
+    setPromoCodeInput("");
+    setPromoCodeResult(null);
   }, []);
 
   useEffect(() => {
@@ -136,8 +165,8 @@ export function useReservationForm({ action, onConfirmed, recurringGuest }: UseR
     setGuests((prev) =>
       prev.map((guest) => {
         if (guest.add_locker !== "yes") return guest;
-        const locker_days = Math.min(Math.max(1, guest.locker_days), stayNights);
-        return { ...guest, locker_days };
+        // Al ajustar fechas, actualizar locker_days al nuevo total de noches
+        return { ...guest, locker_days: stayNights };
       }),
     );
   }, [stayNights]);
@@ -160,6 +189,7 @@ export function useReservationForm({ action, onConfirmed, recurringGuest }: UseR
 
   const updateGuest = useCallback(
     (index: number, field: keyof GuestFormRow, value: string | number) => {
+      setSubmitResult(null);
       setGuests((prev) => {
         const newGuests = [...prev];
         const current = { ...newGuests[index] };
@@ -232,7 +262,7 @@ export function useReservationForm({ action, onConfirmed, recurringGuest }: UseR
 
     const guestError = guests.find((g, i) => validateGuestRow(g) !== null);
     if (guestError) {
-      const msg = "Todos los huéspedes deben tener nombre y teléfono.";
+      const msg = "Todos los huéspedes deben tener nombre, teléfono, correo y sexo.";
       setSubmitResult({ success: false, message: msg });
       return { ok: false as const, message: msg };
     }
@@ -246,9 +276,20 @@ export function useReservationForm({ action, onConfirmed, recurringGuest }: UseR
       formData.set("notes", reservationData.notes);
       formData.set("reservation_source", "guest_app");
       formData.set("return_to", "/");
-      if (applicableDiscount) {
-        formData.set("discount_rule_id", applicableDiscount.rule.id);
-        formData.set("discount_percent", String(applicableDiscount.rule.discount_percent));
+      // Determine best discount: promo code vs applicable discount rule (pick highest)
+      const promoDiscount = promoCodeResult?.valid ? promoCodeResult.promo : null;
+      const ruleDiscount = applicableDiscount;
+      const bestPercent = Math.max(
+        promoDiscount?.discount_percent ?? 0,
+        ruleDiscount?.rule.discount_percent ?? 0,
+      );
+
+      if (promoDiscount && promoDiscount.discount_percent >= (ruleDiscount?.rule.discount_percent ?? 0)) {
+        formData.set("promo_code", promoDiscount.code);
+        formData.set("discount_percent", String(promoDiscount.discount_percent));
+      } else if (ruleDiscount) {
+        formData.set("discount_rule_id", ruleDiscount.rule.id);
+        formData.set("discount_percent", String(ruleDiscount.rule.discount_percent));
       }
 
       const result = await action(formData);
@@ -318,5 +359,11 @@ export function useReservationForm({ action, onConfirmed, recurringGuest }: UseR
     estimatedBedTotal,
     estimatedLockerTotal,
     applicableDiscount,
+    promoCodeInput,
+    setPromoCodeInput,
+    promoCodeValidating,
+    promoCodeResult,
+    validatePromo,
+    clearPromoCode,
   };
 }

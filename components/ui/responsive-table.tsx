@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useMemo, useCallback, type ReactNode } from "react";
+import { useState, useMemo, useCallback, useEffect, type ReactNode } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import type { FilterableCell } from "@/components/ui/filterable-cell";
+import { PAGE_SIZE_OPTIONS } from "@/lib/pagination";
 
 function isFilterableCellObject(cell: FilterableCell): cell is { __filterText: string; node: ReactNode } {
   return (
@@ -40,11 +42,25 @@ function extractText(node: ReactNode): string {
   return "";
 }
 
+export type ServerPagination = {
+  /** 0-indexed current page. */
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  /** Current `?q=` value (used to hydrate the search input). */
+  searchQuery?: string;
+  /** Placeholder for the global search input when supported. */
+  searchPlaceholder?: string;
+  /** Prefix for URL params (`{prefix}_page`, `{prefix}_pageSize`, `{prefix}_q`). Useful when there are multiple tables on the same page. */
+  paramPrefix?: string;
+};
+
 export function ResponsiveTable({
   headers,
   rows,
   filterMode = "columns",
   dense = false,
+  serverPagination,
 }: {
   headers: string[];
   rows: FilterableCell[][];
@@ -52,11 +68,25 @@ export function ResponsiveTable({
   filterMode?: "columns" | "global";
   /** Tighter rows and top-aligned cells for detail-heavy tables. */
   dense?: boolean;
+  /** When provided, pagination is driven by URL searchParams (?page, ?pageSize, ?q). */
+  serverPagination?: ServerPagination;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const isServer = !!serverPagination;
+
   const [filters, setFilters] = useState<Record<number, string>>({});
   const [globalQuery, setGlobalQuery] = useState("");
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(10);
+  const [searchInput, setSearchInput] = useState(serverPagination?.searchQuery ?? "");
+  const [clientPage, setClientPage] = useState(0);
+  const [clientPageSize, setClientPageSize] = useState(10);
+
+  // Sincroniza el input de búsqueda cuando el URL cambia desde afuera.
+  useEffect(() => {
+    setSearchInput(serverPagination?.searchQuery ?? "");
+  }, [serverPagination?.searchQuery]);
 
   const textRows = useMemo(
     () => rows.map((row) => row.map(getCellText)),
@@ -64,6 +94,7 @@ export function ResponsiveTable({
   );
 
   const filteredIndices = useMemo(() => {
+    if (isServer) return rows.map((_, i) => i);
     if (filterMode === "global") {
       const q = globalQuery.trim().toLowerCase();
       if (!q) return rows.map((_, i) => i);
@@ -86,31 +117,84 @@ export function ResponsiveTable({
       if (matches) acc.push(idx);
       return acc;
     }, []);
-  }, [rows, textRows, filters, filterMode, globalQuery]);
+  }, [isServer, rows, textRows, filters, filterMode, globalQuery]);
 
-  const totalFiltered = filteredIndices.length;
+  const totalFiltered = isServer
+    ? serverPagination!.totalCount
+    : filteredIndices.length;
+  const pageSize = isServer ? serverPagination!.pageSize : clientPageSize;
   const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
-  const safePage = Math.min(page, totalPages - 1);
+  const currentPage = isServer
+    ? Math.min(serverPagination!.page, totalPages - 1)
+    : Math.min(clientPage, totalPages - 1);
 
-  const paginatedIndices = useMemo(
-    () => filteredIndices.slice(safePage * pageSize, (safePage + 1) * pageSize),
-    [filteredIndices, safePage, pageSize],
-  );
+  const paginatedIndices = useMemo(() => {
+    if (isServer) return filteredIndices;
+    return filteredIndices.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+  }, [isServer, filteredIndices, currentPage, pageSize]);
 
   const setFilter = useCallback((colIdx: number, value: string) => {
     setFilters((prev) => ({ ...prev, [colIdx]: value }));
-    setPage(0);
+    setClientPage(0);
   }, []);
 
-  const handlePageSize = useCallback((size: number) => {
-    setPageSize(size);
-    setPage(0);
-  }, []);
+  // Construye una nueva URL preservando los searchParams existentes.
+  const buildUrl = useCallback(
+    (updates: Record<string, string | null>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === null || value === "") params.delete(key);
+        else params.set(key, value);
+      }
+      const qs = params.toString();
+      return qs ? `${pathname}?${qs}` : pathname;
+    },
+    [pathname, searchParams],
+  );
+
+  const prefix = serverPagination?.paramPrefix ? `${serverPagination.paramPrefix}_` : "";
+  const pageKey = `${prefix}page`;
+  const pageSizeKey = `${prefix}pageSize`;
+  const queryKey = `${prefix}q`;
+
+  const goToPage = useCallback(
+    (page: number) => {
+      if (isServer) {
+        router.push(buildUrl({ [pageKey]: page > 0 ? String(page) : null }));
+      } else {
+        setClientPage(page);
+      }
+    },
+    [isServer, router, buildUrl, pageKey],
+  );
+
+  const changePageSize = useCallback(
+    (size: number) => {
+      if (isServer) {
+        router.push(buildUrl({ [pageSizeKey]: size === 10 ? null : String(size), [pageKey]: null }));
+      } else {
+        setClientPageSize(size);
+        setClientPage(0);
+      }
+    },
+    [isServer, router, buildUrl, pageKey, pageSizeKey],
+  );
+
+  const submitSearch = useCallback(
+    (value: string) => {
+      const trimmed = value.trim();
+      router.push(buildUrl({ [queryKey]: trimmed || null, [pageKey]: null }));
+    },
+    [router, buildUrl, queryKey, pageKey],
+  );
 
   const thClass = dense ? "px-3 py-2 text-xs font-semibold uppercase tracking-wide" : "px-4 py-3 font-medium";
   const tdClass = dense
     ? "px-3 py-2 align-top text-sm text-text-main"
     : "px-4 py-3 align-top text-text-main";
+
+  const visibleStart = totalFiltered === 0 ? 0 : currentPage * pageSize + 1;
+  const visibleEnd = Math.min(totalFiltered, (currentPage + 1) * pageSize);
 
   return (
     <div className="overflow-hidden rounded-xl border border-border-soft bg-white shadow-sm">
@@ -120,32 +204,82 @@ export function ResponsiveTable({
             <span>Mostrar</span>
             <select
               value={pageSize}
-              onChange={(e) => handlePageSize(Number(e.target.value))}
+              onChange={(e) => changePageSize(Number(e.target.value))}
               className="rounded-md border border-border-soft bg-white px-2 py-1 text-sm text-text-main"
             >
-              <option value={10}>10</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
             </select>
             <span>registros</span>
           </div>
-          {filterMode === "global" ? (
+          {filterMode === "global" && !isServer ? (
             <input
               type="search"
               placeholder="Buscar por nombre, teléfono, email, folio…"
               value={globalQuery}
               onChange={(e) => {
                 setGlobalQuery(e.target.value);
-                setPage(0);
+                setClientPage(0);
               }}
               className="h-8 min-w-[12rem] flex-1 rounded-lg border border-border-soft bg-white px-3 text-sm text-text-main outline-none focus:border-brand-primary/50 sm:min-w-[16rem] sm:max-w-md"
             />
           ) : null}
+          {filterMode === "global" && isServer ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                submitSearch(searchInput);
+              }}
+              className="flex flex-1 items-center gap-2"
+            >
+              <input
+                type="search"
+                placeholder={serverPagination?.searchPlaceholder ?? "Buscar…"}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="h-8 min-w-[12rem] flex-1 rounded-lg border border-border-soft bg-white px-3 text-sm text-text-main outline-none focus:border-brand-primary/50 sm:min-w-[16rem] sm:max-w-md"
+              />
+              <button
+                type="submit"
+                className="rounded-md bg-mkt-slate px-3 py-1 text-xs font-medium text-white hover:opacity-90"
+              >
+                Buscar
+              </button>
+              {serverPagination?.searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchInput("");
+                    submitSearch("");
+                  }}
+                  className="rounded-md border border-border-soft bg-white px-3 py-1 text-xs font-medium text-text-main hover:bg-gray-50"
+                >
+                  Limpiar
+                </button>
+              ) : null}
+            </form>
+          ) : null}
         </div>
         <span className="text-xs text-text-muted">
-          {totalFiltered} resultado{totalFiltered !== 1 ? "s" : ""}
-          {totalFiltered !== rows.length && ` (de ${rows.length} total)`}
+          {isServer ? (
+            totalFiltered === 0 ? (
+              "0 resultados"
+            ) : (
+              <>
+                Mostrando <span className="font-medium text-text-main">{visibleStart}</span>–
+                <span className="font-medium text-text-main">{visibleEnd}</span> de{" "}
+                <span className="font-medium text-text-main">{totalFiltered}</span>
+              </>
+            )
+          ) : (
+            <>
+              {totalFiltered} resultado{totalFiltered !== 1 ? "s" : ""}
+              {totalFiltered !== rows.length && ` (de ${rows.length} total)`}
+            </>
+          )}
         </span>
       </div>
 
@@ -157,7 +291,7 @@ export function ResponsiveTable({
                 {headers.map((header, i) => (
                   <th key={header} className={thClass}>
                     <div>{header}</div>
-                    {filterMode === "columns" ? (
+                    {filterMode === "columns" && !isServer ? (
                       <input
                         type="text"
                         placeholder="Filtrar…"
@@ -214,8 +348,8 @@ export function ResponsiveTable({
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border-soft bg-gray-50/50 px-4 py-2">
           <button
             type="button"
-            disabled={safePage === 0}
-            onClick={() => setPage(Math.max(0, safePage - 1))}
+            disabled={currentPage === 0}
+            onClick={() => goToPage(Math.max(0, currentPage - 1))}
             className="rounded-md border border-border-soft bg-white px-3 py-1 text-xs font-medium text-text-main transition hover:bg-gray-50 disabled:opacity-40"
           >
             ← Anterior
@@ -223,14 +357,14 @@ export function ResponsiveTable({
           <div className="flex items-center gap-1">
             {Array.from({ length: totalPages }, (_, i) => {
               if (totalPages > 7) {
-                if (i === 0 || i === totalPages - 1 || (i >= safePage - 1 && i <= safePage + 1)) {
+                if (i === 0 || i === totalPages - 1 || (i >= currentPage - 1 && i <= currentPage + 1)) {
                   return (
                     <button
                       key={i}
                       type="button"
-                      onClick={() => setPage(i)}
+                      onClick={() => goToPage(i)}
                       className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                        i === safePage
+                        i === currentPage
                           ? "bg-mkt-slate text-white"
                           : "border border-border-soft bg-white text-text-main hover:bg-gray-50"
                       }`}
@@ -239,7 +373,7 @@ export function ResponsiveTable({
                     </button>
                   );
                 }
-                if (i === safePage - 2 || i === safePage + 2) {
+                if (i === currentPage - 2 || i === currentPage + 2) {
                   return (
                     <span key={i} className="px-1 text-xs text-text-muted">
                       …
@@ -252,9 +386,9 @@ export function ResponsiveTable({
                 <button
                   key={i}
                   type="button"
-                  onClick={() => setPage(i)}
+                  onClick={() => goToPage(i)}
                   className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                    i === safePage
+                    i === currentPage
                       ? "bg-mkt-slate text-white"
                       : "border border-border-soft bg-white text-text-main hover:bg-gray-50"
                   }`}
@@ -266,8 +400,8 @@ export function ResponsiveTable({
           </div>
           <button
             type="button"
-            disabled={safePage >= totalPages - 1}
-            onClick={() => setPage(Math.min(totalPages - 1, safePage + 1))}
+            disabled={currentPage >= totalPages - 1}
+            onClick={() => goToPage(Math.min(totalPages - 1, currentPage + 1))}
             className="rounded-md border border-border-soft bg-white px-3 py-1 text-xs font-medium text-text-main transition hover:bg-gray-50 disabled:opacity-40"
           >
             Siguiente →

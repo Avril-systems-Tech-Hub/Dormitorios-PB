@@ -9,6 +9,7 @@ import { getDayFinanceSummary } from "@/lib/day-finance";
 import { getMexicoCityDateString } from "@/lib/dates";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 import type { ReactNode } from "react";
 
 const EXPENSE_RECEIPTS_BUCKET = "expense-receipts";
@@ -19,21 +20,37 @@ const METHOD_LABELS: Record<string, string> = {
   card: "Tarjeta",
 };
 
-export default async function ExpensesPage() {
+export default async function ExpensesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   await requireRole(["admin"]);
+  const params = await searchParams;
+  const { page, pageSize, q } = parsePagination(params);
+  const [from, to] = getRange(page, pageSize);
+
   const supabase = await createClient();
   const adminSupabase = createAdminClient();
   const today = getMexicoCityDateString();
   const summary = await getDayFinanceSummary(supabase, today);
 
-  const { data: expenses } = await supabase
+  let query = adminSupabase
     .from("cash_movements")
     .select(
       "id,movement_date,expense_concept,concept_detail,amount,method,notes,receipt_image_path,recorded_at,profiles:responsible_profile_id(full_name)",
+      { count: "exact" },
     )
-    .eq("direction", "expense")
+    .eq("direction", "expense");
+
+  if (q) {
+    const safe = escapeIlike(q);
+    query = query.or(`notes.ilike.%${safe}%,concept_detail.ilike.%${safe}%`);
+  }
+
+  const { data: expenses, count } = await query
     .order("recorded_at", { ascending: false })
-    .limit(50);
+    .range(from, to);
 
   const rows = await Promise.all(
     (expenses ?? []).map(async (expense) => {
@@ -112,6 +129,14 @@ export default async function ExpensesPage() {
           <ResponsiveTable
             headers={["Fecha", "Concepto", "Monto", "Método", "Responsable", "Notas", "Foto", "Registrado"]}
             rows={rows}
+            filterMode="global"
+            serverPagination={{
+              page,
+              pageSize,
+              totalCount: count ?? 0,
+              searchQuery: q,
+              searchPlaceholder: "Buscar por concepto o notas…",
+            }}
           />
         </div>
       </Card>

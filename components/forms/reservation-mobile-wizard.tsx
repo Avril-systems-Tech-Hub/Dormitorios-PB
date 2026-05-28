@@ -513,6 +513,51 @@ function WizardStepContent({
       return (
         <div className={panelClass}>
           <h3 className="text-base font-semibold text-white">Notas (opcional)</h3>
+
+          {/* Código de descuento */}
+          <div className="mt-4 rounded-xl border border-mkt-border bg-white p-4">
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-mkt-terracotta">
+              ¿Tienes un código de descuento?
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                className="flex-1 rounded-lg border border-mkt-border bg-white px-3 py-2 text-sm uppercase tracking-wider text-mkt-ink placeholder:normal-case placeholder:tracking-normal placeholder:text-gray-400"
+                placeholder="Tu código aquí"
+                value={form.promoCodeInput}
+                onChange={(e) => form.setPromoCodeInput(e.target.value.toUpperCase())}
+                maxLength={20}
+              />
+              <button
+                type="button"
+                className="rounded-lg bg-mkt-terracotta px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                disabled={form.promoCodeValidating || form.promoCodeInput.length < 3}
+                onClick={() => form.validatePromo(form.promoCodeInput)}
+              >
+                {form.promoCodeValidating ? "..." : "Aplicar"}
+              </button>
+              {form.promoCodeResult?.valid && (
+                <button
+                  type="button"
+                  className="rounded-lg border border-mkt-border px-3 py-2 text-sm text-red-600"
+                  onClick={form.clearPromoCode}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {form.promoCodeResult?.valid && form.promoCodeResult.promo && (
+              <p className="mt-2 text-xs text-emerald-700">
+                ✓ <strong>{form.promoCodeResult.promo.code}</strong> — {form.promoCodeResult.promo.discount_percent}% descuento
+              </p>
+            )}
+            {form.promoCodeResult && !form.promoCodeResult.valid && form.promoCodeInput.length >= 3 && (
+              <p className="mt-2 text-xs text-red-600">
+                {form.promoCodeResult.error || "Código inválido."}
+              </p>
+            )}
+          </div>
+
           <textarea
             className="mt-4 min-h-28 w-full rounded-xl border border-mkt-border bg-white px-3 py-2.5 text-sm text-mkt-ink"
             placeholder="Ej. llegamos en grupo, necesitamos camas juntas…"
@@ -577,37 +622,49 @@ function WizardStepContent({
                   <dd className="font-medium text-white">${lockerTotal.toFixed(0)} MXN</dd>
                 </div>
               ) : null}
-              {form.applicableDiscount ? (() => {
-                const subtotal = bedTotal + lockerTotal;
-                const disc = applyDiscount(subtotal, form.applicableDiscount.rule.discount_percent);
+              {(() => {
+                const promoDiscount = form.promoCodeResult?.valid ? form.promoCodeResult.promo : null;
+                const ruleDiscount = form.applicableDiscount;
+                const usePromo = promoDiscount && promoDiscount.discount_percent >= (ruleDiscount?.rule.discount_percent ?? 0);
+                const activeDiscount = usePromo
+                  ? { percent: promoDiscount!.discount_percent, reason: `Código promo: ${promoDiscount!.code}` }
+                  : ruleDiscount
+                    ? { percent: ruleDiscount.rule.discount_percent, reason: ruleDiscount.reason }
+                    : null;
+
+                if (activeDiscount) {
+                  const subtotal = bedTotal + lockerTotal;
+                  const disc = applyDiscount(subtotal, activeDiscount.percent);
+                  return (
+                    <>
+                      <div className="flex justify-between gap-3 border-b border-white/10 pb-3">
+                        <dt className="text-white/65">Subtotal</dt>
+                        <dd className="font-medium text-white">${subtotal.toFixed(0)} MXN</dd>
+                      </div>
+                      <div className="flex justify-between gap-3 border-b border-white/10 pb-3 text-green-300">
+                        <dt>
+                          Descuento ({activeDiscount.percent}%)
+                          <br />
+                          <span className="text-xs text-green-200/70">{activeDiscount.reason}</span>
+                        </dt>
+                        <dd className="font-medium">-${disc.discountAmount.toFixed(0)} MXN</dd>
+                      </div>
+                      <div className="flex justify-between gap-3 pt-1 text-base">
+                        <dt className="font-semibold text-white">Total con descuento</dt>
+                        <dd className="font-semibold text-mkt-terracotta">${disc.finalTotal.toFixed(0)} MXN</dd>
+                      </div>
+                    </>
+                  );
+                }
                 return (
-                  <>
-                    <div className="flex justify-between gap-3 border-b border-white/10 pb-3">
-                      <dt className="text-white/65">Subtotal</dt>
-                      <dd className="font-medium text-white">${subtotal.toFixed(0)} MXN</dd>
-                    </div>
-                    <div className="flex justify-between gap-3 border-b border-white/10 pb-3 text-green-300">
-                      <dt>
-                        Descuento ({form.applicableDiscount.rule.discount_percent}%)
-                        <br />
-                        <span className="text-xs text-green-200/70">{form.applicableDiscount.reason}</span>
-                      </dt>
-                      <dd className="font-medium">-${disc.discountAmount.toFixed(0)} MXN</dd>
-                    </div>
-                    <div className="flex justify-between gap-3 pt-1 text-base">
-                      <dt className="font-semibold text-white">Total con descuento</dt>
-                      <dd className="font-semibold text-mkt-terracotta">${disc.finalTotal.toFixed(0)} MXN</dd>
-                    </div>
-                  </>
+                  <div className="flex justify-between gap-3 pt-1 text-base">
+                    <dt className="font-semibold text-white">Total estimado</dt>
+                    <dd className="font-semibold text-mkt-terracotta">
+                      ${(bedTotal + lockerTotal).toFixed(0)} MXN
+                    </dd>
+                  </div>
                 );
-              })() : (
-                <div className="flex justify-between gap-3 pt-1 text-base">
-                  <dt className="font-semibold text-white">Total estimado</dt>
-                  <dd className="font-semibold text-mkt-terracotta">
-                    ${(bedTotal + lockerTotal).toFixed(0)} MXN
-                  </dd>
-                </div>
-              )}
+              })()}
             </dl>
             <p className="mt-4 text-xs text-white/60">
               Pago en caja al llegar. El total final puede incluir descuentos en recepción.

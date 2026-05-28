@@ -1,7 +1,5 @@
-import { receptionReservationPaymentAction } from "@/actions/operations";
-import { ReceptionPaymentToggleForm } from "@/components/forms/reception-payment-toggle-form";
 import { ReservationGuestsAccordion } from "@/components/ui/reservation-guests-accordion";
-import { ResendReceiptButton } from "@/components/ui/resend-receipt-button";
+import { ReservationPaymentInline } from "@/components/ui/reservation-payment-inline";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
 import { ft } from "@/components/ui/filterable-cell";
 import { Card } from "@/components/ui/card";
@@ -121,13 +119,14 @@ export async function ActiveReservationsPanel() {
                 ),
                 `$${Number(folio?.total_amount ?? 0).toFixed(2)}`,
                 `$${Number(folio?.balance_due ?? 0).toFixed(2)}`,
-                folio?.payment_status === "liquidated" && folio?.id ? (
-                  <ResendReceiptButton key={`rr-${reservation.id}`} folioId={folio.id} />
-                ) : folio?.id ? (
-                  <ReceptionPaymentToggleForm
+                folio?.id ? (
+                  <ReservationPaymentInline
                     key={`pay-${reservation.id}`}
-                    action={receptionReservationPaymentAction}
                     folioId={folio.id}
+                    folioCode={folio.folio_code ?? ""}
+                    balanceDue={Number(folio.balance_due ?? 0)}
+                    totalAmount={Number(folio.total_amount ?? 0)}
+                    paymentStatus={folio.payment_status ?? "pending"}
                   />
                 ) : (
                   <span key={`np-${reservation.id}`} className="text-xs text-red-600">

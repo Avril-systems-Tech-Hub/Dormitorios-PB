@@ -1,22 +1,42 @@
 import { registerPaymentAction } from "@/actions/operations";
 import { Card } from "@/components/ui/card";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { requireModulePermission } from "@/lib/auth/guards";
 import { PaymentForm } from "@/components/forms/payment-form";
+import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 
-export default async function PaymentsPage() {
-  const supabase = await createClient();
+export default async function PaymentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await requireModulePermission("payments");
+  const params = await searchParams;
+  const { page, pageSize, q } = parsePagination(params);
+  const [from, to] = getRange(page, pageSize);
+
+  const supabase = createAdminClient();
+
+  // Folios para el dropdown del formulario (no paginado, sólo pendientes)
   const { data: folios } = await supabase
     .from("folios")
     .select("id,folio_code,total_amount,paid_amount,balance_due,payment_status")
+    .neq("payment_status", "liquidated")
     .order("created_at", { ascending: false })
     .limit(100);
 
-  const { data: recentPayments } = await supabase
+  let query = supabase
     .from("payments")
-    .select("id,amount,method,payment_type,received_at,folios(folio_code)")
+    .select("id,amount,method,payment_type,received_at,folios!inner(folio_code)", { count: "exact" });
+
+  if (q) {
+    query = query.ilike("folios.folio_code", `%${escapeIlike(q)}%`);
+  }
+
+  const { data: recentPayments, count } = await query
     .order("received_at", { ascending: false })
-    .limit(20);
+    .range(from, to);
 
   const rows =
     recentPayments?.map((payment) => {
@@ -39,7 +59,18 @@ export default async function PaymentsPage() {
         </p>
         <PaymentForm action={registerPaymentAction} folios={folios ?? []} />
       </Card>
-      <ResponsiveTable headers={["Folio", "Monto", "Método", "Tipo", "Fecha"]} rows={rows} />
+      <ResponsiveTable
+        headers={["Folio", "Monto", "Método", "Tipo", "Fecha"]}
+        rows={rows}
+        filterMode="global"
+        serverPagination={{
+          page,
+          pageSize,
+          totalCount: count ?? 0,
+          searchQuery: q,
+          searchPlaceholder: "Buscar por folio…",
+        }}
+      />
     </div>
   );
 }

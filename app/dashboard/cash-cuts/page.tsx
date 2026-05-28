@@ -6,26 +6,44 @@ import {
   createDailyCashCutAction,
   createExpenseAction,
 } from "@/actions/operations";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { requireModulePermission } from "@/lib/auth/guards";
 import { CashMovementForm } from "@/components/forms/cash-movement-form";
 import { ExpenseCaptureForm } from "@/components/forms/expense-capture-form";
 import { getExpenseConceptLabel } from "@/lib/expense-concepts";
+import { parsePagination, getRange } from "@/lib/pagination";
 
-export default async function CashCutsPage() {
-  const supabase = await createClient();
-  const { data: cashCuts } = await supabase
+export default async function CashCutsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await requireModulePermission("cash_cuts");
+  const params = await searchParams;
+
+  const cutsPag = parsePagination(params, "cuts");
+  const movsPag = parsePagination(params, "movs");
+  const [cutsFrom, cutsTo] = getRange(cutsPag.page, cutsPag.pageSize);
+  const [movsFrom, movsTo] = getRange(movsPag.page, movsPag.pageSize);
+
+  const supabase = createAdminClient();
+  const { data: cashCuts, count: cutsCount } = await supabase
     .from("cash_cuts")
-    .select("id,total_cash,total_transfer,total_card,total_income,expected_income,actual_cash_counted,difference,leakage_flag,created_at,profiles:generated_by(full_name)")
+    .select(
+      "id,total_cash,total_transfer,total_card,total_income,expected_income,actual_cash_counted,difference,leakage_flag,created_at,profiles:generated_by(full_name)",
+      { count: "exact" },
+    )
     .order("created_at", { ascending: false })
-    .limit(30);
+    .range(cutsFrom, cutsTo);
 
-  const { data: movements } = await supabase
+  const { data: movements, count: movsCount } = await supabase
     .from("cash_movements")
     .select(
       "id,movement_date,direction,category,expense_concept,concept_detail,amount,notes,profiles:responsible_profile_id(full_name)",
+      { count: "exact" },
     )
     .order("recorded_at", { ascending: false })
-    .limit(30);
+    .range(movsFrom, movsTo);
 
   const cutRows =
     cashCuts?.map((cut) => {
@@ -90,6 +108,12 @@ export default async function CashCutsPage() {
           <ResponsiveTable
             headers={["Fecha", "Responsable", "Efectivo", "Transfer", "Tarjeta", "Registrado", "Esperado", "Contado", "Dif", "Leakage"]}
             rows={cutRows}
+            serverPagination={{
+              page: cutsPag.page,
+              pageSize: cutsPag.pageSize,
+              totalCount: cutsCount ?? 0,
+              paramPrefix: "cuts",
+            }}
           />
         </div>
       </Card>
@@ -99,6 +123,12 @@ export default async function CashCutsPage() {
           <ResponsiveTable
             headers={["Fecha", "Tipo", "Concepto", "Monto", "Responsable", "Notas"]}
             rows={movementRows}
+            serverPagination={{
+              page: movsPag.page,
+              pageSize: movsPag.pageSize,
+              totalCount: movsCount ?? 0,
+              paramPrefix: "movs",
+            }}
           />
         </div>
       </Card>

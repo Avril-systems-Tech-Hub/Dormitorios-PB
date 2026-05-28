@@ -10,6 +10,7 @@ import {
   recalculateImportedRecordAction,
   updateImportedRecordAction,
 } from "@/actions/operations";
+import { parsePagination, getRange } from "@/lib/pagination";
 
 export default async function ImportedRecordsPage({
   searchParams,
@@ -26,20 +27,45 @@ export default async function ImportedRecordsPage({
   const filterFlag = String(params.flag ?? "");
   const filterDate = String(params.date ?? "");
 
+  const { page, pageSize } = parsePagination(params);
+  const [from, to] = getRange(page, pageSize);
+
+  // Construir query principal con todos los filtros aplicados a nivel DB
+  type ImportedRecord = {
+    id: string;
+    batch_id: string;
+    guest_name: string | null;
+    bed_number: number | null;
+    check_in_date: string | null;
+    nights: number | null;
+    total_written: number | null;
+    total_calculated: number | null;
+    total_difference: number | null;
+    needs_review: boolean;
+  };
+
+  const selectCols = filterFlag
+    ? "id,batch_id,guest_name,bed_number,check_in_date,nights,total_written,total_calculated,total_difference,needs_review,imported_record_anomalies!inner(flag)"
+    : "id,batch_id,guest_name,bed_number,check_in_date,nights,total_written,total_calculated,total_difference,needs_review";
+
   let query = supabase
     .from("imported_records")
-    .select("id,batch_id,guest_name,bed_number,check_in_date,nights,total_written,total_calculated,total_difference,needs_review");
+    .select(selectCols, { count: "exact" });
 
   if (selectedBatchId) query = query.eq("batch_id", selectedBatchId);
   if (filterNeedsReview === "true") query = query.eq("needs_review", true);
   if (filterBed) query = query.eq("bed_number", Number(filterBed));
   if (filterName) query = query.ilike("guest_name", `%${filterName}%`);
   if (filterDate) query = query.eq("check_in_date", filterDate);
+  if (filterFlag) query = query.eq("imported_record_anomalies.flag", filterFlag);
 
-  const { data: baseRecords } = await query.order("check_in_date", { ascending: false }).limit(150);
-  const records = baseRecords ?? [];
+  const { data: baseRecords, count } = await query
+    .order("check_in_date", { ascending: false })
+    .range(from, to);
+  const records = (baseRecords ?? []) as unknown as ImportedRecord[];
   const recordIds = records.map((r) => r.id);
 
+  // Anomalías para la página actual (para mostrar los flags por registro)
   const { data: anomalies } = recordIds.length
     ? await supabase
         .from("imported_record_anomalies")
@@ -54,11 +80,8 @@ export default async function ImportedRecordsPage({
     byRecordFlags.set(row.imported_record_id, current);
   }
 
-  const visibleRecords = filterFlag
-    ? records.filter((record) => (byRecordFlags.get(record.id) ?? []).includes(filterFlag))
-    : records;
-
-  const summary = visibleRecords.reduce(
+  // Resumen sobre la página actual
+  const summary = records.reduce(
     (acc, row) => {
       acc.written += Number(row.total_written ?? 0);
       acc.calculated += Number(row.total_calculated ?? 0);
@@ -73,9 +96,9 @@ export default async function ImportedRecordsPage({
     .from("import_batches")
     .select("id, source_name, status, preview_count, imported_count, created_at")
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(50);
 
-  const rows = visibleRecords.map((record) => {
+  const rows = records.map((record) => {
     const flags = byRecordFlags.get(record.id) ?? [];
     return [
       record.guest_name ?? "Sin nombre",
@@ -157,12 +180,12 @@ export default async function ImportedRecordsPage({
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
-        <Card><p className="text-xs text-text-muted">Ingresos escritos</p><p className="text-lg font-semibold">${summary.written.toFixed(2)}</p></Card>
-        <Card><p className="text-xs text-text-muted">Ingresos calculados</p><p className="text-lg font-semibold">${summary.calculated.toFixed(2)}</p></Card>
-        <Card><p className="text-xs text-text-muted">Diferencia</p><p className="text-lg font-semibold">${summary.diff.toFixed(2)}</p></Card>
+        <Card><p className="text-xs text-text-muted">Ingresos escritos (página)</p><p className="text-lg font-semibold">${summary.written.toFixed(2)}</p></Card>
+        <Card><p className="text-xs text-text-muted">Ingresos calculados (página)</p><p className="text-lg font-semibold">${summary.calculated.toFixed(2)}</p></Card>
+        <Card><p className="text-xs text-text-muted">Diferencia (página)</p><p className="text-lg font-semibold">${summary.diff.toFixed(2)}</p></Card>
         <Card><p className="text-xs text-text-muted">Bed income</p><p className="text-lg font-semibold">Incluido</p></Card>
         <Card><p className="text-xs text-text-muted">Locker income</p><p className="text-lg font-semibold">Incluido</p></Card>
-        <Card><p className="text-xs text-text-muted">Needs review</p><p className="text-lg font-semibold">{summary.reviewCount}</p></Card>
+        <Card><p className="text-xs text-text-muted">Needs review (página)</p><p className="text-lg font-semibold">{summary.reviewCount}</p></Card>
       </div>
 
       <Card>
@@ -189,6 +212,11 @@ export default async function ImportedRecordsPage({
       <ResponsiveTable
         headers={["Huésped", "Cama", "Ingreso", "Noches", "Escrito", "Calculado", "Diferencia", "Estado", "Flags", "Editar"]}
         rows={rows}
+        serverPagination={{
+          page,
+          pageSize,
+          totalCount: count ?? 0,
+        }}
       />
     </div>
   );

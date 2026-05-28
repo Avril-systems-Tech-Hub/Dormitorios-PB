@@ -155,35 +155,47 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
                   <span className="shrink-0 font-medium">${lockerTotal.toFixed(0)} MXN</span>
                 </li>
               ) : null}
-              {form.applicableDiscount ? (() => {
-                const subtotal = bedTotal + lockerTotal;
-                const disc = applyDiscount(subtotal, form.applicableDiscount.rule.discount_percent);
+              {(() => {
+                const promoDiscount = form.promoCodeResult?.valid ? form.promoCodeResult.promo : null;
+                const ruleDiscount = form.applicableDiscount;
+                const usePromo = promoDiscount && promoDiscount.discount_percent >= (ruleDiscount?.rule.discount_percent ?? 0);
+                const activeDiscount = usePromo
+                  ? { percent: promoDiscount!.discount_percent, reason: `Código promo: ${promoDiscount!.code}` }
+                  : ruleDiscount
+                    ? { percent: ruleDiscount.rule.discount_percent, reason: ruleDiscount.reason }
+                    : null;
+
+                if (activeDiscount) {
+                  const subtotal = bedTotal + lockerTotal;
+                  const disc = applyDiscount(subtotal, activeDiscount.percent);
+                  return (
+                    <>
+                      <li className="flex justify-between gap-4">
+                        <span>Subtotal</span>
+                        <span className="shrink-0">${subtotal.toFixed(0)} MXN</span>
+                      </li>
+                      <li className="flex justify-between gap-4 text-green-300">
+                        <span>
+                          Descuento ({activeDiscount.percent}%)
+                          <br />
+                          <span className="text-xs text-green-200/70">{activeDiscount.reason}</span>
+                        </span>
+                        <span className="shrink-0 font-medium">-${disc.discountAmount.toFixed(0)} MXN</span>
+                      </li>
+                      <li className="flex justify-between gap-4 border-t border-white/15 pt-2 text-base font-semibold text-white">
+                        <span>Total con descuento</span>
+                        <span>${disc.finalTotal.toFixed(0)} MXN</span>
+                      </li>
+                    </>
+                  );
+                }
                 return (
-                  <>
-                    <li className="flex justify-between gap-4">
-                      <span>Subtotal</span>
-                      <span className="shrink-0">${subtotal.toFixed(0)} MXN</span>
-                    </li>
-                    <li className="flex justify-between gap-4 text-green-300">
-                      <span>
-                        Descuento ({form.applicableDiscount.rule.discount_percent}%)
-                        <br />
-                        <span className="text-xs text-green-200/70">{form.applicableDiscount.reason}</span>
-                      </span>
-                      <span className="shrink-0 font-medium">-${disc.discountAmount.toFixed(0)} MXN</span>
-                    </li>
-                    <li className="flex justify-between gap-4 border-t border-white/15 pt-2 text-base font-semibold text-white">
-                      <span>Total con descuento</span>
-                      <span>${disc.finalTotal.toFixed(0)} MXN</span>
-                    </li>
-                  </>
+                  <li className="flex justify-between gap-4 border-t border-white/15 pt-2 text-base font-semibold text-white">
+                    <span>Total estimado</span>
+                    <span>${(bedTotal + lockerTotal).toFixed(0)} MXN</span>
+                  </li>
                 );
-              })() : (
-                <li className="flex justify-between gap-4 border-t border-white/15 pt-2 text-base font-semibold text-white">
-                  <span>Total estimado</span>
-                  <span>${(bedTotal + lockerTotal).toFixed(0)} MXN</span>
-                </li>
-              )}
+              })()}
             </ul>
             <p className="mt-3 text-xs leading-relaxed text-white/65">
               El pago es en caja al llegar. El total final puede incluir descuentos aplicados en recepción.
@@ -299,6 +311,50 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
               />
             </div>
           ))}
+        </div>
+
+        {/* Código de descuento */}
+        <div className="mt-6 rounded-xl border border-mkt-border bg-white p-4">
+          <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-mkt-terracotta">
+            ¿Tienes un código de descuento?
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              className="flex-1 rounded-lg border border-mkt-border bg-white px-3 py-2 text-sm uppercase tracking-wider text-mkt-ink placeholder:normal-case placeholder:tracking-normal placeholder:text-gray-400"
+              placeholder="Escribe tu código aquí"
+              value={form.promoCodeInput}
+              onChange={(e) => form.setPromoCodeInput(e.target.value.toUpperCase())}
+              maxLength={20}
+            />
+            <button
+              type="button"
+              className="rounded-lg bg-mkt-terracotta px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              disabled={form.promoCodeValidating || form.promoCodeInput.length < 3}
+              onClick={() => form.validatePromo(form.promoCodeInput)}
+            >
+              {form.promoCodeValidating ? "..." : "Aplicar"}
+            </button>
+            {form.promoCodeResult?.valid && (
+              <button
+                type="button"
+                className="rounded-lg border border-mkt-border px-3 py-2 text-sm text-red-600"
+                onClick={form.clearPromoCode}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          {form.promoCodeResult?.valid && form.promoCodeResult.promo && (
+            <p className="mt-2 text-xs text-emerald-700">
+              ✓ Código <strong>{form.promoCodeResult.promo.code}</strong> válido — {form.promoCodeResult.promo.discount_percent}% de descuento
+            </p>
+          )}
+          {form.promoCodeResult && !form.promoCodeResult.valid && form.promoCodeInput.length >= 3 && (
+            <p className="mt-2 text-xs text-red-600">
+              {form.promoCodeResult.error || "Código inválido."}
+            </p>
+          )}
         </div>
 
         <textarea

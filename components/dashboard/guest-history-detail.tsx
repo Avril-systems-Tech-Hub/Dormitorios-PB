@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 
 export type GuestStaySummary = {
@@ -44,7 +44,7 @@ export function GuestHistoryDetail({
   );
 
   return (
-    <div className="min-w-[11rem] max-w-[16rem]">
+    <div className="min-w-[11rem] max-w-[28rem]">
       <p className="whitespace-nowrap text-sm text-text-main">{formatStayRange(latest.checkIn, latest.checkOut)}</p>
       <p className="mt-0.5 whitespace-nowrap text-xs text-text-muted">
         {latest.nights} noche{latest.nights === 1 ? "" : "s"}
@@ -68,22 +68,41 @@ export function GuestHistoryDetail({
             {open ? "Ocultar historial" : `Ver ${history.length} estadía${history.length === 1 ? "" : "s"} anterior${history.length === 1 ? "" : "es"}`}
           </button>
           {open ? (
-            <ul className="mt-2 max-h-36 space-y-1.5 overflow-y-auto rounded-lg border border-border-soft bg-surface-soft/80 p-2 text-xs">
-              {history.map((stay) => (
-                <li key={`${stay.checkIn}-${stay.checkOut}-${stay.bedNumber ?? "x"}`} className="text-text-main">
-                  <span className="font-medium">{formatStayRange(stay.checkIn, stay.checkOut)}</span>
-                  <span className="text-text-muted">
-                    {" "}
-                    · {stay.nights}n{stay.bedNumber != null ? ` · Cama ${stay.bedNumber}` : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div className="mt-2 max-h-36 overflow-x-auto overflow-y-auto rounded-lg border border-border-soft bg-surface-soft/80 p-2 text-xs">
+              <div className="grid min-w-max grid-cols-[auto_auto_auto_auto] items-center gap-x-3 gap-y-1.5">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Fechas</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Detalle</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Folio</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Pago</div>
+                {history.map((stay) => (
+                  <Fragment key={`${stay.checkIn}-${stay.checkOut}-${stay.bedNumber ?? "x"}`}>
+                    <span className="whitespace-nowrap font-medium text-text-main">{formatStayRange(stay.checkIn, stay.checkOut)}</span>
+                    <span className="whitespace-nowrap text-text-muted">
+                      {stay.nights}n{stay.bedNumber != null ? ` · Cama ${stay.bedNumber}` : ""}
+                    </span>
+                    <span
+                      className="whitespace-nowrap font-mono text-text-main"
+                      title={stay.folioCode ?? undefined}
+                    >
+                      {stay.folioCode ?? "—"}
+                    </span>
+                    <PaymentStatusBadge status={stay.paymentStatus} />
+                  </Fragment>
+                ))}
+              </div>
+            </div>
           ) : null}
         </>
       ) : null}
     </div>
   );
+}
+
+function PaymentStatusBadge({ status }: { status?: string }) {
+  if (status === "liquidated") return <Badge variant="success">Pagado</Badge>;
+  if (status === "partial") return <Badge variant="warning">Parcial</Badge>;
+  if (status === "pending") return <Badge variant="warning">Pendiente</Badge>;
+  return <span className="text-text-muted">—</span>;
 }
 
 export function GuestStatsCell({
