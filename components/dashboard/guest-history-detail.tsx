@@ -11,6 +11,9 @@ export type GuestStaySummary = {
   lockerNumber?: number | null;
   folioCode?: string;
   paymentStatus?: string;
+  totalAmount?: number;
+  paidAmount?: number;
+  balanceDue?: number;
   source?: string;
 };
 
@@ -51,11 +54,6 @@ export function GuestHistoryDetail({
         {latest.bedNumber != null ? ` · Cama ${latest.bedNumber}` : ""}
         {latest.lockerNumber ? ` · Locker ${latest.lockerNumber}` : ""}
       </p>
-      {latest.folioCode ? (
-        <p className="mt-0.5 truncate text-xs text-text-muted" title={latest.folioCode}>
-          {latest.folioCode}
-        </p>
-      ) : null}
 
       {history.length > 0 ? (
         <>
@@ -86,7 +84,12 @@ export function GuestHistoryDetail({
                     >
                       {stay.folioCode ?? "—"}
                     </span>
-                    <PaymentStatusBadge status={stay.paymentStatus} />
+                    <span className="whitespace-nowrap text-text-muted">
+                      <PaymentStatusBadge status={stay.paymentStatus} />
+                      {stay.paidAmount != null ? (
+                        <span className="ml-1">${stay.paidAmount.toFixed(2)}</span>
+                      ) : null}
+                    </span>
                   </Fragment>
                 ))}
               </div>
@@ -108,7 +111,6 @@ function PaymentStatusBadge({ status }: { status?: string }) {
 export function GuestStatsCell({
   stayCount,
   totalNights,
-  paymentStatus,
   source,
 }: {
   stayCount: number;
@@ -116,7 +118,6 @@ export function GuestStatsCell({
   paymentStatus?: string;
   source: string;
 }) {
-  const isPaid = paymentStatus === "liquidated";
   const isCashier = source === "cashier_counter";
 
   return (
@@ -127,9 +128,50 @@ export function GuestStatsCell({
         <span className="font-medium">{totalNights}</span> noches
       </p>
       <div className="flex flex-wrap gap-1">
-        <Badge variant={isPaid ? "success" : "warning"}>{isPaid ? "Pagado" : "Pendiente"}</Badge>
         <Badge variant={isCashier ? "warning" : "success"}>{isCashier ? "Caja" : "App"}</Badge>
       </div>
+    </div>
+  );
+}
+
+export function GuestFolioCell({ folioCode }: { folioCode?: string }) {
+  if (!folioCode) {
+    return <span className="text-sm text-text-muted">—</span>;
+  }
+
+  return (
+    <span className="whitespace-nowrap font-mono text-sm text-text-main" title={folioCode}>
+      {folioCode}
+    </span>
+  );
+}
+
+export function GuestPaymentCell({
+  paymentStatus,
+  totalAmount = 0,
+  paidAmount = 0,
+  balanceDue = 0,
+}: {
+  paymentStatus?: string;
+  totalAmount?: number;
+  paidAmount?: number;
+  balanceDue?: number;
+}) {
+  if (!paymentStatus && totalAmount === 0 && paidAmount === 0) {
+    return <span className="text-sm text-text-muted">—</span>;
+  }
+
+  return (
+    <div className="min-w-[9rem] space-y-1 whitespace-nowrap">
+      <PaymentStatusBadge status={paymentStatus} />
+      <p className="text-sm text-text-main">
+        <span className="font-medium">${paidAmount.toFixed(2)}</span>
+        <span className="text-text-muted"> pagado</span>
+      </p>
+      <p className="text-xs text-text-muted">
+        Total ${totalAmount.toFixed(2)}
+        {balanceDue > 0 ? ` · Saldo $${balanceDue.toFixed(2)}` : null}
+      </p>
     </div>
   );
 }

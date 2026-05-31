@@ -4,12 +4,10 @@ import { ResponsiveTable } from "@/components/ui/responsive-table";
 import {
   createCashMovementAction,
   createDailyCashCutAction,
-  createExpenseAction,
 } from "@/actions/operations";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModulePermission } from "@/lib/auth/guards";
 import { CashMovementForm } from "@/components/forms/cash-movement-form";
-import { ExpenseCaptureForm } from "@/components/forms/expense-capture-form";
 import { getExpenseConceptLabel } from "@/lib/expense-concepts";
 import { parsePagination, getRange } from "@/lib/pagination";
 
@@ -86,20 +84,18 @@ export default async function CashCutsPage({
       <Card>
         <h2 className="text-lg font-semibold text-text-main">Corte único diario</h2>
         <p className="mt-1 text-sm text-text-muted">
-          Registra ingresos/egresos manuales y genera corte con responsable y trazabilidad.
+          Registra ingresos/egresos manuales y genera corte con responsable y trazabilidad. Para
+          gastos operativos con ticket, usa{" "}
+          <a href="/dashboard/expenses" className="text-brand-primary underline">
+            Gastos
+          </a>
+          .
         </p>
         <div className="mt-4 flex flex-col gap-4">
           <form action={createDailyCashCutAction}>
             <Button type="submit">Generar corte del día</Button>
           </form>
           <CashMovementForm action={createCashMovementAction} />
-        </div>
-      </Card>
-      <Card>
-        <h3 className="text-base font-semibold text-text-main">Registrar gasto operativo</h3>
-        <p className="mt-1 text-sm text-text-muted">Conceptos de operación diaria. Un concepto por registro.</p>
-        <div className="mt-4">
-          <ExpenseCaptureForm action={createExpenseAction} returnTo="/dashboard/cash-cuts" />
         </div>
       </Card>
       <Card>

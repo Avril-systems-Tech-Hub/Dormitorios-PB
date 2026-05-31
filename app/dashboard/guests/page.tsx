@@ -4,6 +4,8 @@ import { ft } from "@/components/ui/filterable-cell";
 import {
   GuestHistoryDetail,
   GuestStatsCell,
+  GuestFolioCell,
+  GuestPaymentCell,
   type GuestStaySummary,
 } from "@/components/dashboard/guest-history-detail";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -16,7 +18,22 @@ type ReservationInfo = {
   nights?: number;
   status?: string;
   reservation_source?: string;
-  folios?: { folio_code?: string; payment_status?: string } | { folio_code?: string; payment_status?: string }[] | null;
+  folios?:
+    | {
+        folio_code?: string;
+        payment_status?: string;
+        total_amount?: number;
+        paid_amount?: number;
+        balance_due?: number;
+      }
+    | {
+        folio_code?: string;
+        payment_status?: string;
+        total_amount?: number;
+        paid_amount?: number;
+        balance_due?: number;
+      }[]
+    | null;
 };
 
 type ReservationGuestRow = {
@@ -56,6 +73,9 @@ function getStays(guest: GuestRecord): GuestStaySummary[] {
     if (row.locker_number !== undefined) stay.lockerNumber = row.locker_number;
     if (folio?.folio_code) stay.folioCode = folio.folio_code;
     if (folio?.payment_status) stay.paymentStatus = folio.payment_status;
+    if (folio?.total_amount != null) stay.totalAmount = Number(folio.total_amount);
+    if (folio?.paid_amount != null) stay.paidAmount = Number(folio.paid_amount);
+    if (folio?.balance_due != null) stay.balanceDue = Number(folio.balance_due);
     return [stay];
   });
 }
@@ -75,7 +95,7 @@ export default async function GuestsPage({
   let query = supabase
     .from("guests")
     .select(
-      "id,full_name,phone,email,created_at,reservation_guests!inner(beds(bed_number),locker_number,reservations(check_in_date,check_out_date,nights,status,reservation_source,folios(folio_code,payment_status)))",
+      "id,full_name,phone,email,created_at,reservation_guests!inner(beds(bed_number),locker_number,reservations(check_in_date,check_out_date,nights,status,reservation_source,folios(folio_code,payment_status,total_amount,paid_amount,balance_due)))",
       { count: "exact" },
     );
 
@@ -101,6 +121,9 @@ export default async function GuestsPage({
       guest.phone,
       guest.email,
       latest.folioCode,
+      latest.paymentStatus,
+      latest.paidAmount != null ? String(latest.paidAmount) : "",
+      latest.totalAmount != null ? String(latest.totalAmount) : "",
       String(stays.length),
       String(totalNights),
     ]
@@ -117,12 +140,25 @@ export default async function GuestsPage({
       ),
       ft(guest.phone, <span className="whitespace-nowrap tabular-nums">{guest.phone}</span>),
       ft(
+        latest.folioCode ?? "",
+        <GuestFolioCell key={`folio-${guest.id}`} folioCode={latest.folioCode} />,
+      ),
+      ft(
+        `${latest.paymentStatus ?? ""} ${latest.paidAmount ?? 0} ${latest.totalAmount ?? 0} ${latest.balanceDue ?? 0}`,
+        <GuestPaymentCell
+          key={`payment-${guest.id}`}
+          paymentStatus={latest.paymentStatus}
+          totalAmount={latest.totalAmount}
+          paidAmount={latest.paidAmount}
+          balanceDue={latest.balanceDue}
+        />,
+      ),
+      ft(
         `${stays.length} estadías ${totalNights} noches`,
         <GuestStatsCell
           key={`stats-${guest.id}`}
           stayCount={stays.length}
           totalNights={totalNights}
-          paymentStatus={latest.paymentStatus}
           source={latest.source ?? "guest_app"}
         />,
       ),
@@ -139,8 +175,8 @@ export default async function GuestsPage({
       <Card>
         <h2 className="text-lg font-semibold text-text-main">Huéspedes</h2>
         <p className="mt-1 text-sm text-text-muted">
-          Personas con al menos una estadía. Usa la búsqueda para filtrar; expande el historial solo cuando lo
-          necesites.
+          Personas con al menos una estadía. Folio y pago de la visita más reciente; expande el historial para ver
+          estadías anteriores.
         </p>
         <p className="mt-2 text-sm text-text-muted">
           <span className="font-medium text-text-main">{count ?? 0}</span> huéspedes con estadía registrada.
@@ -148,7 +184,7 @@ export default async function GuestsPage({
       </Card>
 
       <ResponsiveTable
-        headers={["Huésped", "Teléfono", "Resumen", "Última visita", "Alta"]}
+        headers={["Huésped", "Teléfono", "Folio", "Pago", "Resumen", "Última visita", "Alta"]}
         rows={rows}
         filterMode="global"
         dense
@@ -157,7 +193,7 @@ export default async function GuestsPage({
           pageSize,
           totalCount: count ?? 0,
           searchQuery: q,
-          searchPlaceholder: "Buscar por nombre, teléfono o email…",
+          searchPlaceholder: "Buscar por nombre, teléfono, email o folio…",
         }}
       />
     </div>

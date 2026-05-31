@@ -1,13 +1,8 @@
-import Link from "next/link";
-import { getDashboardLinks } from "@/lib/navigation";
+import { groupDashboardLinks, groupModules } from "@/lib/navigation";
 import type { UserRole } from "@/types/domain";
 import type { SystemModule } from "@/lib/auth/permissions";
 import { Button } from "@/components/ui/button";
-
-type DashboardLink = {
-  href: string;
-  label: string;
-};
+import { DashboardHeaderTitle, DashboardNav } from "@/components/layout/dashboard-nav";
 
 export function DashboardShell({
   title,
@@ -24,22 +19,20 @@ export function DashboardShell({
   modules?: SystemModule[];
   children: React.ReactNode;
 }) {
-  // Si hay módulos dinámicos del RBAC, usar esos; si no, fallback al estático
-  const links: DashboardLink[] = modules?.length
-    ? modules.map((m) => ({ href: m.href, label: m.label }))
-    : getDashboardLinks(role);
+  const navGroups =
+    modules && modules.length > 0 ? groupModules(modules) : groupDashboardLinks(role);
 
   const showSidebar = role === "admin" || (modules !== undefined && modules.length > 0);
 
   return (
-    <div className="min-h-screen bg-surface">
+    <div className="min-h-screen overflow-x-hidden bg-surface">
       <header className="sticky top-0 z-30 border-b border-border-soft bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
+        <div className="flex w-full items-center justify-between px-4 py-3 lg:px-6">
           <div>
             <p className="text-xs uppercase tracking-wide text-text-muted">
               Dormitorios Plaza Basílica
             </p>
-            <h1 className="text-lg font-semibold text-text-main">{title}</h1>
+            <DashboardHeaderTitle fallback={title} />
           </div>
           <div className="flex items-center gap-2">
             {userName && (
@@ -58,23 +51,17 @@ export function DashboardShell({
           </div>
         </div>
       </header>
-      <div className={`mx-auto max-w-7xl gap-4 px-4 py-4 ${showSidebar ? "grid md:grid-cols-[220px_1fr]" : ""}`}>
+      <div
+        className={`w-full gap-4 px-4 py-4 lg:px-6 ${
+          showSidebar ? "grid md:grid-cols-[240px_minmax(0,1fr)]" : ""
+        }`}
+      >
         {showSidebar ? (
-          <aside className="overflow-x-auto rounded-xl border border-border-soft bg-white p-2">
-            <nav className="flex gap-2 md:flex-col">
-              {links.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="rounded-lg px-3 py-2 text-sm text-text-main hover:bg-surface-soft"
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
+          <aside className="shrink-0 rounded-xl border border-border-soft bg-white p-3 md:sticky md:top-[4.25rem] md:self-start">
+            <DashboardNav groups={navGroups} />
           </aside>
         ) : null}
-        <main className="space-y-4">{children}</main>
+        <main className="min-w-0 space-y-4">{children}</main>
       </div>
     </div>
   );
