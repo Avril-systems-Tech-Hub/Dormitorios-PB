@@ -8,9 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "bootstrap:staff": "node scripts/bootstrap-staff.mjs",
+    "db:apply-guest-wallets": "node scripts/apply-guest-wallets.mjs",
     "favicon:sync": "node scripts/sync-favicon-svg.mjs"
   },
   "dependencies": {
+    "@human.tech/waap-sdk": "^2.0.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.0",
     "class-variance-authority": "^0.7.1",
@@ -35,6 +37,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
+    "pg": "^8.21.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

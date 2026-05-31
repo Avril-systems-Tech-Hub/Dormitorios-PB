@@ -40,6 +40,8 @@ export type ExpenseConcept =
 export type WhatsAppStatus = "queued" | "sent" | "failed";
 export type ReservationSource = "guest_app" | "cashier_counter";
 
+export type WalletChain = "celo";
+
 export type ImportBatchStatus = "draft" | "previewed" | "imported" | "failed";
 
 export type AnomalyFlag =
