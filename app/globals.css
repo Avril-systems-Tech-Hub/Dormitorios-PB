@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Explicit content paths (PostCSS `base` alone was not picking up app/components). */
+@source "./**/*.{ts,tsx}";
+@source "../components/**/*.{ts,tsx}";
+@source "../hooks/**/*.{ts,tsx}";
+
 :root {
   --brand-primary: #1f4e5f;
   --brand-secondary: #2b6b7f;
@@ -77,4 +82,13 @@ body {
 .landing-marketing :where(a, button, input, textarea, select):focus-visible {
   outline: 2px solid var(--mkt-terracotta);
   outline-offset: 2px;
+}
+
+/* Safe-area padding for mobile wizard (avoids Turbopack CSS parse bug with env() in arbitrary utilities). */
+.safe-area-pt-header {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
+.safe-area-pb-footer {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }

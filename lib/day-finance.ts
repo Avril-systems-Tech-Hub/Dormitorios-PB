@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getMexicoCityDayBounds, getMexicoCityMonthBounds } from "@/lib/dates";
+import {
+  getMexicoCityDayBounds,
+  getMexicoCityMonthBounds,
+  getMexicoCityWeekBounds,
+} from "@/lib/dates";
 
 export type DayFinanceSummary = {
   totalGuestIncome: number;
@@ -35,6 +39,28 @@ export async function getDayFinanceSummary(
     .select("amount")
     .eq("direction", "expense")
     .eq("movement_date", dateString);
+
+  return sumFinance(payments, expenses);
+}
+
+export async function getWeekFinanceSummary(
+  supabase: SupabaseClient,
+  dateString: string,
+): Promise<DayFinanceSummary> {
+  const { start, end, startAt, endAt } = getMexicoCityWeekBounds(dateString);
+
+  const { data: payments } = await supabase
+    .from("payments")
+    .select("amount")
+    .gte("received_at", startAt)
+    .lte("received_at", endAt);
+
+  const { data: expenses } = await supabase
+    .from("cash_movements")
+    .select("amount")
+    .eq("direction", "expense")
+    .gte("movement_date", start)
+    .lte("movement_date", end);
 
   return sumFinance(payments, expenses);
 }

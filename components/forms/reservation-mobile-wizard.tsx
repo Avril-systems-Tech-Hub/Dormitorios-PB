@@ -236,7 +236,7 @@ export function ReservationWizard({ open, onOpenChange, action }: ReservationWiz
       aria-modal="true"
       aria-labelledby="reservation-wizard-title"
     >
-      <header className="shrink-0 border-b border-white/10 bg-mkt-slate-deep/95 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-md">
+      <header className="safe-area-pt-header shrink-0 border-b border-white/10 bg-mkt-slate-deep/95 px-4 pb-3 backdrop-blur-md">
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
@@ -296,7 +296,7 @@ export function ReservationWizard({ open, onOpenChange, action }: ReservationWiz
       </div>
 
       {!confirmation ? (
-        <footer className="shrink-0 border-t border-white/10 bg-mkt-slate-deep/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-md md:px-6">
+        <footer className="safe-area-pb-footer shrink-0 border-t border-white/10 bg-mkt-slate-deep/95 px-4 pt-3 backdrop-blur-md md:px-6">
           <div className="mx-auto w-full md:max-w-lg lg:max-w-xl">
           {stepError ? <p className="mb-2 text-center text-xs text-red-300">{stepError}</p> : null}
           {form.submitResult && !form.submitResult.success ? (
@@ -330,7 +330,7 @@ export function ReservationWizard({ open, onOpenChange, action }: ReservationWiz
           </div>
         </footer>
       ) : (
-        <footer className="shrink-0 border-t border-white/10 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+        <footer className="safe-area-pb-footer shrink-0 border-t border-white/10 px-4 pt-3">
           <button
             type="button"
             onClick={() => onOpenChange(false)}

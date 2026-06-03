@@ -3,12 +3,18 @@
 import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { FinanceMonthSelect } from "@/components/dashboard/finance-month-select";
 import type { DayFinanceSummary } from "@/lib/day-finance";
+import type { ReservationPeriod } from "@/lib/dates";
 
 type ReservationsFinanceChartProps = {
   day: DayFinanceSummary;
+  week: DayFinanceSummary;
   month: DayFinanceSummary;
+  weekLabel: string;
   monthLabel: string;
+  selectedMonth: string;
+  monthOptions: { value: string; label: string }[];
 };
 
 type ChartSlice = {
@@ -17,6 +23,12 @@ type ChartSlice = {
   value: number;
   color: string;
 };
+
+const PERIOD_OPTIONS: { value: ReservationPeriod; label: string }[] = [
+  { value: "day", label: "Día" },
+  { value: "week", label: "Semana" },
+  { value: "month", label: "Mes" },
+];
 
 function buildSlices(finance: DayFinanceSummary): ChartSlice[] {
   return [
@@ -125,11 +137,25 @@ function BarChart({ slices, netResult }: { slices: ChartSlice[]; netResult: numb
   );
 }
 
-export function ReservationsFinanceChart({ day, month, monthLabel }: ReservationsFinanceChartProps) {
-  const [period, setPeriod] = useState<"day" | "month">("day");
+function getPeriodDescription(period: ReservationPeriod, weekLabel: string, monthLabel: string) {
+  if (period === "day") return "Ingresos y gastos del día";
+  if (period === "week") return `Ingresos y gastos de la semana (${weekLabel})`;
+  return `Ingresos y gastos de ${monthLabel}`;
+}
+
+export function ReservationsFinanceChart({
+  day,
+  week,
+  month,
+  weekLabel,
+  monthLabel,
+  selectedMonth,
+  monthOptions,
+}: ReservationsFinanceChartProps) {
+  const [period, setPeriod] = useState<ReservationPeriod>("day");
   const [view, setView] = useState<"pie" | "bar">("pie");
 
-  const finance = period === "day" ? day : month;
+  const finance = period === "day" ? day : period === "week" ? week : month;
   const slices = buildSlices(finance);
 
   return (
@@ -138,16 +164,23 @@ export function ReservationsFinanceChart({ day, month, monthLabel }: Reservation
         <div>
           <h2 className="text-lg font-semibold text-text-main">Estado financiero</h2>
           <p className="mt-1 text-sm text-text-muted">
-            {period === "day" ? "Ingresos y gastos del día" : `Ingresos y gastos de ${monthLabel}`}
+            {getPeriodDescription(period, weekLabel, monthLabel)}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {period === "month" ? (
+            <FinanceMonthSelect
+              value={selectedMonth}
+              options={monthOptions}
+              className="rounded-md border border-border-soft bg-white px-2 py-1 text-xs capitalize text-text-main"
+            />
+          ) : null}
           <div
             className="inline-flex rounded-lg border border-border-soft bg-surface-soft p-0.5 text-xs"
             role="group"
             aria-label="Periodo"
           >
-            {(["day", "month"] as const).map((value) => (
+            {PERIOD_OPTIONS.map(({ value, label }) => (
               <button
                 key={value}
                 type="button"
@@ -159,7 +192,7 @@ export function ReservationsFinanceChart({ day, month, monthLabel }: Reservation
                     : "text-text-muted hover:text-text-main",
                 )}
               >
-                {value === "day" ? "Día" : "Mes"}
+                {label}
               </button>
             ))}
           </div>

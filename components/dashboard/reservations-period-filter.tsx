@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { FinanceMonthSelect } from "@/components/dashboard/finance-month-select";
 import { cn } from "@/lib/utils";
 import type { ReservationPeriod } from "@/lib/dates";
 
@@ -13,9 +14,13 @@ const PERIOD_OPTIONS: { value: ReservationPeriod; label: string }[] = [
 export function ReservationsPeriodFilter({
   period,
   periodLabel,
+  selectedMonth,
+  monthOptions,
 }: {
   period: ReservationPeriod;
   periodLabel: string;
+  selectedMonth: string;
+  monthOptions: { value: string; label: string }[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -30,7 +35,16 @@ export function ReservationsPeriodFilter({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <p className="text-sm capitalize text-text-muted">{periodLabel}</p>
+      {period === "month" ? (
+        <FinanceMonthSelect
+          value={selectedMonth}
+          options={monthOptions}
+          ariaLabel="Mes de reservaciones"
+          className="rounded-md border border-border-soft bg-white px-2 py-1 text-sm capitalize text-text-main"
+        />
+      ) : (
+        <p className="text-sm capitalize text-text-muted">{periodLabel}</p>
+      )}
       <div
         className="inline-flex rounded-lg border border-border-soft bg-surface-soft p-0.5 text-xs"
         role="group"

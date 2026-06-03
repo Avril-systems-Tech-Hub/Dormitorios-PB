@@ -7,13 +7,32 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionProfile } from "@/lib/auth/guards";
-import { getDayFinanceSummary, getMonthFinanceSummary } from "@/lib/day-finance";
-import { formatMexicoCityMonthLabel, getMexicoCityDateString } from "@/lib/dates";
+import {
+  getDayFinanceSummary,
+  getMonthFinanceSummary,
+  getWeekFinanceSummary,
+} from "@/lib/day-finance";
+import {
+  financeMonthKeyToAnchorDate,
+  formatMexicoCityMonthLabel,
+  getFinanceMonthOptions,
+  getMexicoCityDateString,
+  getReservationPeriodBounds,
+  parseFinanceMonthKey,
+} from "@/lib/dates";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const profile = await getSessionProfile();
   const supabase = await createClient();
+  const params = await searchParams;
   const today = getMexicoCityDateString();
+  const selectedMonth = parseFinanceMonthKey(params.financeMonth, today);
+  const monthAnchor = financeMonthKeyToAnchorDate(selectedMonth);
+  const monthOptions = getFinanceMonthOptions(24, today);
 
   if (profile.role !== "admin") {
     return (
@@ -25,8 +44,10 @@ export default async function DashboardPage() {
   }
 
   const finance = await getDayFinanceSummary(supabase, today);
-  const monthFinance = await getMonthFinanceSummary(supabase, today);
-  const monthLabel = formatMexicoCityMonthLabel(today);
+  const weekFinance = await getWeekFinanceSummary(supabase, today);
+  const monthFinance = await getMonthFinanceSummary(supabase, monthAnchor);
+  const weekLabel = getReservationPeriodBounds("week", today).label;
+  const monthLabel = formatMexicoCityMonthLabel(monthAnchor);
 
   const { count: availableBeds } = await supabase
     .from("beds")
@@ -77,10 +98,26 @@ export default async function DashboardPage() {
             <Badge className="mt-2">Recepción</Badge>
           </Card>
         </Link>
-        <FinanceResultCard day={finance} month={monthFinance} monthLabel={monthLabel} />
+        <FinanceResultCard
+          day={finance}
+          week={weekFinance}
+          month={monthFinance}
+          weekLabel={weekLabel}
+          monthLabel={monthLabel}
+          selectedMonth={selectedMonth}
+          monthOptions={monthOptions}
+        />
       </div>
 
-      <ReservationsFinanceChart day={finance} month={monthFinance} monthLabel={monthLabel} />
+      <ReservationsFinanceChart
+        day={finance}
+        week={weekFinance}
+        month={monthFinance}
+        weekLabel={weekLabel}
+        monthLabel={monthLabel}
+        selectedMonth={selectedMonth}
+        monthOptions={monthOptions}
+      />
     </div>
   );
 }

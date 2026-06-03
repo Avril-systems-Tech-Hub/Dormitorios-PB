@@ -34,6 +34,49 @@ export function formatMexicoCityMonthLabel(dateString: string) {
   });
 }
 
+export function getMexicoCityMonthKey(dateString = getMexicoCityDateString()) {
+  return dateString.slice(0, 7);
+}
+
+export function parseFinanceMonthKey(
+  value: string | string[] | undefined,
+  fallbackDate = getMexicoCityDateString(),
+) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (raw && /^\d{4}-\d{2}$/.test(raw)) {
+    const [year, month] = raw.split("-").map(Number);
+    if (month >= 1 && month <= 12) return raw;
+  }
+  return getMexicoCityMonthKey(fallbackDate);
+}
+
+export function financeMonthKeyToAnchorDate(monthKey: string) {
+  return `${monthKey}-01`;
+}
+
+export function getFinanceMonthOptions(count = 24, anchorDate = getMexicoCityDateString()) {
+  const [year, month] = anchorDate.split("-").map(Number);
+  let cursorYear = year;
+  let cursorMonth = month;
+  const options: { value: string; label: string }[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const value = `${cursorYear}-${String(cursorMonth).padStart(2, "0")}`;
+    options.push({
+      value,
+      label: formatMexicoCityMonthLabel(financeMonthKeyToAnchorDate(value)),
+    });
+
+    cursorMonth -= 1;
+    if (cursorMonth === 0) {
+      cursorMonth = 12;
+      cursorYear -= 1;
+    }
+  }
+
+  return options;
+}
+
 export type ReservationPeriod = "day" | "week" | "month";
 
 export function parseReservationPeriod(

@@ -9,8 +9,11 @@ import { ReservationPaymentInline } from "@/components/ui/reservation-payment-in
 import { ReservationsPeriodFilter } from "@/components/dashboard/reservations-period-filter";
 import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 import {
+  financeMonthKeyToAnchorDate,
+  getFinanceMonthOptions,
   getMexicoCityDateString,
   getReservationPeriodBounds,
+  parseFinanceMonthKey,
   parseReservationPeriod,
 } from "@/lib/dates";
 
@@ -24,7 +27,11 @@ export default async function ReservationsPage({
   const [from, to] = getRange(page, pageSize);
   const period = parseReservationPeriod(params.period);
   const today = getMexicoCityDateString();
-  const periodBounds = getReservationPeriodBounds(period, today);
+  const selectedMonth = parseFinanceMonthKey(params.financeMonth, today);
+  const monthAnchor = financeMonthKeyToAnchorDate(selectedMonth);
+  const monthOptions = getFinanceMonthOptions(24, today);
+  const periodAnchor = period === "month" ? monthAnchor : today;
+  const periodBounds = getReservationPeriodBounds(period, periodAnchor);
 
   const supabase = createAdminClient();
 
@@ -131,7 +138,12 @@ export default async function ReservationsPage({
         </p>
         <div className="mt-4 border-t border-border-soft pt-4">
           <Suspense fallback={<p className="text-sm text-text-muted">Cargando filtro…</p>}>
-            <ReservationsPeriodFilter period={period} periodLabel={periodBounds.label} />
+            <ReservationsPeriodFilter
+              period={period}
+              periodLabel={periodBounds.label}
+              selectedMonth={selectedMonth}
+              monthOptions={monthOptions}
+            />
           </Suspense>
         </div>
       </Card>
