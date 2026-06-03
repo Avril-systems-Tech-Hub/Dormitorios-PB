@@ -1,14 +1,34 @@
+import { Suspense } from "react";
+import { CashCutsOverview } from "@/components/dashboard/cash-cuts-overview";
+import { PaymentsExpensesComparison } from "@/components/dashboard/payments-expenses-comparison";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
-import {
-  createCashMovementAction,
-  createDailyCashCutAction,
-} from "@/actions/operations";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModulePermission } from "@/lib/auth/guards";
-import { CashMovementForm } from "@/components/forms/cash-movement-form";
+import {
+  getDayFinanceSummary,
+  getMonthFinanceSummary,
+  getWeekFinanceSummary,
+} from "@/lib/day-finance";
+import {
+  aggregateCashCutStats,
+  aggregateCashMovementStats,
+} from "@/lib/cash-cuts-insights";
 import { getExpenseConceptLabel } from "@/lib/expense-concepts";
+import {
+  financeMonthKeyToAnchorDate,
+  formatMexicoCityMonthLabel,
+  getFinanceDayOptions,
+  getFinanceMonthOptions,
+  getFinanceWeekOptions,
+  getMexicoCityDateString,
+  getReservationPeriodBounds,
+  parseFinanceDayKey,
+  parseFinanceMonthKey,
+  parseFinanceWeekAnchor,
+  parseReservationPeriod,
+} from "@/lib/dates";
+import { getPayPeriodAnchor, getPayPeriodBounds } from "@/lib/payment-insights";
 import { parsePagination, getRange } from "@/lib/pagination";
 
 export default async function CashCutsPage({
@@ -19,29 +39,90 @@ export default async function CashCutsPage({
   await requireModulePermission("cash_cuts");
   const params = await searchParams;
 
+  const today = getMexicoCityDateString();
+  const cutPeriod = parseReservationPeriod(params.cutPeriod);
+  const selectedMonth = parseFinanceMonthKey(params.financeMonth, today);
+  const monthAnchor = financeMonthKeyToAnchorDate(selectedMonth);
+  const selectedDay = parseFinanceDayKey(params.financeDay, selectedMonth, today);
+  const selectedWeek = parseFinanceWeekAnchor(params.financeWeek, selectedMonth, today);
+  const periodAnchor = getPayPeriodAnchor(cutPeriod, selectedDay, selectedWeek, monthAnchor);
+  const periodBounds = getPayPeriodBounds(cutPeriod, periodAnchor);
+  const periodLabel = getReservationPeriodBounds(cutPeriod, periodAnchor).label;
+  const monthLabel = formatMexicoCityMonthLabel(monthAnchor);
+
+  const monthOptions = getFinanceMonthOptions(24, today);
+  const dayOptions = getFinanceDayOptions(selectedMonth);
+  const weekOptions = getFinanceWeekOptions(selectedMonth);
+
   const cutsPag = parsePagination(params, "cuts");
   const movsPag = parsePagination(params, "movs");
   const [cutsFrom, cutsTo] = getRange(cutsPag.page, cutsPag.pageSize);
   const [movsFrom, movsTo] = getRange(movsPag.page, movsPag.pageSize);
 
   const supabase = createAdminClient();
-  const { data: cashCuts, count: cutsCount } = await supabase
-    .from("cash_cuts")
-    .select(
-      "id,total_cash,total_transfer,total_card,total_income,expected_income,actual_cash_counted,difference,leakage_flag,created_at,profiles:generated_by(full_name)",
-      { count: "exact" },
-    )
-    .order("created_at", { ascending: false })
-    .range(cutsFrom, cutsTo);
 
-  const { data: movements, count: movsCount } = await supabase
-    .from("cash_movements")
-    .select(
-      "id,movement_date,direction,category,expense_concept,concept_detail,amount,notes,profiles:responsible_profile_id(full_name)",
-      { count: "exact" },
-    )
-    .order("recorded_at", { ascending: false })
-    .range(movsFrom, movsTo);
+  const financeSummaryPromise =
+    cutPeriod === "day"
+      ? getDayFinanceSummary(supabase, selectedDay)
+      : cutPeriod === "week"
+        ? getWeekFinanceSummary(supabase, selectedWeek)
+        : getMonthFinanceSummary(supabase, monthAnchor);
+
+  const [
+    { data: cashCuts, count: cutsCount },
+    { data: movements, count: movsCount },
+    { data: cutsForStats },
+    { data: movementsForStats },
+    financeSummary,
+    { count: paymentCount },
+    { count: expenseCount },
+  ] = await Promise.all([
+    supabase
+      .from("cash_cuts")
+      .select(
+        "id,total_cash,total_transfer,total_card,total_income,expected_income,actual_cash_counted,difference,leakage_flag,created_at,profiles:generated_by(full_name)",
+        { count: "exact" },
+      )
+      .gte("created_at", periodBounds.startAt)
+      .lte("created_at", periodBounds.endAt)
+      .order("created_at", { ascending: false })
+      .range(cutsFrom, cutsTo),
+    supabase
+      .from("cash_movements")
+      .select(
+        "id,movement_date,direction,category,expense_concept,concept_detail,amount,notes,profiles:responsible_profile_id(full_name)",
+        { count: "exact" },
+      )
+      .gte("movement_date", periodBounds.start)
+      .lte("movement_date", periodBounds.end)
+      .order("recorded_at", { ascending: false })
+      .range(movsFrom, movsTo),
+    supabase
+      .from("cash_cuts")
+      .select("total_cash,total_transfer,total_card,total_income,difference,leakage_flag")
+      .gte("created_at", periodBounds.startAt)
+      .lte("created_at", periodBounds.endAt),
+    supabase
+      .from("cash_movements")
+      .select("direction,amount")
+      .gte("movement_date", periodBounds.start)
+      .lte("movement_date", periodBounds.end),
+    financeSummaryPromise,
+    supabase
+      .from("payments")
+      .select("id", { count: "exact", head: true })
+      .gte("received_at", periodBounds.startAt)
+      .lte("received_at", periodBounds.endAt),
+    supabase
+      .from("cash_movements")
+      .select("id", { count: "exact", head: true })
+      .eq("direction", "expense")
+      .gte("movement_date", periodBounds.start)
+      .lte("movement_date", periodBounds.end),
+  ]);
+
+  const cutStats = aggregateCashCutStats(cutsForStats);
+  const movementStats = aggregateCashMovementStats(movementsForStats);
 
   const cutRows =
     cashCuts?.map((cut) => {
@@ -79,30 +160,59 @@ export default async function CashCutsPage({
       ];
     }) ?? [];
 
+  const cutsSubtitle =
+    cutPeriod === "day"
+      ? `Cortes del ${periodLabel}`
+      : cutPeriod === "week"
+        ? `Cortes de la semana (${periodLabel})`
+        : `Cortes de ${monthLabel}`;
+
+  const movementsSubtitle =
+    cutPeriod === "day"
+      ? `Movimientos del ${periodLabel}`
+      : cutPeriod === "week"
+        ? `Movimientos de la semana (${periodLabel})`
+        : `Movimientos de ${monthLabel}`;
+
   return (
     <div className="space-y-4">
+      <Suspense
+        fallback={
+          <div className="h-48 animate-pulse rounded-xl border border-border-soft bg-surface-soft" />
+        }
+      >
+        <CashCutsOverview
+          cutPeriod={cutPeriod}
+          periodLabel={periodLabel}
+          monthLabel={monthLabel}
+          selectedMonth={selectedMonth}
+          selectedDay={selectedDay}
+          selectedWeek={selectedWeek}
+          monthOptions={monthOptions}
+          dayOptions={dayOptions}
+          weekOptions={weekOptions}
+          cutStats={cutStats}
+          movementStats={movementStats}
+        />
+      </Suspense>
+
       <Card>
-        <h2 className="text-lg font-semibold text-text-main">Corte único diario</h2>
-        <p className="mt-1 text-sm text-text-muted">
-          Registra ingresos/egresos manuales y genera corte con responsable y trazabilidad. Para
-          gastos operativos con ticket, usa{" "}
-          <a href="/dashboard/expenses" className="text-brand-primary underline">
-            Gastos
-          </a>
-          .
-        </p>
-        <div className="mt-4 flex flex-col gap-4">
-          <form action={createDailyCashCutAction}>
-            <Button type="submit">Generar corte del día</Button>
-          </form>
-          <CashMovementForm action={createCashMovementAction} />
-        </div>
-      </Card>
-      <Card>
-        <h3 className="text-base font-semibold text-text-main">Últimos cortes</h3>
+        <h3 className="text-base font-semibold text-text-main">Cortes del periodo</h3>
+        <p className="mt-0.5 text-sm capitalize text-text-muted">{cutsSubtitle}</p>
         <div className="mt-3">
           <ResponsiveTable
-            headers={["Fecha", "Responsable", "Efectivo", "Transfer", "Tarjeta", "Registrado", "Esperado", "Contado", "Dif", "Leakage"]}
+            headers={[
+              "Fecha",
+              "Responsable",
+              "Efectivo",
+              "Transfer",
+              "Tarjeta",
+              "Registrado",
+              "Esperado",
+              "Contado",
+              "Dif",
+              "Leakage",
+            ]}
             rows={cutRows}
             serverPagination={{
               page: cutsPag.page,
@@ -113,8 +223,10 @@ export default async function CashCutsPage({
           />
         </div>
       </Card>
+
       <Card>
         <h3 className="text-base font-semibold text-text-main">Movimientos de caja</h3>
+        <p className="mt-0.5 text-sm capitalize text-text-muted">{movementsSubtitle}</p>
         <div className="mt-3">
           <ResponsiveTable
             headers={["Fecha", "Tipo", "Concepto", "Monto", "Responsable", "Notas"]}
@@ -128,6 +240,13 @@ export default async function CashCutsPage({
           />
         </div>
       </Card>
+
+      <PaymentsExpensesComparison
+        summary={financeSummary}
+        periodLabel={periodLabel}
+        paymentCount={paymentCount ?? 0}
+        expenseCount={expenseCount ?? 0}
+      />
     </div>
   );
 }

@@ -1,8 +1,35 @@
-import { requireRole } from "@/lib/auth/guards";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { Card } from "@/components/ui/card";
+import { Suspense } from "react";
+import { AuditOverview } from "@/components/dashboard/audit-overview";
+import { AuditTechnicalDetail } from "@/components/dashboard/audit-technical-detail";
+import { Badge } from "@/components/ui/badge";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
+import { requireRole } from "@/lib/auth/guards";
+import {
+  formatAuditDetailLines,
+  formatAuditSummary,
+  getAuditActionLabel,
+  getAuditCategoryActions,
+  getAuditCategoryForAction,
+  getAuditCategoryLabel,
+  getAuditEntityLabel,
+  parseAuditCategory,
+  parseAuditMetadata,
+} from "@/lib/audit-log-presenter";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
+
+const CATEGORY_BADGE_VARIANT: Record<
+  string,
+  "default" | "success" | "warning" | "danger"
+> = {
+  reservations: "success",
+  payments: "success",
+  cash: "warning",
+  beds: "default",
+  import: "default",
+  messages: "default",
+  all: "default",
+};
 
 export default async function AuditPage({
   searchParams,
@@ -13,6 +40,8 @@ export default async function AuditPage({
   const params = await searchParams;
   const { page, pageSize, q } = parsePagination(params);
   const [from, to] = getRange(page, pageSize);
+  const category = parseAuditCategory(params.auditCategory);
+  const categoryActions = getAuditCategoryActions(category);
 
   const adminSupabase = createAdminClient();
 
@@ -23,52 +52,108 @@ export default async function AuditPage({
       { count: "exact" },
     );
 
+  if (categoryActions?.length) {
+    query = query.in("action", categoryActions);
+  }
+
   if (q) {
     const safe = escapeIlike(q);
-    query = query.or(`action.ilike.%${safe}%,entity_type.ilike.%${safe}%`);
+    query = query.or(
+      `action.ilike.%${safe}%,entity_type.ilike.%${safe}%,metadata->>folio_code.ilike.%${safe}%`,
+    );
   }
 
   const { data: logs, count } = await query
     .order("created_at", { ascending: false })
     .range(from, to);
 
-  // Obtener emails de los actores únicos (solo en la página actual)
   const actorIds = [...new Set((logs ?? []).map((l) => l.actor_user_id).filter(Boolean))] as string[];
   const emailMap = new Map<string, string>();
 
-  for (const uid of actorIds) {
-    try {
-      const { data } = await adminSupabase.auth.admin.getUserById(uid);
-      if (data?.user?.email) emailMap.set(uid, data.user.email);
-    } catch {
-      // Si falla para un usuario, continuar
-    }
-  }
+  await Promise.all(
+    actorIds.map(async (uid) => {
+      try {
+        const { data } = await adminSupabase.auth.admin.getUserById(uid);
+        if (data?.user?.email) emailMap.set(uid, data.user.email);
+      } catch {
+        // omitir si no hay acceso al usuario
+      }
+    }),
+  );
 
   const rows =
     logs?.map((log) => {
       const profile = log.profiles as { full_name?: string } | undefined;
-      const email = log.actor_user_id ? (emailMap.get(log.actor_user_id) ?? "—") : "—";
+      const email = log.actor_user_id ? (emailMap.get(log.actor_user_id) ?? "") : "";
+      const actorName = profile?.full_name ?? "Sistema";
+      const metadata = parseAuditMetadata(log.metadata);
+      const actionLabel = getAuditActionLabel(log.action);
+      const summary = formatAuditSummary(log.action, metadata);
+      const detailLines = formatAuditDetailLines(log.action, metadata);
+      const auditCategory = getAuditCategoryForAction(log.action);
+      const categoryLabel = getAuditCategoryLabel(auditCategory);
+      const entityLabel = getAuditEntityLabel(log.entity_type);
+      const metadataJson = JSON.stringify(metadata ?? {}, null, 0);
+
+      const actorCell = (
+        <div key={`actor-${log.id}`} className="min-w-0">
+          <p className="font-medium text-text-main">{actorName}</p>
+          {email ? <p className="text-xs text-text-muted">{email}</p> : null}
+        </div>
+      );
+
+      const activityCell = (
+        <div key={`activity-${log.id}`} className="min-w-0 space-y-1">
+          <p className="font-medium text-text-main">{actionLabel}</p>
+          <div className="flex flex-wrap gap-1">
+            <Badge variant={CATEGORY_BADGE_VARIANT[auditCategory] ?? "default"}>
+              {categoryLabel}
+            </Badge>
+            <Badge variant="default">{entityLabel}</Badge>
+          </div>
+        </div>
+      );
+
+      const detailCell = (
+        <div key={`detail-${log.id}`} className="min-w-0 space-y-1 text-sm">
+          <p className="text-text-main">{summary}</p>
+          {detailLines.length > 0 ? (
+            <ul className="list-inside list-disc text-xs text-text-muted">
+              {detailLines.slice(0, 4).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          ) : null}
+          <AuditTechnicalDetail
+            action={log.action}
+            entityType={log.entity_type}
+            metadataJson={metadataJson}
+          />
+        </div>
+      );
+
       return [
-        new Date(log.created_at).toLocaleString("es-MX"),
-        profile?.full_name ?? "Sistema",
-        email,
-        log.action,
-        log.entity_type,
-        JSON.stringify(log.metadata),
+        new Date(log.created_at).toLocaleString("es-MX", {
+          timeZone: "America/Mexico_City",
+        }),
+        actorCell,
+        activityCell,
+        detailCell,
       ];
     }) ?? [];
 
   return (
     <div className="space-y-4">
-      <Card>
-        <h2 className="text-lg font-semibold text-text-main">Log de auditoría inalterable</h2>
-        <p className="mt-1 text-sm text-text-muted">
-          Historial de cobros, cortes, tickets y cambios críticos con usuario y marca de tiempo.
-        </p>
-      </Card>
+      <Suspense
+        fallback={
+          <div className="h-24 animate-pulse rounded-xl border border-border-soft bg-surface-soft" />
+        }
+      >
+        <AuditOverview category={category} totalInView={rows.length} />
+      </Suspense>
+
       <ResponsiveTable
-        headers={["Fecha", "Actor", "Correo", "Acción", "Entidad", "Metadata"]}
+        headers={["Cuándo", "Quién", "Qué pasó", "Detalle"]}
         rows={rows}
         filterMode="global"
         serverPagination={{
@@ -76,7 +161,7 @@ export default async function AuditPage({
           pageSize,
           totalCount: count ?? 0,
           searchQuery: q,
-          searchPlaceholder: "Buscar por acción o entidad…",
+          searchPlaceholder: "Buscar por folio, actividad o tipo…",
         }}
       />
     </div>

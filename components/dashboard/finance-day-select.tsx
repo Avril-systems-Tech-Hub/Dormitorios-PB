@@ -8,9 +8,16 @@ type FinanceDaySelectProps = {
   options: { value: string; label: string }[];
   monthKey: string;
   className?: string;
+  clearParams?: string[];
 };
 
-export function FinanceDaySelect({ value, options, monthKey, className }: FinanceDaySelectProps) {
+export function FinanceDaySelect({
+  value,
+  options,
+  monthKey,
+  className,
+  clearParams,
+}: FinanceDaySelectProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -22,6 +29,9 @@ export function FinanceDaySelect({ value, options, monthKey, className }: Financ
       params.delete("financeDay");
     } else {
       params.set("financeDay", next);
+    }
+    for (const key of clearParams ?? []) {
+      params.delete(key);
     }
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);

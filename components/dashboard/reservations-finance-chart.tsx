@@ -94,7 +94,7 @@ function PieChart({ slices }: { slices: ChartSlice[] }) {
 
   return (
     <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:justify-center">
-      <svg viewBox="0 0 200 200" className="h-52 w-52 shrink-0" role="img" aria-label="Distribución ingresos y gastos">
+      <svg viewBox="0 0 200 200" className="h-44 w-44 shrink-0 sm:h-52 sm:w-52" role="img" aria-label="Distribución ingresos y gastos">
         {segments.map((segment) => (
           <path key={segment.key} d={segment.d} fill={segment.color} />
         ))}
@@ -126,13 +126,13 @@ function BarChart({ slices, netResult }: { slices: ChartSlice[]; netResult: numb
 
   return (
     <div className="space-y-4">
-      <div className="flex h-52 items-end justify-center gap-8 px-4">
+      <div className="flex h-48 items-end justify-center gap-4 px-2 sm:h-52 sm:gap-8 sm:px-4">
         {slices.map((slice) => {
           const heightPct = (slice.value / maxValue) * 100;
           return (
-            <div key={slice.key} className="flex w-24 flex-col items-center gap-2">
+            <div key={slice.key} className="flex w-16 flex-col items-center gap-2 sm:w-24">
               <span className="text-xs font-medium text-text-main">${slice.value.toFixed(2)}</span>
-              <div className="flex h-40 w-full items-end rounded-t-lg bg-surface-soft">
+              <div className="flex h-32 w-full items-end rounded-t-lg bg-surface-soft sm:h-40">
                 <div
                   className="w-full rounded-t-lg transition-all"
                   style={{ height: `${heightPct}%`, backgroundColor: slice.color, minHeight: slice.value > 0 ? "4px" : "0" }}
@@ -188,20 +188,20 @@ export function ReservationsFinanceChart({
 
   return (
     <Card>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-text-main">Estado financiero</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold text-text-main sm:text-lg">Estado financiero</h2>
           <p className="mt-1 text-sm capitalize text-text-muted">
             {getPeriodDescription(period, monthLabel, dayLabel, weekLabel)}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:items-end">
           {period === "day" ? (
             <FinanceDaySelect
               value={selectedDay}
               options={dayOptions}
               monthKey={selectedMonth}
-              className="max-w-[12rem] rounded-md border border-border-soft bg-white px-2 py-1 text-xs capitalize text-text-main"
+              className="w-full rounded-md border border-border-soft bg-white px-2 py-1.5 text-xs capitalize text-text-main sm:max-w-[12rem]"
             />
           ) : null}
           {period === "week" ? (
@@ -209,9 +209,10 @@ export function ReservationsFinanceChart({
               value={selectedWeek}
               options={weekOptions}
               monthKey={selectedMonth}
-              className="max-w-[12rem] rounded-md border border-border-soft bg-white px-2 py-1 text-xs capitalize text-text-main"
+              className="w-full rounded-md border border-border-soft bg-white px-2 py-1.5 text-xs capitalize text-text-main sm:max-w-[12rem]"
             />
           ) : null}
+          <div className="flex flex-wrap items-center gap-2">
           <div
             className="inline-flex rounded-lg border border-border-soft bg-surface-soft p-0.5 text-xs"
             role="group"
@@ -253,6 +254,7 @@ export function ReservationsFinanceChart({
                 {value === "pie" ? "Pastel" : "Barras"}
               </button>
             ))}
+          </div>
           </div>
         </div>
       </div>

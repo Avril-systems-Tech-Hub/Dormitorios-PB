@@ -1,6 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import {
+  createRoleAction,
+  deleteRoleAction,
+  updateRolePermissionsAction,
+} from "@/actions/auth";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import type { SystemModule, SystemRole } from "@/lib/auth/permissions";
 
 type Profile = {
@@ -14,27 +22,23 @@ type Profile = {
 
 type UsersPanelProps = {
   profiles: Profile[];
-  roles: SystemRole[];
   allModules: SystemModule[];
   roleModulesMap: Map<string, string[]>;
   allRoles: SystemRole[];
-  currentUserId: string;
 };
+
+const fieldClass =
+  "rounded-md border border-border-soft bg-white px-3 py-2 text-sm text-text-main";
 
 export function UsersPanel({
   profiles,
-  roles,
   allModules,
   roleModulesMap,
   allRoles,
-  currentUserId,
 }: UsersPanelProps) {
-  const [tab, setTab] = useState<"create-user" | "roles" | "edit-role">("create-user");
+  const [tab, setTab] = useState<"roles" | "edit-role">("roles");
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
   const [selectedModules, setSelectedModules] = useState<string[]>([]);
-
-  // Usuarios no admin
-  const nonAdminProfiles = profiles.filter((p) => p.role !== "admin");
 
   const startEditRole = (roleId: string) => {
     setEditingRoleId(roleId);
@@ -50,309 +54,162 @@ export function UsersPanel({
 
   return (
     <div className="space-y-4">
-      {/* Tabs */}
-      <div className="flex gap-1 border-b-2 border-[#1f4e5f] pb-0">
-        <button
-          type="button"
-          onClick={() => setTab("create-user")}
-          className={`px-5 py-2.5 text-sm font-semibold rounded-t-lg transition-colors ${
-            tab === "create-user"
-              ? "bg-[#1f4e5f] text-white shadow-sm"
-              : "bg-[#e8ecef] text-[#17212b] hover:bg-[#d0d6db]"
-          }`}
-        >
-          Nuevo Usuario
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("roles")}
-          className={`px-5 py-2.5 text-sm font-semibold rounded-t-lg transition-colors ${
-            tab === "roles" || tab === "edit-role"
-              ? "bg-[#1f4e5f] text-white shadow-sm"
-              : "bg-[#e8ecef] text-[#17212b] hover:bg-[#d0d6db]"
-          }`}
-        >
-          Roles y Permisos
-        </button>
-        {tab === "edit-role" && (
-          <button
-            type="button"
-            className="px-5 py-2.5 text-sm font-semibold rounded-t-lg bg-[#f2a65a] text-white shadow-sm transition-colors"
-          >
-            ✏️ Editar Permisos
-          </button>
-        )}
-      </div>
-
-      {/* Tab: Crear usuario */}
-      {tab === "create-user" && (
-        <Card>
-          <h3 className="text-md font-semibold text-text-main mb-4">Crear nuevo usuario</h3>
-          <form action="/api/auth/users/create" method="POST" className="space-y-3 max-w-md" onSubmit={(e) => {
-            e.preventDefault();
-            const form = e.currentTarget;
-            const formData = new FormData(form);
-            // Use server action via form submission trick
-            import("@/actions/auth").then(({ createSystemUserAction }) => {
-              createSystemUserAction(formData);
-            });
-          }}>
-            <div>
-              <label className="block text-sm font-medium text-text-muted mb-1">Nombre completo</label>
-              <input
-                name="full_name"
-                required
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-                placeholder="Ej: Juan Pérez"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-muted mb-1">Correo electrónico</label>
-              <input
-                name="email"
-                type="email"
-                required
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-                placeholder="correo@ejemplo.com"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-muted mb-1">Contraseña</label>
-              <input
-                name="password"
-                type="password"
-                required
-                minLength={6}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-                placeholder="Mínimo 6 caracteres"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-muted mb-1">Rol</label>
-              <select
-                name="role_id"
-                required
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-              >
-                <option value="">Seleccionar rol...</option>
-                {roles.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <input type="hidden" name="return_to" value="/dashboard/users" />
-            <button
-              type="submit"
-              className="bg-[#1f4e5f] text-white px-5 py-2.5 rounded-lg text-sm font-semibold shadow-sm hover:bg-[#2b6b7f] transition-colors"
-            >
-              ＋ Crear Usuario
-            </button>
-          </form>
-        </Card>
-      )}
-
-      {/* Tab: Cambiar rol de usuario */}
-      {tab === "create-user" && nonAdminProfiles.length > 0 && (
-        <Card>
-          <h3 className="text-md font-semibold text-text-main mb-4">Cambiar rol de usuario</h3>
-          <div className="space-y-3">
-            {nonAdminProfiles.map((p) => (
-              <form
-                key={p.id}
-                className="flex items-center gap-3"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const formData = new FormData(e.currentTarget);
-                  import("@/actions/auth").then(({ updateUserRoleAction }) => {
-                    updateUserRoleAction(formData);
-                  });
-                }}
-              >
-                <span className="text-sm text-text-main w-48 truncate">{p.full_name}</span>
-                <input type="hidden" name="user_id" value={p.id} />
-                <input type="hidden" name="return_to" value="/dashboard/users" />
-                <select
-                  name="role_id"
-                  defaultValue={p.system_role_id ?? ""}
-                  className="border border-gray-300 rounded px-2 py-1 text-sm"
-                >
-                  {roles.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="submit"
-                  className="bg-[#1f4e5f] text-white px-3 py-1.5 rounded-md text-xs font-semibold hover:bg-[#2b6b7f] transition-colors"
-                >
-                  Guardar
-                </button>
-                {p.id !== currentUserId && (
-                  <>
-                    <button
-                      type="button"
-                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-                        p.is_disabled
-                          ? "bg-[#1f8f4e] text-white hover:bg-[#167a3e]"
-                          : "bg-[#d08a00] text-white hover:bg-[#b57500]"
-                      }`}
-                      onClick={() => {
-                        const action = p.is_disabled ? "habilitar" : "deshabilitar";
-                        if (confirm(`¿${action.charAt(0).toUpperCase() + action.slice(1)} a ${p.full_name}?`)) {
-                          const formData = new FormData();
-                          formData.set("user_id", p.id);
-                          formData.set("is_disabled", p.is_disabled ? "false" : "true");
-                          formData.set("return_to", "/dashboard/users");
-                          import("@/actions/auth").then(({ toggleUserStatusAction }) => {
-                            toggleUserStatusAction(formData);
-                          });
-                        }
-                      }}
-                    >
-                      {p.is_disabled ? "✅ Habilitar" : "⛔ Deshabilitar"}
-                    </button>
-                  </>
-                )}
-              </form>
-            ))}
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-text-main">Roles y permisos</h3>
+            <p className="mt-0.5 text-sm text-text-muted">
+              Define qué módulos del panel puede ver cada rol (camas, pagos, cortes, etc.).
+            </p>
           </div>
-        </Card>
-      )}
+          <div
+            className="inline-flex rounded-lg border border-border-soft bg-surface-soft p-0.5 text-xs"
+            role="group"
+            aria-label="Sección de roles"
+          >
+            <button
+              type="button"
+              onClick={() => setTab("roles")}
+              className={cn(
+                "rounded-md px-3 py-1.5 font-medium transition",
+                tab === "roles"
+                  ? "bg-white text-text-main shadow-sm"
+                  : "text-text-muted hover:text-text-main",
+              )}
+            >
+              Lista de roles
+            </button>
+            {tab === "edit-role" ? (
+              <button
+                type="button"
+                className="rounded-md bg-brand-primary/10 px-3 py-1.5 font-medium text-brand-primary shadow-sm"
+              >
+                Editando permisos
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </Card>
 
-      {/* Tab: Roles y Permisos */}
       {tab === "roles" && (
         <div className="space-y-4">
-          {/* Crear nuevo rol */}
           <Card>
-            <h3 className="text-md font-semibold text-text-main mb-4">Crear nuevo rol</h3>
-            <form
-              className="flex items-end gap-3 max-w-lg"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const formData = new FormData(e.currentTarget);
-                import("@/actions/auth").then(({ createRoleAction }) => {
-                  createRoleAction(formData);
-                });
-              }}
-            >
+            <h4 className="text-sm font-semibold text-text-main">Crear nuevo rol</h4>
+            <form action={createRoleAction} className="mt-3 flex flex-wrap items-end gap-3">
               <div>
-                <label className="block text-sm font-medium text-text-muted mb-1">Nombre (interno)</label>
+                <label className="mb-1 block text-xs font-medium text-text-muted" htmlFor="role-name">
+                  Nombre interno
+                </label>
                 <input
+                  id="role-name"
                   name="name"
                   required
-                  className="border border-gray-300 rounded px-3 py-2 text-sm"
+                  className={fieldClass}
                   placeholder="ej: cajero"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-text-muted mb-1">Etiqueta (visible)</label>
+                <label className="mb-1 block text-xs font-medium text-text-muted" htmlFor="role-label">
+                  Nombre visible
+                </label>
                 <input
+                  id="role-label"
                   name="label"
                   required
-                  className="border border-gray-300 rounded px-3 py-2 text-sm"
+                  className={fieldClass}
                   placeholder="ej: Cajero"
                 />
               </div>
               <input type="hidden" name="return_to" value="/dashboard/users" />
-              <button
-                type="submit"
-                className="bg-[#1f4e5f] text-white px-5 py-2.5 rounded-lg text-sm font-semibold shadow-sm hover:bg-[#2b6b7f] transition-colors"
-              >
-                ＋ Crear Rol
-              </button>
+              <Button type="submit" variant="primary">
+                Crear rol
+              </Button>
             </form>
           </Card>
 
-          {/* Lista de roles */}
           <Card>
-            <h3 className="text-md font-semibold text-text-main mb-4">Roles del sistema</h3>
-            <div className="space-y-3">
+            <h4 className="text-sm font-semibold text-text-main">Roles del sistema</h4>
+            <ul className="mt-3 space-y-3">
               {allRoles.map((r) => {
                 const modules = roleModulesMap.get(r.id) ?? [];
                 const usersWithRole = profiles.filter((p) => p.system_role_id === r.id).length;
                 return (
-                  <div
+                  <li
                     key={r.id}
-                    className="border border-gray-200 rounded p-3 flex items-center justify-between"
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-soft bg-surface-soft/30 p-3"
                   >
                     <div>
                       <span className="font-medium text-text-main">{r.label}</span>
-                      {r.is_system && (
-                        <span className="ml-2 text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">
+                      {r.is_system ? (
+                        <span className="ml-2 rounded-full bg-surface-soft px-2 py-0.5 text-xs text-text-muted">
                           Sistema
                         </span>
-                      )}
-                      <span className="ml-2 text-xs text-text-muted">
-                        {modules.length} módulo{modules.length !== 1 ? "s" : ""} · {usersWithRole} usuario{usersWithRole !== 1 ? "s" : ""}
-                      </span>
+                      ) : null}
+                      <p className="mt-0.5 text-xs text-text-muted">
+                        {modules.length} módulo{modules.length !== 1 ? "s" : ""} · {usersWithRole}{" "}
+                        usuario{usersWithRole !== 1 ? "s" : ""}
+                      </p>
                     </div>
-                    <div className="flex gap-2">
-                      {!r.is_system && (
-                        <>
-                          <button
-                            type="button"
-                            className="bg-[#2b6b7f] text-white px-3 py-1.5 rounded-md text-xs font-semibold hover:bg-[#1f4e5f] transition-colors"
-                            onClick={() => startEditRole(r.id)}
-                          >
-                            Editar Permisos
-                          </button>
-                          <button
-                            type="button"
-                            className="bg-[#c53b3b] text-white px-3 py-1.5 rounded-md text-xs font-semibold hover:bg-[#a52e2e] transition-colors"
-                            onClick={() => {
-                              if (confirm(`¿Eliminar el rol "${r.label}"?`)) {
-                                const formData = new FormData();
-                                formData.set("role_id", r.id);
-                                formData.set("return_to", "/dashboard/users");
-                                import("@/actions/auth").then(({ deleteRoleAction }) => {
-                                  deleteRoleAction(formData);
-                                });
-                              }
-                            }}
-                          >
-                            Eliminar
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
+                    {!r.is_system ? (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-8 px-3 text-xs"
+                          onClick={() => startEditRole(r.id)}
+                        >
+                          Editar permisos
+                        </Button>
+                        <form
+                          action={deleteRoleAction}
+                          onSubmit={(event) => {
+                            if (!confirm(`¿Eliminar el rol "${r.label}"?`)) {
+                              event.preventDefault();
+                            }
+                          }}
+                        >
+                          <input type="hidden" name="role_id" value={r.id} />
+                          <input type="hidden" name="return_to" value="/dashboard/users" />
+                          <Button type="submit" variant="danger" className="h-8 px-3 text-xs">
+                            Eliminar rol
+                          </Button>
+                        </form>
+                      </div>
+                    ) : null}
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           </Card>
         </div>
       )}
 
-      {/* Tab: Editar permisos de un rol */}
-      {tab === "edit-role" && editingRoleId && (
+      {tab === "edit-role" && editingRoleId ? (
         <Card>
-          <h3 className="text-md font-semibold text-text-main mb-4">
-            Editar permisos: {allRoles.find((r) => r.id === editingRoleId)?.label ?? "Rol"}
-          </h3>
+          <h4 className="text-sm font-semibold text-text-main">
+            Permisos: {allRoles.find((r) => r.id === editingRoleId)?.label ?? "Rol"}
+          </h4>
           <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const formData = new FormData();
-              formData.set("role_id", editingRoleId);
+            className="mt-3"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              const formData = new FormData(event.currentTarget);
               formData.set("module_keys", JSON.stringify(selectedModules));
-              formData.set("return_to", "/dashboard/users");
-              import("@/actions/auth").then(({ updateRolePermissionsAction }) => {
-                updateRolePermissionsAction(formData);
-              });
+              await updateRolePermissionsAction(formData);
             }}
           >
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
+            <input type="hidden" name="role_id" value={editingRoleId} />
+            <input type="hidden" name="return_to" value="/dashboard/users" />
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {allModules.map((mod) => (
                 <label
                   key={mod.key}
-                  className={`flex items-center gap-2 p-2 border rounded cursor-pointer text-sm ${
+                  className={cn(
+                    "flex cursor-pointer items-center gap-2 rounded-lg border p-2 text-sm transition",
                     selectedModules.includes(mod.key)
-                      ? "border-primary bg-primary/5"
-                      : "border-gray-200"
-                  }`}
+                      ? "border-brand-primary/40 bg-brand-primary/5"
+                      : "border-border-soft hover:bg-surface-soft/50",
+                  )}
                 >
                   <input
                     type="checkbox"
@@ -364,32 +221,17 @@ export function UsersPanel({
                 </label>
               ))}
             </div>
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                className="bg-[#1f4e5f] text-white px-5 py-2.5 rounded-lg text-sm font-semibold shadow-sm hover:bg-[#2b6b7f] transition-colors"
-              >
-                Guardar Permisos
-              </button>
-              <button
-                type="button"
-                onClick={() => setTab("roles")}
-                className="bg-[#e8ecef] text-[#17212b] px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-[#d0d6db] transition-colors"
-              >
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button type="submit" variant="primary">
+                Guardar permisos
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setTab("roles")}>
                 Cancelar
-              </button>
+              </Button>
             </div>
           </form>
         </Card>
-      )}
-    </div>
-  );
-}
-
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`bg-surface rounded-xl border border-gray-200 p-4 ${className}`}>
-      {children}
+      ) : null}
     </div>
   );
 }

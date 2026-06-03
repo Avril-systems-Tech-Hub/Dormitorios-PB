@@ -128,7 +128,7 @@ export default async function DashboardPage({
 
   return (
     <div className="min-w-0 space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         <Suspense fallback={
           <Card className="h-full animate-pulse">
             <div className="h-4 w-32 rounded bg-surface-soft" />

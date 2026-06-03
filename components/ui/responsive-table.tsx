@@ -73,11 +73,14 @@ export function ResponsiveTable({
   sortParamKey = "sort",
   dirParamKey = "dir",
   columnFilterPrefix = "cf_",
+  mobileColumnIndices,
 }: {
   headers?: string[];
   /** Optional column metadata for server-side sort/filter controls. */
   columns?: TableColumnConfig[];
   rows: FilterableCell[][];
+  /** Subset of column indices for mobile card rows (default: all columns). */
+  mobileColumnIndices?: number[];
   /** "columns" = filter per column (default). "global" = single search across all cells. */
   filterMode?: "columns" | "global";
   /** Tighter rows and top-aligned cells for detail-heavy tables. */
@@ -98,6 +101,9 @@ export function ResponsiveTable({
   const tableColumns: TableColumnConfig[] =
     columns ?? (headers ?? []).map((label, index) => ({ key: String(index), label }));
   const tableHeaders = tableColumns.map((column) => column.label);
+  const mobileIndices =
+    mobileColumnIndices ??
+    tableHeaders.map((_, index) => index);
   const hasServerColumnControls = isServer && tableColumns.some((column) => column.sortable || column.filterable);
 
   const [filters, setFilters] = useState<Record<number, string>>({});
@@ -254,8 +260,8 @@ export function ResponsiveTable({
 
   return (
     <div className="max-w-full overflow-hidden rounded-xl border border-border-soft bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-soft bg-gray-50/50 px-4 py-2">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft bg-gray-50/50 px-3 py-2 sm:gap-3 sm:px-4">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:gap-3">
           <div className="flex items-center gap-2 text-xs text-text-muted">
             <span>Mostrar</span>
             <select
@@ -471,10 +477,13 @@ export function ResponsiveTable({
         ) : (
           paginatedIndices.map((idx) => (
             <div key={idx} className="rounded-lg border border-border-soft p-3">
-              {rows[idx].map((cell, cellIdx) => (
-                <div key={cellIdx} className="flex justify-between gap-2 border-b border-border-soft/60 py-2 text-sm last:border-0">
-                  <span className="shrink-0 text-text-muted">{tableHeaders[cellIdx]}</span>
-                  <span className="min-w-0 text-right text-text-main">{getCellNode(cell)}</span>
+              {mobileIndices.map((cellIdx) => (
+                <div
+                  key={cellIdx}
+                  className="grid grid-cols-[minmax(5.5rem,38%)_1fr] gap-x-3 gap-y-1 border-b border-border-soft/60 py-2.5 text-sm last:border-0"
+                >
+                  <span className="text-xs font-medium text-text-muted">{tableHeaders[cellIdx]}</span>
+                  <span className="min-w-0 text-text-main">{getCellNode(rows[idx][cellIdx])}</span>
                 </div>
               ))}
             </div>

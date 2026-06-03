@@ -112,9 +112,9 @@ export function FinanceCalendarView({
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
         {DAY_NAMES.map((name) => (
-          <div key={name} className="py-1 text-center text-[10px] font-medium text-text-muted">
+          <div key={name} className="py-0.5 text-center text-[9px] font-medium text-text-muted sm:py-1 sm:text-[10px]">
             {name}
           </div>
         ))}
@@ -142,7 +142,7 @@ export function FinanceCalendarView({
               disabled={!inScope}
               onClick={() => inScope && setSelectedDate(cell.dateStr)}
               className={cn(
-                "flex min-h-[4.5rem] flex-col rounded-md border px-1 py-1 text-left text-[10px] leading-tight transition",
+                "flex min-h-[3.25rem] flex-col rounded-md border px-0.5 py-0.5 text-left text-[9px] leading-tight transition sm:min-h-[4.5rem] sm:px-1 sm:py-1 sm:text-[10px]",
                 inScope
                   ? "cursor-pointer border-border-soft bg-white hover:border-brand-primary/40 hover:bg-surface-soft/50"
                   : "cursor-default border-transparent bg-surface-soft/40 opacity-45",

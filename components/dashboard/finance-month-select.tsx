@@ -8,6 +8,7 @@ type FinanceMonthSelectProps = {
   options: { value: string; label: string }[];
   className?: string;
   ariaLabel?: string;
+  clearParams?: string[];
 };
 
 export function FinanceMonthSelect({
@@ -15,6 +16,7 @@ export function FinanceMonthSelect({
   options,
   className,
   ariaLabel = "Mes",
+  clearParams,
 }: FinanceMonthSelectProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -31,6 +33,9 @@ export function FinanceMonthSelect({
     params.delete("page");
     params.delete("financeDay");
     params.delete("financeWeek");
+    for (const key of clearParams ?? []) {
+      params.delete(key);
+    }
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);
   }

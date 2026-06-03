@@ -46,10 +46,10 @@ export function FinanceResultCard({
 
   return (
     <Card className="h-full">
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <p className="text-sm text-text-muted">{PERIOD_TITLES[period]}</p>
         <div
-          className="inline-flex shrink-0 rounded-lg border border-border-soft bg-surface-soft p-0.5 text-xs"
+          className="inline-flex w-fit max-w-full rounded-lg border border-border-soft bg-surface-soft p-0.5 text-xs"
           role="group"
           aria-label="Periodo del resultado"
         >
@@ -75,7 +75,11 @@ export function FinanceResultCard({
         <p className="mt-0.5 text-xs capitalize text-text-muted">{rangeLabel}</p>
       ) : null}
       {period === "month" ? (
-        <FinanceMonthSelect value={selectedMonth} options={monthOptions} />
+        <FinanceMonthSelect
+          value={selectedMonth}
+          options={monthOptions}
+          className="mt-0.5 w-full max-w-none rounded-md border border-border-soft bg-white px-2 py-1.5 text-xs capitalize text-text-main sm:max-w-[11rem]"
+        />
       ) : null}
 
       <p className="mt-1 text-2xl font-semibold">${finance.netResult.toFixed(2)}</p>

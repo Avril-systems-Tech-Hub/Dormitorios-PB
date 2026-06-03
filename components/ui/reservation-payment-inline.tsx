@@ -78,7 +78,7 @@ export function ReservationPaymentInline({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-1.5">
+    <form onSubmit={handleSubmit} className="flex w-full min-w-[8.5rem] flex-col gap-1.5">
       {/* Monto */}
       <div className="flex items-center gap-1">
         <span className="text-xs text-gray-500">$</span>
@@ -93,7 +93,7 @@ export function ReservationPaymentInline({
             setMessage(null);
           }}
           placeholder="Monto"
-          className={`w-20 rounded border px-2 py-1 text-xs ${
+          className={`min-w-0 flex-1 rounded border px-2 py-1.5 text-xs sm:max-w-[5.5rem] sm:flex-none sm:py-1 ${
             exceedsMax
               ? "border-red-400 bg-red-50 text-red-700"
               : "border-gray-300 bg-white text-gray-900"

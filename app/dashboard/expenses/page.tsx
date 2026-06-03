@@ -1,12 +1,29 @@
-import { createExpenseAction } from "@/actions/operations";
-import { ExpenseCaptureForm } from "@/components/forms/expense-capture-form";
+import { Suspense } from "react";
+import { ExpenseRegisterPanel } from "@/components/dashboard/expense-register-panel";
+import { ExpensesOverview } from "@/components/dashboard/expenses-overview";
 import { Card } from "@/components/ui/card";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
-import { Badge } from "@/components/ui/badge";
 import { requireRole } from "@/lib/auth/guards";
 import { getExpenseConceptLabel } from "@/lib/expense-concepts";
-import { getDayFinanceSummary } from "@/lib/day-finance";
-import { getMexicoCityDateString } from "@/lib/dates";
+import {
+  getDayFinanceSummary,
+  getMonthFinanceSummary,
+  getWeekFinanceSummary,
+} from "@/lib/day-finance";
+import {
+  financeMonthKeyToAnchorDate,
+  formatMexicoCityMonthLabel,
+  getFinanceDayOptions,
+  getFinanceMonthOptions,
+  getFinanceWeekOptions,
+  getMexicoCityDateString,
+  getReservationPeriodBounds,
+  parseFinanceDayKey,
+  parseFinanceMonthKey,
+  parseFinanceWeekAnchor,
+  parseReservationPeriod,
+} from "@/lib/dates";
+import { getPayPeriodAnchor, getPayPeriodBounds } from "@/lib/payment-insights";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
@@ -33,7 +50,25 @@ export default async function ExpensesPage({
   const supabase = await createClient();
   const adminSupabase = createAdminClient();
   const today = getMexicoCityDateString();
-  const summary = await getDayFinanceSummary(supabase, today);
+  const expensePeriod = parseReservationPeriod(params.expensePeriod);
+  const selectedMonth = parseFinanceMonthKey(params.financeMonth, today);
+  const monthAnchor = financeMonthKeyToAnchorDate(selectedMonth);
+  const selectedDay = parseFinanceDayKey(params.financeDay, selectedMonth, today);
+  const selectedWeek = parseFinanceWeekAnchor(params.financeWeek, selectedMonth, today);
+  const periodAnchor = getPayPeriodAnchor(expensePeriod, selectedDay, selectedWeek, monthAnchor);
+  const periodBounds = getPayPeriodBounds(expensePeriod, periodAnchor);
+  const periodLabel = getReservationPeriodBounds(expensePeriod, periodAnchor).label;
+
+  const monthOptions = getFinanceMonthOptions(24, today);
+  const dayOptions = getFinanceDayOptions(selectedMonth);
+  const weekOptions = getFinanceWeekOptions(selectedMonth);
+
+  const summary =
+    expensePeriod === "day"
+      ? await getDayFinanceSummary(supabase, selectedDay)
+      : expensePeriod === "week"
+        ? await getWeekFinanceSummary(supabase, selectedWeek)
+        : await getMonthFinanceSummary(supabase, monthAnchor);
 
   let query = adminSupabase
     .from("cash_movements")
@@ -41,7 +76,9 @@ export default async function ExpensesPage({
       "id,movement_date,expense_concept,concept_detail,amount,method,notes,receipt_image_path,recorded_at,profiles:responsible_profile_id(full_name)",
       { count: "exact" },
     )
-    .eq("direction", "expense");
+    .eq("direction", "expense")
+    .gte("movement_date", periodBounds.start)
+    .lte("movement_date", periodBounds.end);
 
   if (q) {
     const safe = escapeIlike(q);
@@ -95,36 +132,36 @@ export default async function ExpensesPage({
     }),
   );
 
+  const tableSubtitle =
+    expensePeriod === "day"
+      ? `Gastos registrados el ${periodLabel}`
+      : expensePeriod === "week"
+        ? `Gastos de la semana (${periodLabel})`
+        : `Gastos de ${formatMexicoCityMonthLabel(monthAnchor)}`;
+
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <p className="text-sm text-text-muted">Ingresos del día (huéspedes)</p>
-          <p className="mt-1 text-2xl font-semibold">${summary.totalGuestIncome.toFixed(2)}</p>
-        </Card>
-        <Card>
-          <p className="text-sm text-text-muted">Gastos del día</p>
-          <p className="mt-1 text-2xl font-semibold">${summary.totalExpenses.toFixed(2)}</p>
-        </Card>
-        <Card>
-          <p className="text-sm text-text-muted">Resultado neto del día</p>
-          <p className="mt-1 text-2xl font-semibold">${summary.netResult.toFixed(2)}</p>
-          <Badge variant={summary.netResult >= 0 ? "success" : "warning"} className="mt-2">
-            {summary.netResult >= 0 ? "Positivo" : "Negativo"}
-          </Badge>
-        </Card>
-      </div>
+      <Suspense
+        fallback={
+          <div className="h-48 animate-pulse rounded-xl border border-border-soft bg-surface-soft" />
+        }
+      >
+        <ExpensesOverview
+          expensePeriod={expensePeriod}
+          periodLabel={periodLabel}
+          selectedMonth={selectedMonth}
+          selectedDay={selectedDay}
+          selectedWeek={selectedWeek}
+          monthOptions={monthOptions}
+          dayOptions={dayOptions}
+          weekOptions={weekOptions}
+          summary={summary}
+        />
+      </Suspense>
 
       <Card>
-        <h2 className="text-base font-semibold text-text-main">Registrar gasto</h2>
-        <p className="mt-1 text-sm text-text-muted">Un concepto por registro. La foto del ticket es opcional.</p>
-        <div className="mt-4">
-          <ExpenseCaptureForm action={createExpenseAction} returnTo="/dashboard/expenses" />
-        </div>
-      </Card>
-
-      <Card>
-        <h3 className="text-base font-semibold text-text-main">Últimos gastos</h3>
+        <h3 className="text-base font-semibold text-text-main">Gastos del periodo</h3>
+        <p className="mt-0.5 text-sm capitalize text-text-muted">{tableSubtitle}</p>
         <div className="mt-3">
           <ResponsiveTable
             headers={["Fecha", "Concepto", "Monto", "Método", "Responsable", "Notas", "Foto", "Registrado"]}
@@ -140,6 +177,8 @@ export default async function ExpensesPage({
           />
         </div>
       </Card>
+
+      <ExpenseRegisterPanel returnTo="/dashboard/expenses" />
     </div>
   );
 }

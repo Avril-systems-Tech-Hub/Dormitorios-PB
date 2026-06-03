@@ -31,9 +31,9 @@ export function ReceptionReservationPanel() {
 
   return (
     <Card>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-text-main">Nueva reservación (recepción)</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold text-text-main sm:text-lg">Nueva reservación (recepción)</h2>
           <p className="mt-1 text-sm text-text-muted">
             Registra huéspedes con cama y locker por persona. El locker puede quedar pendiente hasta asignar número.
           </p>
@@ -41,7 +41,7 @@ export function ReceptionReservationPanel() {
         <button
           type="button"
           onClick={() => setExpanded((open) => !open)}
-          className="rounded-lg border border-border-soft bg-surface-soft px-3 py-1.5 text-sm font-medium text-text-main"
+          className="w-full shrink-0 rounded-lg border border-border-soft bg-surface-soft px-3 py-2 text-sm font-medium text-text-main sm:w-auto sm:py-1.5"
         >
           {expanded ? "Ocultar formulario" : "Registrar reserva"}
         </button>

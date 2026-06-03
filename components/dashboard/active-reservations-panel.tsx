@@ -146,7 +146,7 @@ export async function ActiveReservationsPanel({
   return (
     <>
       {!compact ? (
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
           <Card>
             <p className="text-sm text-text-muted">Reservaciones activas</p>
             <p className="mt-1 text-2xl font-semibold">{allReservations.length}</p>
@@ -196,6 +196,7 @@ export async function ActiveReservationsPanel({
               "Cobro",
             ]}
             rows={tableRows}
+            mobileColumnIndices={[0, 1, 3, 4, 10, 11]}
           />
         </div>
       </Card>
