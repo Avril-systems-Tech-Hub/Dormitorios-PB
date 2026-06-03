@@ -30,10 +30,10 @@ export function DashboardShell({
 
   return (
     <div className="dashboard-canvas min-h-screen overflow-x-hidden">
-      <header className="dashboard-brand-header safe-area-pt-header sticky top-0 z-30 border-b border-white/10 shadow-sm shadow-black/10">
+      <header className="dashboard-brand-header safe-area-pt-header sticky top-0 z-30 shadow-sm">
         <div className="flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2.5 sm:px-4 sm:py-3 lg:px-6">
           <div className="min-w-0 flex-1 basis-[12rem]">
-            <p className="truncate text-[10px] uppercase tracking-wide text-white/70 sm:text-xs">
+            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-mkt-terracotta sm:text-xs">
               Dormitorios Plaza Basílica
             </p>
             <DashboardHeaderTitle fallback={title} branded />
@@ -44,7 +44,7 @@ export function DashboardShell({
                 {userName}
               </span>
             ) : null}
-            <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] text-white sm:py-1 sm:text-xs">
+            <span className="rounded-full bg-mkt-terracotta/90 px-2 py-0.5 text-[10px] font-medium text-white sm:py-1 sm:text-xs">
               {roleLabel ?? (role === "admin" ? "Admin" : "Recepción")}
             </span>
             <form action="/api/auth/signout" method="post">

@@ -1,5 +1,4 @@
 import Image from "next/image";
-import { loginAction } from "@/actions/auth";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -26,7 +25,7 @@ export default async function LoginPage({
           <p className="text-sm text-text-muted">Inicia sesión para continuar</p>
         </div>
 
-        <form action={loginAction} className="space-y-3">
+        <form action="/api/auth/login" method="post" className="space-y-3">
           <Input name="email" placeholder="Correo" type="email" required />
           <Input name="password" placeholder="Contraseña" type="password" required />
           {params.error ? (
