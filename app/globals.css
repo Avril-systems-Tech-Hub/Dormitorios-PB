@@ -4,6 +4,7 @@
 @source "./**/*.{ts,tsx}";
 @source "../components/**/*.{ts,tsx}";
 @source "../hooks/**/*.{ts,tsx}";
+@source "../lib/**/*.{ts,tsx}";
 
 :root {
   --brand-primary: #1f4e5f;
@@ -91,4 +92,38 @@ body {
 
 .safe-area-pb-footer {
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+/* Dashboard brand surfaces (plain CSS — Tailwind does not scan dynamic class strings in lib/). */
+.dashboard-canvas {
+  min-height: 100vh;
+  background: linear-gradient(
+    145deg,
+    var(--mkt-sky) 0%,
+    color-mix(in srgb, var(--brand-secondary) 22%, var(--surface-soft)) 42%,
+    color-mix(in srgb, var(--brand-primary) 28%, var(--surface)) 100%
+  );
+}
+
+.dashboard-brand-header {
+  background: linear-gradient(
+    to bottom right,
+    var(--mkt-slate-deep),
+    var(--mkt-slate) 55%,
+    var(--brand-primary)
+  );
+  color: #fff;
+}
+
+.dashboard-brand-panel {
+  border-radius: 1rem;
+  border: 1px solid rgb(255 255 255 / 0.15);
+  background: linear-gradient(
+    to bottom right,
+    var(--mkt-slate-deep),
+    var(--mkt-slate) 55%,
+    var(--brand-primary)
+  );
+  color: #fff;
+  box-shadow: 0 4px 14px rgb(47 74 90 / 0.2);
 }

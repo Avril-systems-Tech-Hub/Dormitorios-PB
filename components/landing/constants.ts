@@ -1,6 +1,4 @@
-/** TrustStrip / reserva card — slate gradient background */
-export const UBICACION_SURFACE_CLASS =
-  "bg-gradient-to-br from-mkt-slate-deep via-mkt-slate to-mkt-slate text-white";
+export { UBICACION_SURFACE_CLASS } from "@/lib/brand-surfaces";
 
 export const SITE_URL = "https://dormitorios.plazabasilica.cc";
 export const SITE_HOST = "dormitorios.plazabasilica.cc";

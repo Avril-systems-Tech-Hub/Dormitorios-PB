@@ -7,6 +7,7 @@ type ReservationGuestFieldsProps = {
   guestIndex: number;
   stayNights: number;
   isPrincipal?: boolean;
+  variant?: "marketing" | "dashboard";
   onChange: (field: keyof GuestFormRow, value: string | number) => void;
 };
 
@@ -15,15 +16,25 @@ export function ReservationGuestFields({
   guestIndex,
   stayNights,
   isPrincipal = guestIndex === 0,
+  variant = "marketing",
   onChange,
 }: ReservationGuestFieldsProps) {
+  const isDashboard = variant === "dashboard";
+  const inputClass = isDashboard
+    ? "w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-text-main"
+    : "w-full rounded-xl border border-mkt-border bg-white px-3 py-2.5 text-sm text-mkt-ink";
+  const labelClass = isDashboard
+    ? "mb-1 block text-xs font-semibold uppercase tracking-wide text-text-muted"
+    : "mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-mkt-terracotta";
+  const hintClass = isDashboard ? "mt-1 text-xs text-text-muted" : "mt-1 text-xs text-white/70";
+
   return (
     <div className="space-y-3">
       {isPrincipal ? (
-        <p className="text-xs text-white/70">El huésped 1 es el huésped principal.</p>
+        <p className={hintClass}>El huésped 1 es el huésped principal.</p>
       ) : null}
       <input
-        className="w-full rounded-xl border border-mkt-border bg-white px-3 py-2.5 text-sm text-mkt-ink"
+        className={inputClass}
         placeholder="Nombre completo *"
         value={guest.full_name}
         required
@@ -32,7 +43,7 @@ export function ReservationGuestFields({
       />
       <input
         type="tel"
-        className="w-full rounded-xl border border-mkt-border bg-white px-3 py-2.5 text-sm text-mkt-ink"
+        className={inputClass}
         placeholder="Teléfono *"
         value={guest.phone}
         required
@@ -41,7 +52,7 @@ export function ReservationGuestFields({
       />
       <input
         type="email"
-        className="w-full rounded-xl border border-mkt-border bg-white px-3 py-2.5 text-sm text-mkt-ink"
+        className={inputClass}
         placeholder="Correo electrónico *"
         value={guest.email}
         required
@@ -49,7 +60,7 @@ export function ReservationGuestFields({
         onChange={(e) => onChange("email", e.target.value)}
       />
       <select
-        className="w-full rounded-xl border border-mkt-border bg-white px-3 py-2.5 text-sm text-mkt-ink"
+        className={inputClass}
         value={guest.sex}
         required
         onChange={(e) => onChange("sex", e.target.value)}
@@ -60,11 +71,9 @@ export function ReservationGuestFields({
         <option value="x">Otro</option>
       </select>
       <div>
-        <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-mkt-terracotta">
-          Añadir locker
-        </label>
+        <label className={labelClass}>Añadir locker</label>
         <select
-          className="w-full rounded-xl border border-mkt-border bg-white px-3 py-2.5 text-sm text-mkt-ink"
+          className={inputClass}
           value={guest.add_locker}
           onChange={(e) => onChange("add_locker", e.target.value)}
         >
@@ -73,23 +82,37 @@ export function ReservationGuestFields({
         </select>
       </div>
       {guest.add_locker === "yes" ? (
-        <div>
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-mkt-terracotta">
-            Días de locker
-          </label>
-          <input
-            type="number"
-            min={1}
-            max={stayNights}
-            className="w-full max-w-[140px] rounded-xl border border-mkt-border bg-white px-3 py-2.5 text-sm text-mkt-ink"
-            value={guest.locker_days}
-            onChange={(e) => onChange("locker_days", e.target.value)}
-          />
-          <p className="mt-1 text-xs text-white/70">
-            Máx. {stayNights} noche{stayNights === 1 ? "" : "s"}. Cargo: $
-            {(guest.locker_days * LOCKER_DAILY_PRICE).toFixed(0)} MXN
-          </p>
-        </div>
+        <>
+          <div>
+            <label className={labelClass}>Días de locker</label>
+            <input
+              type="number"
+              min={1}
+              max={stayNights}
+              className={`${inputClass} max-w-[140px]`}
+              value={guest.locker_days}
+              onChange={(e) => onChange("locker_days", e.target.value)}
+            />
+            <p className={hintClass}>
+              Máx. {stayNights} noche{stayNights === 1 ? "" : "s"}. Cargo: $
+              {(guest.locker_days * LOCKER_DAILY_PRICE).toFixed(0)} MXN
+            </p>
+          </div>
+          <div>
+            <label className={labelClass}>Número de locker (opcional)</label>
+            <input
+              type="number"
+              min={1}
+              className={`${inputClass} max-w-[140px]`}
+              placeholder="Ej. 12"
+              value={guest.locker_number}
+              onChange={(e) => onChange("locker_number", e.target.value)}
+            />
+            <p className={hintClass}>
+              Déjalo vacío si aún no asignas el locker; aparecerá como pendiente en reservas.
+            </p>
+          </div>
+        </>
       ) : null}
     </div>
   );

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { BedChangeButton } from "@/components/ui/bed-change-button";
+import { LockerAssignButton } from "@/components/ui/locker-assign-button";
 
 type GuestInfo = {
   id?: string;
@@ -17,6 +18,8 @@ type BedInfo = {
 
 type GuestRow = {
   guest_id?: string;
+  locker_number?: number | null;
+  locker_days?: number | null;
   guests?: GuestInfo | GuestInfo[] | null;
   beds?: BedInfo | BedInfo[] | null;
 };
@@ -24,9 +27,13 @@ type GuestRow = {
 export function ReservationGuestsAccordion({
   guests,
   reservationId,
+  nights = 1,
+  returnTo = "/dashboard/reservations",
 }: {
   guests: GuestRow[];
   reservationId: string;
+  nights?: number;
+  returnTo?: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -60,7 +67,7 @@ export function ReservationGuestsAccordion({
                 <th className="px-3 py-1.5 text-left font-medium">Nombre</th>
                 <th className="px-3 py-1.5 text-left font-medium">Teléfono</th>
                 <th className="px-3 py-1.5 text-left font-medium">Correo</th>
-                <th className="px-3 py-1.5 text-left font-medium">Cama</th>
+                <th className="px-3 py-1.5 text-left font-medium">Cama / Locker</th>
               </tr>
             </thead>
             <tbody>
@@ -69,7 +76,12 @@ export function ReservationGuestsAccordion({
                 const guest = rawGuest as GuestInfo | undefined;
                 const rawBed = Array.isArray(g.beds) ? g.beds[0] : g.beds;
                 const bed = rawBed as BedInfo | undefined;
-                const currentBed = bed?.bed_number ? `Cama ${bed.bed_number}` : "Pendiente";
+                const bedLabel = bed?.bed_number ? `Cama ${bed.bed_number}` : "Pendiente";
+                const lockerDays = Number(g.locker_days ?? 0);
+                const lockerNum =
+                  g.locker_number != null && Number(g.locker_number) > 0
+                    ? Number(g.locker_number)
+                    : null;
 
                 return (
                   <tr key={i} className="border-t border-border-soft">
@@ -78,11 +90,21 @@ export function ReservationGuestsAccordion({
                     <td className="px-3 py-1.5 text-text-main">{guest?.phone ?? "—"}</td>
                     <td className="px-3 py-1.5 text-text-main">{guest?.email ?? "—"}</td>
                     <td className="px-3 py-1.5 text-text-main">
-                      <BedChangeButton
-                        reservationId={reservationId}
-                        guestId={g.guest_id ?? ""}
-                        currentBed={currentBed}
-                      />
+                      <span className="inline-flex flex-wrap items-center gap-0.5">
+                        <BedChangeButton
+                          reservationId={reservationId}
+                          guestId={g.guest_id ?? ""}
+                          currentBed={bedLabel}
+                        />
+                        <LockerAssignButton
+                          reservationId={reservationId}
+                          guestId={g.guest_id ?? ""}
+                          lockerNumber={lockerNum}
+                          lockerDays={lockerDays}
+                          nights={nights}
+                          returnTo={returnTo}
+                        />
+                      </span>
                     </td>
                   </tr>
                 );

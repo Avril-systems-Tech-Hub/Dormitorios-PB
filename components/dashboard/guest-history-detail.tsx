@@ -9,6 +9,7 @@ export type GuestStaySummary = {
   nights: number;
   bedNumber?: number;
   lockerNumber?: number | null;
+  lockerDays?: number;
   folioCode?: string;
   paymentStatus?: string;
   totalAmount?: number;
@@ -111,10 +112,12 @@ function PaymentStatusBadge({ status }: { status?: string }) {
 export function GuestStatsCell({
   stayCount,
   totalNights,
+  totalLockerDays = 0,
   source,
 }: {
   stayCount: number;
   totalNights: number;
+  totalLockerDays?: number;
   paymentStatus?: string;
   source: string;
 }) {
@@ -127,6 +130,12 @@ export function GuestStatsCell({
         <span className="text-text-muted"> · </span>
         <span className="font-medium">{totalNights}</span> noches
       </p>
+      {totalLockerDays > 0 ? (
+        <p className="text-xs text-text-muted">
+          Locker: <span className="font-medium text-text-main">{totalLockerDays}</span> día
+          {totalLockerDays === 1 ? "" : "s"}
+        </p>
+      ) : null}
       <div className="flex flex-wrap gap-1">
         <Badge variant={isCashier ? "warning" : "success"}>{isCashier ? "Caja" : "App"}</Badge>
       </div>

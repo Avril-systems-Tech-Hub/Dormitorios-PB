@@ -1,9 +1,14 @@
 import { Suspense } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getSessionProfile } from "@/lib/auth/guards";
+import { buildBedOccupancyMap } from "@/lib/bed-occupancy";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BedCardAccordion } from "@/components/ui/bed-card-accordion";
+import { BedStatusToggle } from "@/components/ui/bed-status-toggle";
 import { FolioFilterInput } from "@/components/ui/folio-filter-input";
+import { formatLockerLabel } from "@/components/ui/reservation-nights-cell";
+import type { BedStatus } from "@/types/domain";
 
 export default async function BedsPage({
   searchParams,
@@ -12,92 +17,31 @@ export default async function BedsPage({
 }) {
   const params = await searchParams;
   const folioFilter = params.folio?.trim() ?? "";
+  const profile = await getSessionProfile();
+  const isAdmin = profile.role === "admin";
 
   const admin = createAdminClient();
 
-  // 1. Get all beds
   const { data: beds } = await admin
     .from("beds")
     .select("id,bed_number,status")
     .order("bed_number", { ascending: true })
     .limit(60);
 
-  // 2. Get all reservation_guests with bed assigned
   const { data: rgRows } = await admin
     .from("reservation_guests")
-    .select("bed_id, reservation_id, guest_id")
+    .select(
+      `bed_id, reservation_id, guest_id, locker_number, locker_days,
+      guests(full_name, phone, email),
+      reservations!inner(
+        id, status, reservation_source, check_in_date, check_out_date, nights, notes, created_at,
+        folios(folio_code, payment_status, total_amount, balance_due)
+      )`,
+    )
     .not("bed_id", "is", null);
 
-  // 3. Get reservation details (include folio_id)
-  const reservationIds = [...new Set((rgRows ?? []).map((r) => r.reservation_id))];
-  const { data: reservations } = await admin
-    .from("reservations")
-    .select("id,folio_id,status,reservation_source,check_in_date,check_out_date,nights,notes,created_at")
-    .in("id", reservationIds.length > 0 ? reservationIds : ["00000000-0000-0000-0000-000000000000"]);
+  const bedDetailMap = buildBedOccupancyMap(rgRows ?? []);
 
-  // 4. Get guest details
-  const guestIds = [...new Set((rgRows ?? []).map((r) => r.guest_id))];
-  const { data: guestsData } = await admin
-    .from("guests")
-    .select("id,full_name,phone,email")
-    .in("id", guestIds.length > 0 ? guestIds : ["00000000-0000-0000-0000-000000000000"]);
-
-  // 5. Get folios
-  const folioIds = [...new Set((reservations ?? []).map((r) => r.folio_id).filter(Boolean))];
-  const { data: foliosData } = await admin
-    .from("folios")
-    .select("id,folio_code,payment_status,total_amount,balance_due")
-    .in("id", folioIds.length > 0 ? folioIds : ["00000000-0000-0000-0000-000000000000"]);
-
-  // Build lookup maps
-  const reservationMap = new Map((reservations ?? []).map((r) => [r.id, r]));
-  const guestMap = new Map((guestsData ?? []).map((g) => [g.id, g]));
-  const folioMap = new Map((foliosData ?? []).map((f) => [f.id, f]));
-
-  // Build bed detail map
-  const bedDetailMap = new Map<string, {
-    guest_name?: string;
-    guest_phone?: string;
-    guest_email?: string;
-    folio_code?: string;
-    check_in?: string;
-    check_out?: string;
-    nights?: number;
-    source?: string;
-    created_at?: string;
-    payment_status?: string;
-    total_amount?: number;
-    balance_due?: number;
-    notes?: string;
-  }>();
-
-  for (const rg of rgRows ?? []) {
-    if (!rg.bed_id) continue;
-
-    const reservation = reservationMap.get(rg.reservation_id);
-    const guest = guestMap.get(rg.guest_id);
-    const folio = reservation?.folio_id ? folioMap.get(reservation.folio_id) : null;
-
-    if (bedDetailMap.has(rg.bed_id)) continue;
-
-    bedDetailMap.set(rg.bed_id, {
-      guest_name: guest?.full_name ?? undefined,
-      guest_phone: guest?.phone ?? undefined,
-      guest_email: guest?.email ?? undefined,
-      folio_code: folio?.folio_code ?? undefined,
-      check_in: reservation?.check_in_date ?? undefined,
-      check_out: reservation?.check_out_date ?? undefined,
-      nights: reservation?.nights ?? undefined,
-      source: reservation?.reservation_source ?? undefined,
-      created_at: reservation?.created_at ?? undefined,
-      payment_status: folio?.payment_status ?? undefined,
-      total_amount: folio?.total_amount ?? undefined,
-      balance_due: folio?.balance_due ?? undefined,
-      notes: reservation?.notes ?? undefined,
-    });
-  }
-
-  // Filter beds by folio if filter is active
   const filteredBeds = folioFilter
     ? (beds ?? []).filter((bed) => {
         const detail = bedDetailMap.get(bed.id);
@@ -113,7 +57,8 @@ export default async function BedsPage({
       <Card>
         <h2 className="text-lg font-semibold text-text-main">Mapa de 60 camas</h2>
         <p className="mt-1 text-sm text-text-muted">
-          Disponible, ocupada o bloqueada. Haz clic en "Ver detalle" para ver la reservación y huésped asignados.
+          Misma asignación que en Reservas (folio, huésped, locker). Ocupada = en casa hoy; Asignada = reserva activa en sistema.
+          {isAdmin ? " Como admin puedes bloquear o desbloquear camas en cada tarjeta." : null}
         </p>
         <div className="mt-3">
           <Suspense fallback={null}>
@@ -130,7 +75,9 @@ export default async function BedsPage({
         {filteredBeds.map((bed) => {
           const isBlocked = bed.status === "blocked";
           const detail = bedDetailMap.get(bed.id) ?? null;
-          const isOccupied = !!detail;
+          const isOccupied = detail?.in_house_today ?? false;
+          const hasAssignment = !!detail;
+          const lockerLabel = detail ? formatLockerLabel(detail.locker_number, detail.locker_days) : null;
 
           return (
             <div
@@ -138,13 +85,39 @@ export default async function BedsPage({
               className="rounded-xl border border-border-soft bg-white px-3 py-2 text-sm"
             >
               <p className="font-semibold text-text-main">Cama {bed.bed_number}</p>
+              {detail?.guest_name ? (
+                <p className="mt-0.5 truncate text-xs font-medium text-text-main">{detail.guest_name}</p>
+              ) : null}
+              {detail?.folio_code ? (
+                <p className="text-xs text-text-muted">{detail.folio_code}</p>
+              ) : null}
+              {lockerLabel ? (
+                <p
+                  className={
+                    lockerLabel === "Locker pendiente"
+                      ? "mt-0.5 text-xs font-medium text-amber-700"
+                      : "mt-0.5 text-xs text-text-muted"
+                  }
+                >
+                  {lockerLabel}
+                </p>
+              ) : null}
               {isBlocked ? (
                 <Badge variant="danger" className="mt-2">Bloqueada</Badge>
               ) : isOccupied ? (
                 <Badge variant="warning" className="mt-2">Ocupada</Badge>
+              ) : hasAssignment ? (
+                <Badge variant="warning" className="mt-2 opacity-80">Asignada</Badge>
               ) : (
                 <Badge variant="success" className="mt-2">Libre</Badge>
               )}
+              {isAdmin ? (
+                <BedStatusToggle
+                  bedId={bed.id}
+                  bedNumber={bed.bed_number}
+                  status={bed.status as BedStatus}
+                />
+              ) : null}
               <BedCardAccordion detail={detail} />
             </div>
           );

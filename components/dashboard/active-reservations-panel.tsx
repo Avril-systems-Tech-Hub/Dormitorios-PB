@@ -1,5 +1,10 @@
 import Link from "next/link";
 import { ReservationGuestsAccordion } from "@/components/ui/reservation-guests-accordion";
+import {
+  formatBedLockerLabel,
+  ReservationNightsCell,
+  sumLockerDays,
+} from "@/components/ui/reservation-nights-cell";
 import { ReservationPaymentInline } from "@/components/ui/reservation-payment-inline";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
 import { ft } from "@/components/ui/filterable-cell";
@@ -22,7 +27,7 @@ export async function ActiveReservationsPanel({
   const { data: reservations } = await adminSupabase
     .from("reservations")
     .select(
-      "id,created_at,status,reservation_source,check_in_date,check_out_date,nights,notes,profiles(full_name),folios(id,folio_code,payment_status,balance_due,total_amount),reservation_guests(guest_id,guests(full_name,phone,email),beds(bed_number))",
+      "id,created_at,status,reservation_source,check_in_date,check_out_date,nights,notes,profiles(full_name),folios(id,folio_code,payment_status,balance_due,total_amount),reservation_guests(guest_id,locker_number,locker_days,guests(full_name,phone,email),beds(bed_number))",
     )
     .order("created_at", { ascending: false })
     .limit(fetchLimit);
@@ -42,6 +47,14 @@ export async function ActiveReservationsPanel({
     const assignment = allGuests[0] ?? null;
     const guest = assignment?.guests as { full_name?: string; phone?: string } | undefined;
     const bed = assignment?.beds as { bed_number?: number } | undefined;
+    const assignmentLocker = assignment as
+      | { locker_number?: number | null; locker_days?: number | null }
+      | null;
+    const bedLockerLabel = formatBedLockerLabel(
+      bed?.bed_number,
+      assignmentLocker?.locker_number,
+      assignmentLocker?.locker_days,
+    );
     const folio = reservation.folios as {
       id?: string;
       folio_code?: string;
@@ -50,19 +63,36 @@ export async function ActiveReservationsPanel({
       payment_status?: string;
     } | undefined;
 
+    const lockerDays = sumLockerDays(allGuests);
+    const nightsLabel = `${reservation.nights} noche(s)`;
+    const nightsFilterText =
+      lockerDays > 0 ? `${nightsLabel} Locker ${lockerDays} día(s)` : nightsLabel;
+
     return [
       ft(
         folio?.folio_code ?? "Sin folio",
         <div key={`f-${reservation.id}`}>
           <span>{folio?.folio_code ?? "Sin folio"}</span>
-          <ReservationGuestsAccordion guests={allGuests} reservationId={reservation.id} />
+          <ReservationGuestsAccordion
+            guests={allGuests}
+            reservationId={reservation.id}
+            nights={reservation.nights}
+            returnTo="/dashboard"
+          />
         </div>,
       ),
       guest?.full_name ?? "Sin huésped",
       guest?.phone ?? "-",
-      bed?.bed_number ? `Cama ${bed.bed_number}` : "Pendiente",
+      bedLockerLabel,
       `${reservation.check_in_date} → ${reservation.check_out_date}`,
-      `${reservation.nights} noche(s)`,
+      ft(
+        nightsFilterText,
+        <ReservationNightsCell
+          key={`nights-${reservation.id}`}
+          nights={reservation.nights}
+          lockerDays={lockerDays}
+        />,
+      ),
       reservation.created_at
         ? new Date(reservation.created_at).toLocaleString("es-MX", {
             timeZone: "America/Mexico_City",

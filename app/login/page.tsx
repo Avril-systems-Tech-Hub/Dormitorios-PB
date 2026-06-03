@@ -12,7 +12,7 @@ export default async function LoginPage({
   const params = await searchParams;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface p-4">
+    <div className="dashboard-brand-header flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-sm space-y-4">
         <div className="space-y-2 text-center">
           <Image

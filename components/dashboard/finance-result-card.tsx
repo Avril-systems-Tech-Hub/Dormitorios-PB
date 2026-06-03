@@ -40,7 +40,7 @@ export function FinanceResultCard({
   selectedMonth,
   monthOptions,
 }: FinanceResultCardProps) {
-  const [period, setPeriod] = useState<ReservationPeriod>("day");
+  const [period, setPeriod] = useState<ReservationPeriod>("month");
   const finance = period === "day" ? day : period === "week" ? week : month;
   const rangeLabel = period === "week" ? weekLabel : null;
 

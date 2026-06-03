@@ -46,9 +46,19 @@ export function DashboardNav({ groups }: { groups: NavGroup[] }) {
   );
 }
 
-export function DashboardHeaderTitle({ fallback }: { fallback: string }) {
+export function DashboardHeaderTitle({
+  fallback,
+  branded = false,
+}: {
+  fallback: string;
+  branded?: boolean;
+}) {
   const pathname = usePathname();
   const title = getPageTitle(pathname, fallback);
 
-  return <h1 className="text-lg font-semibold text-text-main">{title}</h1>;
+  return (
+    <h1 className={cn("text-lg font-semibold", branded ? "text-white" : "text-text-main")}>
+      {title}
+    </h1>
+  );
 }

@@ -112,7 +112,8 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
                   </p>
                   {g.add_locker === "yes" && g.locker_days > 0 ? (
                     <p className="mt-1 text-xs text-mkt-ink/60">
-                      Locker: {g.locker_days} día{g.locker_days === 1 ? "" : "s"} — $
+                      Locker: {g.locker_days} día{g.locker_days === 1 ? "" : "s"}
+                      {g.locker_number ? ` · #${g.locker_number}` : " · pendiente"} — $
                       {(g.locker_days * LOCKER_DAILY_PRICE).toFixed(0)} MXN
                     </p>
                   ) : null}

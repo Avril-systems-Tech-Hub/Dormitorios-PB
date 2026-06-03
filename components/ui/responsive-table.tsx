@@ -4,6 +4,8 @@ import { useState, useMemo, useCallback, useEffect, type ReactNode } from "react
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import type { FilterableCell } from "@/components/ui/filterable-cell";
 import { PAGE_SIZE_OPTIONS } from "@/lib/pagination";
+import { nextSortState, type SortDirection, type TableColumnConfig } from "@/lib/table-controls";
+import { cn } from "@/lib/utils";
 
 function isFilterableCellObject(cell: FilterableCell): cell is { __filterText: string; node: ReactNode } {
   return (
@@ -53,16 +55,28 @@ export type ServerPagination = {
   searchPlaceholder?: string;
   /** Prefix for URL params (`{prefix}_page`, `{prefix}_pageSize`, `{prefix}_q`). Useful when there are multiple tables on the same page. */
   paramPrefix?: string;
+  /** Sum of the primary amount column for rows visible on this page. */
+  visibleAmountTotal?: number;
+  /** Label for `visibleAmountTotal`, e.g. "Total en página". */
+  visibleAmountLabel?: string;
 };
 
 export function ResponsiveTable({
   headers,
+  columns,
   rows,
   filterMode = "columns",
   dense = false,
   serverPagination,
+  serverSort,
+  serverColumnFilters,
+  sortParamKey = "sort",
+  dirParamKey = "dir",
+  columnFilterPrefix = "cf_",
 }: {
-  headers: string[];
+  headers?: string[];
+  /** Optional column metadata for server-side sort/filter controls. */
+  columns?: TableColumnConfig[];
   rows: FilterableCell[][];
   /** "columns" = filter per column (default). "global" = single search across all cells. */
   filterMode?: "columns" | "global";
@@ -70,16 +84,28 @@ export function ResponsiveTable({
   dense?: boolean;
   /** When provided, pagination is driven by URL searchParams (?page, ?pageSize, ?q). */
   serverPagination?: ServerPagination;
+  serverSort?: { column: string; direction: SortDirection } | null;
+  serverColumnFilters?: Record<string, string>;
+  sortParamKey?: string;
+  dirParamKey?: string;
+  columnFilterPrefix?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const isServer = !!serverPagination;
+  const tableColumns: TableColumnConfig[] =
+    columns ?? (headers ?? []).map((label, index) => ({ key: String(index), label }));
+  const tableHeaders = tableColumns.map((column) => column.label);
+  const hasServerColumnControls = isServer && tableColumns.some((column) => column.sortable || column.filterable);
 
   const [filters, setFilters] = useState<Record<number, string>>({});
   const [globalQuery, setGlobalQuery] = useState("");
   const [searchInput, setSearchInput] = useState(serverPagination?.searchQuery ?? "");
+  const [columnFilterInputs, setColumnFilterInputs] = useState<Record<string, string>>(
+    serverColumnFilters ?? {},
+  );
   const [clientPage, setClientPage] = useState(0);
   const [clientPageSize, setClientPageSize] = useState(10);
 
@@ -87,6 +113,10 @@ export function ResponsiveTable({
   useEffect(() => {
     setSearchInput(serverPagination?.searchQuery ?? "");
   }, [serverPagination?.searchQuery]);
+
+  useEffect(() => {
+    setColumnFilterInputs(serverColumnFilters ?? {});
+  }, [serverColumnFilters]);
 
   const textRows = useMemo(
     () => rows.map((row) => row.map(getCellText)),
@@ -188,6 +218,32 @@ export function ResponsiveTable({
     [router, buildUrl, queryKey, pageKey],
   );
 
+  const submitColumnFilter = useCallback(
+    (columnKey: string, value: string) => {
+      router.push(
+        buildUrl({
+          [`${columnFilterPrefix}${columnKey}`]: value.trim() || null,
+          [pageKey]: null,
+        }),
+      );
+    },
+    [router, buildUrl, columnFilterPrefix, pageKey],
+  );
+
+  const toggleSort = useCallback(
+    (columnKey: string) => {
+      const next = nextSortState(serverSort?.column ?? null, serverSort?.direction ?? "desc", columnKey);
+      router.push(
+        buildUrl({
+          [sortParamKey]: next.column,
+          [dirParamKey]: next.column ? next.direction : null,
+          [pageKey]: null,
+        }),
+      );
+    },
+    [router, buildUrl, serverSort, sortParamKey, dirParamKey, pageKey],
+  );
+
   const thClass = dense ? "px-3 py-2 text-xs font-semibold uppercase tracking-wide" : "px-4 py-3 font-medium";
   const tdClass = dense
     ? "px-3 py-2 align-top text-sm text-text-main"
@@ -263,7 +319,20 @@ export function ResponsiveTable({
             </form>
           ) : null}
         </div>
-        <span className="text-xs text-text-muted">
+        <div className="flex flex-wrap items-center gap-4">
+          {isServer &&
+          serverPagination?.visibleAmountTotal != null &&
+          paginatedIndices.length > 0 ? (
+            <p className="text-sm text-text-main">
+              <span className="text-text-muted">
+                {serverPagination.visibleAmountLabel ?? "Total en página"}:{" "}
+              </span>
+              <span className="font-semibold">
+                ${serverPagination.visibleAmountTotal.toFixed(2)}
+              </span>
+            </p>
+          ) : null}
+          <span className="text-xs text-text-muted">
           {isServer ? (
             totalFiltered === 0 ? (
               "0 resultados"
@@ -281,6 +350,7 @@ export function ResponsiveTable({
             </>
           )}
         </span>
+        </div>
       </div>
 
       <div className="hidden md:block">
@@ -288,26 +358,94 @@ export function ResponsiveTable({
           <table className={`w-full ${dense ? "text-sm" : "text-sm"}`}>
             <thead className="bg-surface-soft text-left text-text-muted">
               <tr>
-                {headers.map((header, i) => (
-                  <th key={header} className={thClass}>
-                    <div>{header}</div>
-                    {filterMode === "columns" && !isServer ? (
-                      <input
-                        type="text"
-                        placeholder="Filtrar…"
-                        value={filters[i] ?? ""}
-                        onChange={(e) => setFilter(i, e.target.value)}
-                        className="mt-1 w-full rounded border border-border-soft bg-white px-2 py-1 text-xs font-normal text-text-main outline-none focus:border-mkt-slate"
-                      />
-                    ) : null}
-                  </th>
-                ))}
+                {tableColumns.map((column, i) => {
+                  const isSorted = serverSort?.column === column.key;
+                  const sortIndicator = isSorted
+                    ? serverSort?.direction === "asc"
+                      ? " ↑"
+                      : " ↓"
+                    : "";
+                  return (
+                    <th key={column.key} className={thClass}>
+                      {column.sortable && hasServerColumnControls ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleSort(column.key)}
+                          className={cn(
+                            "inline-flex items-center gap-1 text-left font-medium transition hover:text-text-main",
+                            isSorted && "text-text-main",
+                          )}
+                          aria-label={`Ordenar por ${column.label}`}
+                        >
+                          {column.label}
+                          <span className="text-[10px]">{sortIndicator}</span>
+                        </button>
+                      ) : (
+                        <div>{column.label}</div>
+                      )}
+                      {filterMode === "columns" && !isServer ? (
+                        <input
+                          type="text"
+                          placeholder="Filtrar…"
+                          value={filters[i] ?? ""}
+                          onChange={(e) => setFilter(i, e.target.value)}
+                          className="mt-1 w-full rounded border border-border-soft bg-white px-2 py-1 text-xs font-normal text-text-main outline-none focus:border-mkt-slate"
+                        />
+                      ) : null}
+                      {column.filterable && hasServerColumnControls ? (
+                        column.filterOptions && column.filterOptions.length > 0 ? (
+                          <select
+                            value={columnFilterInputs[column.key] ?? ""}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setColumnFilterInputs((prev) => ({
+                                ...prev,
+                                [column.key]: value,
+                              }));
+                              submitColumnFilter(column.key, value);
+                            }}
+                            aria-label={`Filtrar ${column.label}`}
+                            className="mt-1 w-full rounded border border-border-soft bg-white px-2 py-1 text-xs font-normal text-text-main outline-none focus:border-mkt-slate"
+                          >
+                            {column.filterOptions.map((option) => (
+                              <option key={option.value || "all"} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="Filtrar…"
+                            value={columnFilterInputs[column.key] ?? ""}
+                            onChange={(e) =>
+                              setColumnFilterInputs((prev) => ({
+                                ...prev,
+                                [column.key]: e.target.value,
+                              }))
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                submitColumnFilter(column.key, columnFilterInputs[column.key] ?? "");
+                              }
+                            }}
+                            onBlur={() =>
+                              submitColumnFilter(column.key, columnFilterInputs[column.key] ?? "")
+                            }
+                            className="mt-1 w-full rounded border border-border-soft bg-white px-2 py-1 text-xs font-normal text-text-main outline-none focus:border-mkt-slate"
+                          />
+                        )
+                      ) : null}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
               {paginatedIndices.length === 0 ? (
                 <tr>
-                  <td colSpan={headers.length} className="px-4 py-6 text-center text-sm text-text-muted">
+                  <td colSpan={tableHeaders.length} className="px-4 py-6 text-center text-sm text-text-muted">
                     Sin resultados
                   </td>
                 </tr>
@@ -335,7 +473,7 @@ export function ResponsiveTable({
             <div key={idx} className="rounded-lg border border-border-soft p-3">
               {rows[idx].map((cell, cellIdx) => (
                 <div key={cellIdx} className="flex justify-between gap-2 border-b border-border-soft/60 py-2 text-sm last:border-0">
-                  <span className="shrink-0 text-text-muted">{headers[cellIdx]}</span>
+                  <span className="shrink-0 text-text-muted">{tableHeaders[cellIdx]}</span>
                   <span className="min-w-0 text-right text-text-main">{getCellNode(cell)}</span>
                 </div>
               ))}

@@ -25,26 +25,30 @@ export function DashboardShell({
   const showSidebar = role === "admin" || (modules !== undefined && modules.length > 0);
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-surface">
-      <header className="sticky top-0 z-30 border-b border-border-soft bg-white/95 backdrop-blur">
+    <div className="dashboard-canvas min-h-screen overflow-x-hidden">
+      <header className="dashboard-brand-header sticky top-0 z-30 border-b border-white/10 shadow-sm shadow-black/10">
         <div className="flex w-full items-center justify-between px-4 py-3 lg:px-6">
           <div>
-            <p className="text-xs uppercase tracking-wide text-text-muted">
+            <p className="text-xs uppercase tracking-wide text-white/70">
               Dormitorios Plaza Basílica
             </p>
-            <DashboardHeaderTitle fallback={title} />
+            <DashboardHeaderTitle fallback={title} branded />
           </div>
           <div className="flex items-center gap-2">
             {userName && (
-              <span className="text-sm font-medium text-text-main">
+              <span className="text-sm font-medium text-white">
                 {userName}
               </span>
             )}
-            <span className="rounded-full bg-surface-soft px-2 py-1 text-xs text-text-main">
+            <span className="rounded-full bg-white/15 px-2 py-1 text-xs text-white">
               {roleLabel ?? (role === "admin" ? "Admin" : "Recepción")}
             </span>
             <form action="/api/auth/signout" method="post">
-              <Button variant="outline" type="submit">
+              <Button
+                variant="outline"
+                type="submit"
+                className="border-white/30 bg-white/10 text-white hover:bg-white/20"
+              >
                 Salir
               </Button>
             </form>
@@ -57,7 +61,7 @@ export function DashboardShell({
         }`}
       >
         {showSidebar ? (
-          <aside className="shrink-0 rounded-xl border border-border-soft bg-white p-3 md:sticky md:top-[4.25rem] md:self-start">
+          <aside className="shrink-0 rounded-xl border border-brand-primary/15 bg-white/95 p-3 shadow-sm shadow-brand-primary/5 backdrop-blur-sm md:sticky md:top-[4.25rem] md:self-start">
             <DashboardNav groups={navGroups} />
           </aside>
         ) : null}

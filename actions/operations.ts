@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type {
   AnomalyFlag,
+  BedStatus,
   CashMovementCategory,
   CashMovementDirection,
   ExpenseConcept,
@@ -229,6 +230,7 @@ export async function createReservationAction(
     sex: string;
     add_locker?: string;
     locker_days?: number;
+    locker_number?: string | number;
   }[] = [];
   try {
     guests = JSON.parse(guestsJson);
@@ -388,6 +390,17 @@ export async function createReservationAction(
 
   const guestInserts = guestIds.map((gId, i) => {
     const locker = lockerByGuest[i] ?? { locker_days: 0, locker_price: 0, locker_amount: 0 };
+    const guestInput = guests[i];
+    const lockerNumberRaw = guestInput?.locker_number;
+    const parsedLockerNumber =
+      lockerNumberRaw != null && String(lockerNumberRaw).trim() !== ""
+        ? Number(lockerNumberRaw)
+        : null;
+    const locker_number =
+      parsedLockerNumber != null && Number.isFinite(parsedLockerNumber) && parsedLockerNumber > 0
+        ? parsedLockerNumber
+        : null;
+
     return {
       reservation_id: reservation.id,
       guest_id: gId,
@@ -395,7 +408,7 @@ export async function createReservationAction(
       nightly_rate: nightlyRate,
       discount_amount: discountAmountPerNight,
       final_rate: finalRate,
-      locker_number: null,
+      locker_number,
       locker_price: locker.locker_price,
       locker_days: locker.locker_days,
       locker_amount: locker.locker_amount,
@@ -1499,6 +1512,234 @@ export async function reassignBedAction(formData: FormData): Promise<void> {
   revalidatePath("/dashboard/folios");
 
   return redirectWithResult(returnTo, "success", `Cama cambiada a ${bed.bed_number}.`);
+}
+
+export async function updateBedStatusAction(formData: FormData): Promise<void> {
+  const actor = await getActorProfile();
+  const returnTo = String(formData.get("return_to") ?? "/dashboard/beds");
+  const bedId = String(formData.get("bed_id") ?? "").trim();
+  const nextStatus = String(formData.get("status") ?? "").trim() as BedStatus;
+
+  if (!actor || actor.role !== "admin") {
+    return redirectWithResult(returnTo, "error", "Solo administradores pueden cambiar el estado de camas.");
+  }
+
+  if (!bedId || (nextStatus !== "available" && nextStatus !== "blocked")) {
+    return redirectWithResult(returnTo, "error", "Estado de cama inválido.");
+  }
+
+  const supabase = createAdminClient();
+  const { data: bed } = await supabase
+    .from("beds")
+    .select("id, bed_number, status")
+    .eq("id", bedId)
+    .maybeSingle();
+
+  if (!bed) {
+    return redirectWithResult(returnTo, "error", "Cama no encontrada.");
+  }
+
+  if (bed.status === nextStatus) {
+    return redirectWithResult(
+      returnTo,
+      "success",
+      `Cama ${bed.bed_number} ya está ${nextStatus === "blocked" ? "bloqueada" : "disponible"}.`,
+    );
+  }
+
+  const updatePayload: { status: BedStatus; notes?: string | null } = { status: nextStatus };
+  if (nextStatus === "available") {
+    updatePayload.notes = null;
+  }
+
+  const { error: updateError } = await supabase.from("beds").update(updatePayload).eq("id", bedId);
+
+  if (updateError) {
+    return redirectWithResult(returnTo, "error", "No se pudo actualizar el estado de la cama.");
+  }
+
+  await supabase.from("audit_logs").insert({
+    actor_user_id: actor.id,
+    action: "bed_status_updated",
+    entity_type: "bed",
+    entity_id: bedId,
+    metadata: {
+      bed_number: bed.bed_number,
+      from: bed.status,
+      to: nextStatus,
+    },
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/beds");
+
+  const message =
+    nextStatus === "blocked"
+      ? `Cama ${bed.bed_number} bloqueada.`
+      : `Cama ${bed.bed_number} disponible en inventario.`;
+
+  return redirectWithResult(returnTo, "success", message);
+}
+
+async function syncFolioTotals(supabase: ReturnType<typeof createAdminClient>, folioId: string) {
+  const expectedTotal = await getFolioExpectedTotal(supabase, folioId);
+  const { data: folio } = await supabase
+    .from("folios")
+    .select("paid_amount")
+    .eq("id", folioId)
+    .single();
+
+  const paidAmount = Number(folio?.paid_amount ?? 0);
+  const balanceDue = Math.max(0, Number((expectedTotal - paidAmount).toFixed(2)));
+  const paymentStatus =
+    balanceDue === 0 && paidAmount > 0 ? "liquidated" : paidAmount > 0 ? "partial" : "pending";
+
+  await supabase
+    .from("folios")
+    .update({
+      total_amount: expectedTotal,
+      balance_due: balanceDue,
+      payment_status: paymentStatus,
+    })
+    .eq("id", folioId);
+
+  return { expectedTotal, balanceDue, paymentStatus };
+}
+
+export async function assignLockerAction(formData: FormData): Promise<void> {
+  const supabase = createAdminClient();
+  const actor = await getActorProfile();
+  const returnTo = String(formData.get("return_to") ?? "/dashboard/reservations");
+  const reservationId = String(formData.get("reservation_id") ?? "");
+  const guestId = String(formData.get("guest_id") ?? "");
+  const wantsLocker = String(formData.get("add_locker") ?? "no") === "yes";
+  const lockerNumberRaw = String(formData.get("locker_number") ?? "").trim();
+  const lockerDaysRaw = String(formData.get("locker_days") ?? "").trim();
+
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return redirectWithResult(returnTo, "error", "No autorizado.");
+  }
+
+  if (!reservationId || !guestId) {
+    return redirectWithResult(returnTo, "error", "Faltan datos para asignar el locker.");
+  }
+
+  const { data: reservation } = await supabase
+    .from("reservations")
+    .select("id, folio_id, nights, discount_percent, check_in_date, check_out_date")
+    .eq("id", reservationId)
+    .single();
+
+  if (!reservation?.folio_id) {
+    return redirectWithResult(returnTo, "error", "Reservación no encontrada.");
+  }
+
+  const { data: currentRg } = await supabase
+    .from("reservation_guests")
+    .select("locker_number, locker_days, locker_price, locker_amount")
+    .eq("reservation_id", reservationId)
+    .eq("guest_id", guestId)
+    .single();
+
+  if (!currentRg) {
+    return redirectWithResult(returnTo, "error", "Huésped no encontrado en la reservación.");
+  }
+
+  const nights = Math.max(1, Number(reservation.nights ?? 1));
+  const discountPercent = Number(reservation.discount_percent ?? 0);
+  const lockerPriceWithDiscount = Math.round(LOCKER_DAILY_PRICE * (100 - discountPercent)) / 100;
+
+  let locker_days = Number(currentRg.locker_days ?? 0);
+  let locker_price = Number(currentRg.locker_price ?? 0);
+  let locker_amount = Number(currentRg.locker_amount ?? 0);
+  let locker_number: number | null =
+    currentRg.locker_number != null ? Number(currentRg.locker_number) : null;
+
+  if (wantsLocker) {
+    const requestedDays = lockerDaysRaw ? Number(lockerDaysRaw) : locker_days || nights;
+    locker_days = Math.min(Math.max(1, requestedDays), nights);
+    locker_price = lockerPriceWithDiscount;
+    locker_amount = Number((locker_days * locker_price).toFixed(2));
+    locker_number = lockerNumberRaw ? Number(lockerNumberRaw) : null;
+    if (locker_number != null && (!Number.isFinite(locker_number) || locker_number <= 0)) {
+      return redirectWithResult(returnTo, "error", "Número de locker inválido.");
+    }
+
+    if (locker_number != null) {
+      const { data: conflicting } = await supabase
+        .from("reservation_guests")
+        .select("reservation_id, reservations!inner(check_in_date, check_out_date, status)")
+        .eq("locker_number", locker_number)
+        .neq("reservation_id", reservationId);
+
+      for (const row of conflicting ?? []) {
+        const overlap = row.reservations as unknown as {
+          check_in_date: string;
+          check_out_date: string;
+          status: string;
+        };
+        if (overlap.status === "cancelled") continue;
+        if (
+          overlap.check_in_date < reservation.check_out_date &&
+          overlap.check_out_date > reservation.check_in_date
+        ) {
+          return redirectWithResult(
+            returnTo,
+            "error",
+            `El locker ${locker_number} ya está asignado en esas fechas.`,
+          );
+        }
+      }
+    }
+  } else {
+    locker_days = 0;
+    locker_price = 0;
+    locker_amount = 0;
+    locker_number = null;
+  }
+
+  const { error: updateError } = await supabase
+    .from("reservation_guests")
+    .update({
+      locker_number,
+      locker_days,
+      locker_price,
+      locker_amount,
+    })
+    .eq("reservation_id", reservationId)
+    .eq("guest_id", guestId);
+
+  if (updateError) {
+    return redirectWithResult(returnTo, "error", "No se pudo actualizar el locker.");
+  }
+
+  await syncFolioTotals(supabase, reservation.folio_id);
+
+  await supabase.from("audit_logs").insert({
+    actor_user_id: actor.id,
+    action: "locker_assigned",
+    entity_type: "reservation",
+    entity_id: reservationId,
+    metadata: {
+      guest_id: guestId,
+      locker_number,
+      locker_days,
+      locker_amount,
+      add_locker: wantsLocker,
+    },
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/beds");
+
+  const successMessage = wantsLocker
+    ? locker_number
+      ? `Locker ${locker_number} asignado.`
+      : "Servicio de locker registrado (número pendiente)."
+    : "Locker removido de la reservación.";
+
+  return redirectWithResult(returnTo, "success", successMessage);
 }
 
 function deriveAnomalyFlagsForRecord(record: {

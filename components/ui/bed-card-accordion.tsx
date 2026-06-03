@@ -17,6 +17,8 @@ type ReservationDetail = {
   total_amount?: number;
   balance_due?: number;
   notes?: string;
+  locker_number?: number | null;
+  locker_days?: number;
 };
 
 export function BedCardAccordion({ detail }: { detail: ReservationDetail | null }) {
@@ -26,6 +28,9 @@ export function BedCardAccordion({ detail }: { detail: ReservationDetail | null 
 
   const sourceLabel = detail.source === "cashier_counter" ? "Caja" : "App cliente";
   const payLabel = detail.payment_status ?? "pending";
+  const lockerNum =
+    detail.locker_number != null && detail.locker_number > 0 ? detail.locker_number : null;
+  const lockerDays = Number(detail.locker_days ?? 0);
 
   return (
     <div className="mt-2">
@@ -75,7 +80,24 @@ export function BedCardAccordion({ detail }: { detail: ReservationDetail | null 
           </div>
           <div className="flex justify-between">
             <span className="text-text-muted">Noches</span>
-            <span className="text-text-main">{detail.nights ?? "—"}</span>
+            <span className="text-text-main">
+              {detail.nights ?? "—"}
+              {lockerDays > 0 ? (
+                <span className="block text-[10px] text-text-muted">
+                  Locker: {lockerDays} día{lockerDays === 1 ? "" : "s"}
+                </span>
+              ) : null}
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-text-muted">Locker</span>
+            {lockerNum != null ? (
+              <span className="font-medium text-text-main">#{lockerNum}</span>
+            ) : lockerDays > 0 ? (
+              <Badge variant="warning">Pendiente</Badge>
+            ) : (
+              <span className="text-text-main">—</span>
+            )}
           </div>
           <div className="flex justify-between">
             <span className="text-text-muted">Origen</span>

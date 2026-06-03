@@ -54,6 +54,99 @@ export function financeMonthKeyToAnchorDate(monthKey: string) {
   return `${monthKey}-01`;
 }
 
+export function getMexicoCityMonthBoundsFromKey(monthKey: string) {
+  return getMexicoCityMonthBounds(financeMonthKeyToAnchorDate(monthKey));
+}
+
+export function formatMexicoCityDayLabel(dateString: string) {
+  return new Date(`${dateString}T12:00:00`).toLocaleDateString("es-MX", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "America/Mexico_City",
+  });
+}
+
+export function isDateInMonth(dateString: string, monthKey: string) {
+  const { start, end } = getMexicoCityMonthBoundsFromKey(monthKey);
+  return dateString >= start && dateString <= end;
+}
+
+export function parseFinanceDayKey(
+  value: string | string[] | undefined,
+  monthKey: string,
+  fallbackDate = getMexicoCityDateString(),
+) {
+  const { start, end } = getMexicoCityMonthBoundsFromKey(monthKey);
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw) && raw >= start && raw <= end) {
+    return raw;
+  }
+  if (fallbackDate >= start && fallbackDate <= end) return fallbackDate;
+  return end;
+}
+
+export function parseFinanceWeekAnchor(
+  value: string | string[] | undefined,
+  monthKey: string,
+  fallbackDate = getMexicoCityDateString(),
+) {
+  const dayInMonth = parseFinanceDayKey(value, monthKey, fallbackDate);
+  const weekBounds = getMexicoCityWeekBounds(dayInMonth);
+  const { start: monthStart, end: monthEnd } = getMexicoCityMonthBoundsFromKey(monthKey);
+
+  if (weekBounds.end >= monthStart && weekBounds.start <= monthEnd) {
+    return weekBounds.start;
+  }
+
+  return monthStart;
+}
+
+export function getFinanceDayOptions(monthKey: string) {
+  const { start, end } = getMexicoCityMonthBoundsFromKey(monthKey);
+  let { year, month, day } = (() => {
+    const [y, m, d] = start.split("-").map(Number);
+    return { year: y, month: m, day: d };
+  })();
+  const [endYear, endMonth, endDay] = end.split("-").map(Number);
+  const options: { value: string; label: string }[] = [];
+
+  while (
+    year < endYear ||
+    (year === endYear && month < endMonth) ||
+    (year === endYear && month === endMonth && day <= endDay)
+  ) {
+    const value = formatDateParts(year, month, day);
+    options.push({
+      value,
+      label: formatMexicoCityDayLabel(value),
+    });
+    if (value === end) break;
+    ({ year, month, day } = addDays(year, month, day, 1));
+  }
+
+  return options.reverse();
+}
+
+export function getFinanceWeekOptions(monthKey: string) {
+  const days = getFinanceDayOptions(monthKey);
+  const seen = new Set<string>();
+  const options: { value: string; label: string }[] = [];
+
+  for (const day of days) {
+    const { start } = getMexicoCityWeekBounds(day.value);
+    if (seen.has(start)) continue;
+    seen.add(start);
+    options.push({
+      value: start,
+      label: getReservationPeriodBounds("week", day.value).label,
+    });
+  }
+
+  return options.reverse();
+}
+
 export function getFinanceMonthOptions(count = 24, anchorDate = getMexicoCityDateString()) {
   const [year, month] = anchorDate.split("-").map(Number);
   let cursorYear = year;

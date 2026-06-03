@@ -39,6 +39,7 @@ type ReservationInfo = {
 type ReservationGuestRow = {
   beds?: { bed_number?: number } | { bed_number?: number }[] | null;
   locker_number?: number | null;
+  locker_days?: number | null;
   reservations?: ReservationInfo | ReservationInfo[] | null;
 };
 
@@ -71,6 +72,8 @@ function getStays(guest: GuestRecord): GuestStaySummary[] {
     };
     if (bed?.bed_number != null) stay.bedNumber = bed.bed_number;
     if (row.locker_number !== undefined) stay.lockerNumber = row.locker_number;
+    const lockerDays = Number(row.locker_days ?? 0);
+    if (lockerDays > 0) stay.lockerDays = lockerDays;
     if (folio?.folio_code) stay.folioCode = folio.folio_code;
     if (folio?.payment_status) stay.paymentStatus = folio.payment_status;
     if (folio?.total_amount != null) stay.totalAmount = Number(folio.total_amount);
@@ -95,7 +98,7 @@ export default async function GuestsPage({
   let query = supabase
     .from("guests")
     .select(
-      "id,full_name,phone,email,created_at,reservation_guests!inner(beds(bed_number),locker_number,reservations(check_in_date,check_out_date,nights,status,reservation_source,folios(folio_code,payment_status,total_amount,paid_amount,balance_due)))",
+      "id,full_name,phone,email,created_at,reservation_guests!inner(beds(bed_number),locker_number,locker_days,reservations(check_in_date,check_out_date,nights,status,reservation_source,folios(folio_code,payment_status,total_amount,paid_amount,balance_due)))",
       { count: "exact" },
     );
 
@@ -115,6 +118,7 @@ export default async function GuestsPage({
   const rows = guestsWithStays.map(({ guest, stays }) => {
     const latest = stays.reduce((best, stay) => (stay.checkIn > best.checkIn ? stay : best), stays[0]);
     const totalNights = stays.reduce((sum, stay) => sum + stay.nights, 0);
+    const totalLockerDays = stays.reduce((sum, stay) => sum + (stay.lockerDays ?? 0), 0);
 
     const filterText = [
       guest.full_name,
@@ -126,6 +130,7 @@ export default async function GuestsPage({
       latest.totalAmount != null ? String(latest.totalAmount) : "",
       String(stays.length),
       String(totalNights),
+      totalLockerDays > 0 ? String(totalLockerDays) : "",
     ]
       .filter(Boolean)
       .join(" ");
@@ -154,11 +159,12 @@ export default async function GuestsPage({
         />,
       ),
       ft(
-        `${stays.length} estadías ${totalNights} noches`,
+        `${stays.length} estadías ${totalNights} noches${totalLockerDays > 0 ? ` locker ${totalLockerDays}` : ""}`,
         <GuestStatsCell
           key={`stats-${guest.id}`}
           stayCount={stays.length}
           totalNights={totalNights}
+          totalLockerDays={totalLockerDays}
           source={latest.source ?? "guest_app"}
         />,
       ),

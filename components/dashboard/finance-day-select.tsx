@@ -1,36 +1,28 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { getMexicoCityMonthKey } from "@/lib/dates";
+import { getMexicoCityDateString, parseFinanceDayKey } from "@/lib/dates";
 
-type FinanceMonthSelectProps = {
+type FinanceDaySelectProps = {
   value: string;
   options: { value: string; label: string }[];
+  monthKey: string;
   className?: string;
-  ariaLabel?: string;
 };
 
-export function FinanceMonthSelect({
-  value,
-  options,
-  className,
-  ariaLabel = "Mes",
-}: FinanceMonthSelectProps) {
+export function FinanceDaySelect({ value, options, monthKey, className }: FinanceDaySelectProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const currentMonth = getMexicoCityMonthKey();
+  const defaultDay = parseFinanceDayKey(undefined, monthKey, getMexicoCityDateString());
 
   function onChange(next: string) {
     const params = new URLSearchParams(searchParams.toString());
-    if (next === currentMonth) {
-      params.delete("financeMonth");
+    if (next === defaultDay) {
+      params.delete("financeDay");
     } else {
-      params.set("financeMonth", next);
+      params.set("financeDay", next);
     }
-    params.delete("page");
-    params.delete("financeDay");
-    params.delete("financeWeek");
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);
   }
@@ -39,10 +31,10 @@ export function FinanceMonthSelect({
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      aria-label={ariaLabel}
+      aria-label="Día del estado financiero"
       className={
         className ??
-        "mt-0.5 w-full max-w-[11rem] rounded-md border border-border-soft bg-white px-2 py-1 text-xs capitalize text-text-main"
+        "rounded-md border border-border-soft bg-white px-2 py-1 text-xs capitalize text-text-main"
       }
     >
       {options.map((option) => (

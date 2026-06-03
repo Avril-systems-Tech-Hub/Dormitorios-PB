@@ -15,6 +15,7 @@ export type GuestFormRow = {
   sex: string;
   add_locker: "no" | "yes";
   locker_days: number;
+  locker_number: string;
 };
 
 export type ReservationDateErrors = Partial<
@@ -22,7 +23,15 @@ export type ReservationDateErrors = Partial<
 >;
 
 export function emptyGuest(): GuestFormRow {
-  return { full_name: "", phone: "", email: "", sex: "unknown", add_locker: "no", locker_days: 1 };
+  return {
+    full_name: "",
+    phone: "",
+    email: "",
+    sex: "unknown",
+    add_locker: "no",
+    locker_days: 1,
+    locker_number: "",
+  };
 }
 
 export function nightsBetween(checkIn: string, checkOut: string) {
@@ -43,6 +52,8 @@ export function validateGuestRow(guest: GuestFormRow): string | null {
 type UseReservationFormOptions = {
   action: (formData: FormData) => Promise<CreateGuestReservationResult | void>;
   onConfirmed?: (data: GuestConfirmationPayload) => void;
+  reservationSource?: "guest_app" | "cashier_counter";
+  returnTo?: string;
   recurringGuest?: {
     full_name?: string | null;
     email?: string | null;
@@ -51,7 +62,13 @@ type UseReservationFormOptions = {
   } | null;
 };
 
-export function useReservationForm({ action, onConfirmed, recurringGuest }: UseReservationFormOptions) {
+export function useReservationForm({
+  action,
+  onConfirmed,
+  reservationSource = "guest_app",
+  returnTo = "/",
+  recurringGuest,
+}: UseReservationFormOptions) {
   const [guestCount, setGuestCount] = useState(1);
   const [guests, setGuests] = useState<GuestFormRow[]>([emptyGuest()]);
   const [reservationData, setReservationData] = useState({
@@ -198,6 +215,8 @@ export function useReservationForm({ action, onConfirmed, recurringGuest }: UseR
           current.add_locker = addLocker;
           if (addLocker === "yes") {
             current.locker_days = stayNights;
+          } else {
+            current.locker_number = "";
           }
         } else if (field === "locker_days") {
           const days = Number(value);
@@ -274,8 +293,8 @@ export function useReservationForm({ action, onConfirmed, recurringGuest }: UseR
       formData.set("check_in_date", reservationData.check_in_date);
       formData.set("check_out_date", reservationData.check_out_date);
       formData.set("notes", reservationData.notes);
-      formData.set("reservation_source", "guest_app");
-      formData.set("return_to", "/");
+      formData.set("reservation_source", reservationSource);
+      formData.set("return_to", returnTo);
       // Determine best discount: promo code vs applicable discount rule (pick highest)
       const promoDiscount = promoCodeResult?.valid ? promoCodeResult.promo : null;
       const ruleDiscount = applicableDiscount;

@@ -1,5 +1,11 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { ActiveReservationsPanel } from "@/components/dashboard/active-reservations-panel";
+import { BedSummaryCard } from "@/components/dashboard/bed-summary-card";
+import { FolioSummaryCard } from "@/components/dashboard/folio-summary-card";
+import { buildBedOccupancyMap } from "@/lib/bed-occupancy";
+import { computeBedSummaryCounts, parseBedSummaryFilter } from "@/lib/bed-summary";
+import { ReceptionReservationPanel } from "@/components/dashboard/reception-reservation-panel";
 import { ExpenseRegisterPanel } from "@/components/dashboard/expense-register-panel";
 import { FinanceResultCard } from "@/components/dashboard/finance-result-card";
 import { ReservationsFinanceChart } from "@/components/dashboard/reservations-finance-chart";
@@ -8,18 +14,27 @@ import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionProfile } from "@/lib/auth/guards";
 import {
+  getDailyFinanceGuestDetailsInRange,
+  getDailyFinanceSummariesInRange,
   getDayFinanceSummary,
   getMonthFinanceSummary,
   getWeekFinanceSummary,
 } from "@/lib/day-finance";
 import {
   financeMonthKeyToAnchorDate,
+  formatMexicoCityDayLabel,
   formatMexicoCityMonthLabel,
+  getFinanceDayOptions,
   getFinanceMonthOptions,
+  getFinanceWeekOptions,
   getMexicoCityDateString,
+  getMexicoCityMonthBoundsFromKey,
   getReservationPeriodBounds,
+  parseFinanceDayKey,
   parseFinanceMonthKey,
+  parseFinanceWeekAnchor,
 } from "@/lib/dates";
+import { parseFolioSummaryFilter } from "@/lib/folio-summary";
 
 export default async function DashboardPage({
   searchParams,
@@ -37,26 +52,74 @@ export default async function DashboardPage({
   if (profile.role !== "admin") {
     return (
       <div className="min-w-0 space-y-4">
+        <ReceptionReservationPanel />
         <ActiveReservationsPanel />
         <ExpenseRegisterPanel returnTo="/dashboard" />
       </div>
     );
   }
 
+  const selectedDay = parseFinanceDayKey(params.financeDay, selectedMonth, today);
+  const selectedWeek = parseFinanceWeekAnchor(params.financeWeek, selectedMonth, today);
+  const dayOptions = getFinanceDayOptions(selectedMonth);
+  const weekOptions = getFinanceWeekOptions(selectedMonth);
+
   const finance = await getDayFinanceSummary(supabase, today);
   const weekFinance = await getWeekFinanceSummary(supabase, today);
   const monthFinance = await getMonthFinanceSummary(supabase, monthAnchor);
+  const chartDayFinance = await getDayFinanceSummary(supabase, selectedDay);
+  const chartWeekFinance = await getWeekFinanceSummary(supabase, selectedWeek);
+  const { start: monthStart, end: monthEnd } = getMexicoCityMonthBoundsFromKey(selectedMonth);
+  const [dailyFinance, guestDetailsByDate] = await Promise.all([
+    getDailyFinanceSummariesInRange(supabase, monthStart, monthEnd),
+    getDailyFinanceGuestDetailsInRange(supabase, monthStart, monthEnd),
+  ]);
+
   const weekLabel = getReservationPeriodBounds("week", today).label;
   const monthLabel = formatMexicoCityMonthLabel(monthAnchor);
+  const chartDayLabel = formatMexicoCityDayLabel(selectedDay);
+  const chartWeekLabel = getReservationPeriodBounds("week", selectedWeek).label;
 
-  const { count: availableBeds } = await supabase
-    .from("beds")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "available");
-  const { count: activeFolios } = await supabase
-    .from("folios")
-    .select("id", { count: "exact", head: true })
-    .neq("payment_status", "liquidated");
+  const bedFilter = parseBedSummaryFilter(params.bedFilter);
+  const [{ data: beds }, { data: rgRows }] = await Promise.all([
+    supabase.from("beds").select("id, status"),
+    supabase
+      .from("reservation_guests")
+      .select(
+        `bed_id, reservation_id, guest_id, locker_number, locker_days,
+        guests(full_name, phone, email),
+        reservations!inner(
+          id, status, reservation_source, check_in_date, check_out_date, nights, notes, created_at,
+          folios(folio_code, payment_status, total_amount, balance_due)
+        )`,
+      )
+      .not("bed_id", "is", null),
+  ]);
+  const bedOccupancyMap = buildBedOccupancyMap(rgRows ?? [], today);
+  const bedCounts = computeBedSummaryCounts(beds ?? [], bedOccupancyMap);
+  const occupiedToday = bedCounts.inventario - bedCounts.libres;
+
+  const folioFilter = parseFolioSummaryFilter(params.folioFilter);
+  const [
+    { count: foliosPorPagar },
+    { count: foliosPagados },
+    { count: foliosTodos },
+  ] = await Promise.all([
+    supabase
+      .from("folios")
+      .select("id", { count: "exact", head: true })
+      .neq("payment_status", "liquidated"),
+    supabase
+      .from("folios")
+      .select("id", { count: "exact", head: true })
+      .eq("payment_status", "liquidated"),
+    supabase.from("folios").select("id", { count: "exact", head: true }),
+  ]);
+  const folioCounts = {
+    por_pagar: foliosPorPagar ?? 0,
+    pagados: foliosPagados ?? 0,
+    todos: foliosTodos ?? 0,
+  };
   const { data: openShift } = await supabase
     .from("shifts")
     .select("id,status")
@@ -66,28 +129,26 @@ export default async function DashboardPage({
   return (
     <div className="min-w-0 space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Link
-          href="/dashboard/beds"
-          className="block rounded-xl transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary"
-        >
-          <Card className="h-full transition hover:border-brand-primary/40 hover:bg-surface-soft/40">
-            <p className="text-sm text-text-muted">Camas disponibles</p>
-            <p className="mt-1 text-2xl font-semibold">{availableBeds ?? 0}</p>
-            <Badge className="mt-2">Inventario vivo</Badge>
+        <Suspense fallback={
+          <Card className="h-full animate-pulse">
+            <div className="h-4 w-32 rounded bg-surface-soft" />
+            <div className="mt-3 h-8 w-16 rounded bg-surface-soft" />
           </Card>
-        </Link>
-        <Link
-          href="/dashboard/guests"
-          className="block rounded-xl transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary"
-        >
-          <Card className="h-full transition hover:border-brand-primary/40 hover:bg-surface-soft/40">
-            <p className="text-sm text-text-muted">Folios activos</p>
-            <p className="mt-1 text-2xl font-semibold">{activeFolios ?? 0}</p>
-            <Badge variant="warning" className="mt-2">
-              En operación
-            </Badge>
+        }>
+          <BedSummaryCard
+            counts={bedCounts}
+            initialFilter={bedFilter}
+            occupiedToday={occupiedToday}
+          />
+        </Suspense>
+        <Suspense fallback={
+          <Card className="h-full animate-pulse">
+            <div className="h-4 w-32 rounded bg-surface-soft" />
+            <div className="mt-3 h-8 w-16 rounded bg-surface-soft" />
           </Card>
-        </Link>
+        }>
+          <FolioSummaryCard counts={folioCounts} initialFilter={folioFilter} />
+        </Suspense>
         <Link
           href="/dashboard/shifts"
           className="block rounded-xl transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary"
@@ -110,13 +171,19 @@ export default async function DashboardPage({
       </div>
 
       <ReservationsFinanceChart
-        day={finance}
-        week={weekFinance}
+        day={chartDayFinance}
+        week={chartWeekFinance}
         month={monthFinance}
-        weekLabel={weekLabel}
         monthLabel={monthLabel}
+        dayLabel={chartDayLabel}
+        weekLabel={chartWeekLabel}
         selectedMonth={selectedMonth}
-        monthOptions={monthOptions}
+        selectedDay={selectedDay}
+        selectedWeek={selectedWeek}
+        dayOptions={dayOptions}
+        weekOptions={weekOptions}
+        dailyEntries={dailyFinance}
+        guestDetailsByDate={guestDetailsByDate}
       />
     </div>
   );

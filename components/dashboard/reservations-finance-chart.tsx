@@ -3,18 +3,34 @@
 import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { FinanceMonthSelect } from "@/components/dashboard/finance-month-select";
-import type { DayFinanceSummary } from "@/lib/day-finance";
-import type { ReservationPeriod } from "@/lib/dates";
+import { FinanceDaySelect } from "@/components/dashboard/finance-day-select";
+import { FinanceWeekSelect } from "@/components/dashboard/finance-week-select";
+import {
+  FinanceCalendarView,
+  getCalendarHighlightRange,
+} from "@/components/dashboard/finance-calendar-view";
+import type {
+  DailyFinanceEntry,
+  DailyFinanceGuestDetailsByDate,
+  DayFinanceSummary,
+} from "@/lib/day-finance";
+
+type ChartPeriod = "day" | "week" | "month";
 
 type ReservationsFinanceChartProps = {
   day: DayFinanceSummary;
   week: DayFinanceSummary;
   month: DayFinanceSummary;
-  weekLabel: string;
   monthLabel: string;
+  dayLabel: string;
+  weekLabel: string;
   selectedMonth: string;
-  monthOptions: { value: string; label: string }[];
+  selectedDay: string;
+  selectedWeek: string;
+  dayOptions: { value: string; label: string }[];
+  weekOptions: { value: string; label: string }[];
+  dailyEntries: DailyFinanceEntry[];
+  guestDetailsByDate: DailyFinanceGuestDetailsByDate;
 };
 
 type ChartSlice = {
@@ -24,7 +40,7 @@ type ChartSlice = {
   color: string;
 };
 
-const PERIOD_OPTIONS: { value: ReservationPeriod; label: string }[] = [
+const PERIOD_OPTIONS: { value: ChartPeriod; label: string }[] = [
   { value: "day", label: "Día" },
   { value: "week", label: "Semana" },
   { value: "month", label: "Mes" },
@@ -137,9 +153,13 @@ function BarChart({ slices, netResult }: { slices: ChartSlice[]; netResult: numb
   );
 }
 
-function getPeriodDescription(period: ReservationPeriod, weekLabel: string, monthLabel: string) {
-  if (period === "day") return "Ingresos y gastos del día";
-  if (period === "week") return `Ingresos y gastos de la semana (${weekLabel})`;
+function getPeriodDescription(period: ChartPeriod, monthLabel: string, dayLabel: string, weekLabel: string) {
+  if (period === "day") {
+    return `Ingresos y gastos del ${dayLabel} · ${monthLabel}`;
+  }
+  if (period === "week") {
+    return `Ingresos y gastos de la semana (${weekLabel}) · ${monthLabel}`;
+  }
   return `Ingresos y gastos de ${monthLabel}`;
 }
 
@@ -147,32 +167,49 @@ export function ReservationsFinanceChart({
   day,
   week,
   month,
-  weekLabel,
   monthLabel,
+  dayLabel,
+  weekLabel,
   selectedMonth,
-  monthOptions,
+  selectedDay,
+  selectedWeek,
+  dayOptions,
+  weekOptions,
+  dailyEntries,
+  guestDetailsByDate,
 }: ReservationsFinanceChartProps) {
-  const [period, setPeriod] = useState<ReservationPeriod>("day");
+  const [period, setPeriod] = useState<ChartPeriod>("month");
   const [view, setView] = useState<"pie" | "bar">("pie");
+  const [showCalendar, setShowCalendar] = useState(false);
 
   const finance = period === "day" ? day : period === "week" ? week : month;
   const slices = buildSlices(finance);
+  const calendarHighlight = getCalendarHighlightRange(period, selectedDay, selectedWeek);
 
   return (
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-text-main">Estado financiero</h2>
-          <p className="mt-1 text-sm text-text-muted">
-            {getPeriodDescription(period, weekLabel, monthLabel)}
+          <p className="mt-1 text-sm capitalize text-text-muted">
+            {getPeriodDescription(period, monthLabel, dayLabel, weekLabel)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {period === "month" ? (
-            <FinanceMonthSelect
-              value={selectedMonth}
-              options={monthOptions}
-              className="rounded-md border border-border-soft bg-white px-2 py-1 text-xs capitalize text-text-main"
+          {period === "day" ? (
+            <FinanceDaySelect
+              value={selectedDay}
+              options={dayOptions}
+              monthKey={selectedMonth}
+              className="max-w-[12rem] rounded-md border border-border-soft bg-white px-2 py-1 text-xs capitalize text-text-main"
+            />
+          ) : null}
+          {period === "week" ? (
+            <FinanceWeekSelect
+              value={selectedWeek}
+              options={weekOptions}
+              monthKey={selectedMonth}
+              className="max-w-[12rem] rounded-md border border-border-soft bg-white px-2 py-1 text-xs capitalize text-text-main"
             />
           ) : null}
           <div
@@ -222,6 +259,27 @@ export function ReservationsFinanceChart({
 
       <div className="mt-4">
         {view === "pie" ? <PieChart slices={slices} /> : <BarChart slices={slices} netResult={finance.netResult} />}
+      </div>
+
+      <div className="mt-4 border-t border-border-soft pt-3">
+        <button
+          type="button"
+          onClick={() => setShowCalendar((open) => !open)}
+          className="text-sm font-medium text-brand-primary underline-offset-2 hover:underline"
+          aria-expanded={showCalendar}
+        >
+          {showCalendar ? "Ocultar calendario" : "Ver calendario"}
+        </button>
+        {showCalendar ? (
+          <div className="mt-3">
+            <FinanceCalendarView
+              entries={dailyEntries}
+              guestDetailsByDate={guestDetailsByDate}
+              monthKey={selectedMonth}
+              {...calendarHighlight}
+            />
+          </div>
+        ) : null}
       </div>
     </Card>
   );
