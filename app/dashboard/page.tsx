@@ -36,6 +36,8 @@ import {
 } from "@/lib/dates";
 import { parseFolioSummaryFilter } from "@/lib/folio-summary";
 
+export const dynamic = "force-dynamic";
+
 export default async function DashboardPage({
   searchParams,
 }: {

@@ -2,10 +2,21 @@ export function getMexicoCityDateString(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City" }).format(date);
 }
 
+/** CDMX is UTC−6 year-round (no DST since 2022). */
+const CDMX_OFFSET = "-06:00";
+
+export function paymentReceivedAtToMexicoDate(receivedAt: string) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City" }).format(
+    new Date(receivedAt),
+  );
+}
+
 export function getMexicoCityDayBounds(dateString: string) {
   return {
-    start: `${dateString}T00:00:00`,
-    end: `${dateString}T23:59:59`,
+    start: dateString,
+    end: dateString,
+    startAt: `${dateString}T00:00:00.000${CDMX_OFFSET}`,
+    endAt: `${dateString}T23:59:59.999${CDMX_OFFSET}`,
   };
 }
 
@@ -16,12 +27,14 @@ export function getMexicoCityMonthBounds(dateString: string) {
   const start = `${yearStr}-${monthStr}-01`;
   const lastDay = new Date(year, month, 0).getDate();
   const end = `${yearStr}-${monthStr}-${String(lastDay).padStart(2, "0")}`;
+  const startBounds = getMexicoCityDayBounds(start);
+  const endBounds = getMexicoCityDayBounds(end);
 
   return {
     start,
     end,
-    startAt: `${start}T00:00:00`,
-    endAt: `${end}T23:59:59`,
+    startAt: startBounds.startAt,
+    endAt: endBounds.endAt,
   };
 }
 
@@ -203,12 +216,14 @@ export function getMexicoCityWeekBounds(dateString: string) {
   const endParts = addDays(startParts.year, startParts.month, startParts.day, 6);
   const start = formatDateParts(startParts.year, startParts.month, startParts.day);
   const end = formatDateParts(endParts.year, endParts.month, endParts.day);
+  const startBounds = getMexicoCityDayBounds(start);
+  const endBounds = getMexicoCityDayBounds(end);
 
   return {
     start,
     end,
-    startAt: `${start}T00:00:00`,
-    endAt: `${end}T23:59:59`,
+    startAt: startBounds.startAt,
+    endAt: endBounds.endAt,
   };
 }
 
@@ -217,7 +232,7 @@ export function getReservationPeriodBounds(
   dateString = getMexicoCityDateString(),
 ) {
   if (period === "day") {
-    const { start, end } = getMexicoCityDayBounds(dateString);
+    const { startAt, endAt } = getMexicoCityDayBounds(dateString);
     const label = new Date(`${dateString}T12:00:00`).toLocaleDateString("es-MX", {
       weekday: "long",
       day: "numeric",
@@ -225,7 +240,7 @@ export function getReservationPeriodBounds(
       year: "numeric",
       timeZone: "America/Mexico_City",
     });
-    return { start: dateString, end: dateString, startAt: start, endAt: end, label };
+    return { start: dateString, end: dateString, startAt, endAt, label };
   }
 
   if (period === "week") {

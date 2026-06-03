@@ -4,6 +4,7 @@ import {
   getMexicoCityDayBounds,
   getMexicoCityMonthBounds,
   getMexicoCityWeekBounds,
+  paymentReceivedAtToMexicoDate,
 } from "@/lib/dates";
 
 export type DayFinanceSummary = {
@@ -33,7 +34,7 @@ function unwrap<T>(value: T | T[] | null | undefined): T | undefined {
 }
 
 function paymentLocalDate(receivedAt: string) {
-  return String(receivedAt).slice(0, 10);
+  return paymentReceivedAtToMexicoDate(receivedAt);
 }
 
 function sumFinance(
@@ -51,13 +52,13 @@ export async function getDayFinanceSummary(
   supabase: SupabaseClient,
   dateString: string,
 ): Promise<DayFinanceSummary> {
-  const { start, end } = getMexicoCityDayBounds(dateString);
+  const { startAt, endAt } = getMexicoCityDayBounds(dateString);
 
   const { data: payments } = await supabase
     .from("payments")
     .select("amount")
-    .gte("received_at", start)
-    .lte("received_at", end);
+    .gte("received_at", startAt)
+    .lte("received_at", endAt);
 
   const { data: expenses } = await supabase
     .from("cash_movements")
@@ -131,8 +132,8 @@ export async function getDailyFinanceSummariesInRange(
   const { data: payments } = await supabase
     .from("payments")
     .select("amount, received_at")
-    .gte("received_at", startBounds.start)
-    .lte("received_at", endBounds.end);
+    .gte("received_at", startBounds.startAt)
+    .lte("received_at", endBounds.endAt);
 
   const { data: expenses } = await supabase
     .from("cash_movements")
@@ -144,7 +145,7 @@ export async function getDailyFinanceSummariesInRange(
   const totals = new Map<string, { income: number; expenses: number }>();
 
   for (const payment of payments ?? []) {
-    const date = String(payment.received_at).slice(0, 10);
+    const date = paymentLocalDate(String(payment.received_at));
     if (date < startDate || date > endDate) continue;
     const row = totals.get(date) ?? { income: 0, expenses: 0 };
     row.income += Number(payment.amount);
@@ -217,8 +218,8 @@ export async function getDailyFinanceGuestDetailsInRange(
         )
       )`,
     )
-    .gte("received_at", startBounds.start)
-    .lte("received_at", endBounds.end);
+    .gte("received_at", startBounds.startAt)
+    .lte("received_at", endBounds.endAt);
 
   const byDate = new Map<string, Map<string, DayFinanceGuestLine>>();
 
