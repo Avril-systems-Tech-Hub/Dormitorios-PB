@@ -1,13 +1,13 @@
+import { redirect } from "next/navigation";
 import { getGuestAccountDataAction } from "@/actions/guest-reservations";
 import { getGuestPointsAction } from "@/actions/guest-points";
 import { GuestAccountView } from "@/components/guest/guest-account-view";
-import { GuestLoginPanel } from "@/components/guest/guest-login-panel";
 
 export default async function GuestAccountPage() {
   const account = await getGuestAccountDataAction();
 
   if (!account) {
-    return <GuestLoginPanel />;
+    redirect("/login");
   }
 
   const points = await getGuestPointsAction();

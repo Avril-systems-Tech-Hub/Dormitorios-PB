@@ -1,41 +1,38 @@
-import Image from "next/image";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { redirect } from "next/navigation";
+import { UnifiedLoginView } from "@/components/auth/unified-login-view";
+import { WaaPProvider } from "@/components/guest/waap-provider";
+import { getGuestSession } from "@/lib/guest-auth/session";
+import { createClient } from "@/lib/supabase/server";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; staff?: string }>;
 }) {
   const params = await searchParams;
+  const guestSession = await getGuestSession();
+
+  if (guestSession) {
+    redirect("/cuenta");
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) {
+    redirect("/dashboard");
+  }
 
   return (
-    <div className="dashboard-brand-header flex min-h-screen items-center justify-center p-4">
-      <Card className="w-full max-w-sm space-y-4">
-        <div className="space-y-2 text-center">
-          <Image
-            src="/logo-dorm.png"
-            alt="Dormitorios Plaza Basílica"
-            width={72}
-            height={72}
-            className="mx-auto rounded-md"
-          />
-          <h1 className="text-xl font-semibold">Acceso operativo</h1>
-          <p className="text-sm text-text-muted">Inicia sesión para continuar</p>
-        </div>
-
-        <form action="/api/auth/login" method="post" className="space-y-3">
-          <Input name="email" placeholder="Correo" type="email" required />
-          <Input name="password" placeholder="Contraseña" type="password" required />
-          {params.error ? (
-            <p className="text-sm text-danger">{params.error}</p>
-          ) : null}
-          <Button className="w-full" type="submit">
-            Entrar
-          </Button>
-        </form>
-      </Card>
-    </div>
+    <WaaPProvider>
+      <div className="dashboard-brand-header flex min-h-screen items-center justify-center p-4">
+        <UnifiedLoginView
+          staffError={params.error}
+          initialMode={params.staff === "1" ? "staff" : "guest"}
+        />
+      </div>
+    </WaaPProvider>
   );
 }

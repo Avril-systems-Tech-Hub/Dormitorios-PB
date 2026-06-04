@@ -42,7 +42,7 @@ export async function getSessionProfile() {
   }
 
   if (profile.is_disabled) {
-    redirect("/login?error=" + encodeURIComponent("Tu cuenta ha sido deshabilitada. Contacta al administrador."));
+    redirect("/login?staff=1&error=" + encodeURIComponent("Tu cuenta ha sido deshabilitada. Contacta al administrador."));
   }
 
   return profile;

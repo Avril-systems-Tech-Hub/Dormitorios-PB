@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 import {
   establishGuestSessionAction,
   guestLogoutAction,
@@ -12,19 +13,32 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
-type Step = "login" | "link-phone";
+type Mode = "guest" | "staff";
+type GuestStep = "login" | "link-phone";
 
-export function GuestLoginPanel() {
+export function UnifiedLoginView({
+  staffError,
+  initialMode = "guest",
+}: {
+  staffError?: string;
+  initialMode?: Mode;
+}) {
   const router = useRouter();
   const { ready, address, isConnecting, error, login, logout, clearError } = useWaaP();
-  const [step, setStep] = useState<Step>("login");
+  const [mode, setMode] = useState<Mode>(initialMode);
+  const [guestStep, setGuestStep] = useState<GuestStep>("login");
   const [pendingAddress, setPendingAddress] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
   const [fullName, setFullName] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const handleLogin = () => {
+  const goToAccount = () => {
+    router.push("/cuenta");
+    router.refresh();
+  };
+
+  const handleGuestLogin = () => {
     clearError();
     setFormError(null);
 
@@ -40,11 +54,11 @@ export function GuestLoginPanel() {
 
       if (result.needsPhoneLink) {
         setPendingAddress(connectedAddress);
-        setStep("link-phone");
+        setGuestStep("link-phone");
         return;
       }
 
-      router.refresh();
+      goToAccount();
     });
   };
 
@@ -58,27 +72,75 @@ export function GuestLoginPanel() {
         setFormError(result.error);
         return;
       }
-      router.refresh();
+      goToAccount();
     });
   };
 
-  const handleLogout = () => {
+  const handleCancelLinkPhone = () => {
     startTransition(async () => {
       await guestLogoutAction();
       await logout();
-      setStep("login");
+      setGuestStep("login");
       setPendingAddress(null);
       setPhone("");
       setFullName("");
-      router.refresh();
     });
   };
 
-  if (step === "link-phone" && pendingAddress) {
+  const switchToStaff = () => {
+    clearError();
+    setFormError(null);
+    setMode("staff");
+  };
+
+  const switchToGuest = () => {
+    setFormError(null);
+    setMode("guest");
+  };
+
+  if (mode === "staff") {
     return (
-      <Card className="mx-auto w-full max-w-md space-y-4">
+      <Card className="w-full max-w-sm space-y-4">
         <div className="space-y-2 text-center">
-          <h1 className="text-xl font-semibold text-text-main">Vincula tu teléfono</h1>
+          <Image
+            src="/logo-dorm.png"
+            alt="Dormitorios Plaza Basílica"
+            width={72}
+            height={72}
+            className="mx-auto rounded-md"
+          />
+          <h1 className="text-xl font-semibold">Acceso operativo</h1>
+          <p className="text-sm text-text-muted">Inicia sesión para continuar</p>
+        </div>
+
+        <form action="/api/auth/login" method="post" className="space-y-3">
+          <Input name="email" placeholder="Correo" type="email" required />
+          <Input name="password" placeholder="Contraseña" type="password" required />
+          {staffError ? <p className="text-sm text-danger">{staffError}</p> : null}
+          <Button className="w-full" type="submit">
+            Entrar
+          </Button>
+        </form>
+
+        <Button className="w-full" type="button" variant="ghost" onClick={switchToGuest}>
+          Volver
+        </Button>
+      </Card>
+    );
+  }
+
+  if (guestStep === "link-phone" && pendingAddress) {
+    return (
+      <Card className="w-full max-w-sm space-y-4">
+        <div className="space-y-2 text-center">
+          <Image
+            src="/logo-dorm.png"
+            alt="Dormitorios Plaza Basílica"
+            width={72}
+            height={72}
+            className="mx-auto rounded-md"
+          />
+          <h1 className="text-xl font-semibold">Vincula tu teléfono</h1>
           <p className="text-sm text-text-muted">
             Usamos tu teléfono para encontrar tus reservas anteriores.
           </p>
@@ -109,7 +171,7 @@ export function GuestLoginPanel() {
           >
             {isPending ? "Vinculando…" : "Continuar"}
           </Button>
-          <Button className="w-full" type="button" variant="ghost" onClick={handleLogout}>
+          <Button className="w-full" type="button" variant="ghost" onClick={handleCancelLinkPhone}>
             Cancelar
           </Button>
         </div>
@@ -118,9 +180,16 @@ export function GuestLoginPanel() {
   }
 
   return (
-    <Card className="mx-auto w-full max-w-md space-y-4">
+    <Card className="w-full max-w-sm space-y-4">
       <div className="space-y-2 text-center">
-        <h1 className="text-xl font-semibold text-text-main">Mi cuenta</h1>
+        <Image
+          src="/logo-dorm.png"
+          alt="Dormitorios Plaza Basílica"
+          width={72}
+          height={72}
+          className="mx-auto rounded-md"
+        />
+        <h1 className="text-xl font-semibold">Ingreso</h1>
         <p className="text-sm text-text-muted">
           Inicia sesión para ver tus reservas y administrar tu perfil.
         </p>
@@ -134,7 +203,7 @@ export function GuestLoginPanel() {
         className="w-full"
         type="button"
         disabled={!ready || isConnecting || isPending}
-        onClick={handleLogin}
+        onClick={handleGuestLogin}
       >
         {!ready
           ? "Cargando…"
@@ -148,6 +217,12 @@ export function GuestLoginPanel() {
       <p className="text-center text-xs text-text-muted">
         Puedes entrar con correo, teléfono o redes sociales.
       </p>
+
+      <div className="border-t border-border-soft pt-3">
+        <Button className="w-full" type="button" variant="outline" onClick={switchToStaff}>
+          Staff
+        </Button>
+      </div>
     </Card>
   );
 }

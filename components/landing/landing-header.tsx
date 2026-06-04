@@ -53,16 +53,10 @@ export function LandingHeader() {
 
         <div className="flex items-center gap-2">
           <Link
-            href="/cuenta"
-            className="hidden h-10 items-center justify-center rounded-full border border-mkt-border bg-mkt-canvas-elevated px-4 text-sm font-medium text-mkt-ink transition hover:bg-mkt-canvas focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mkt-terracotta sm:inline-flex md:px-5"
-          >
-            Mi cuenta
-          </Link>
-          <Link
             href="/login"
             className="inline-flex h-10 items-center justify-center rounded-full bg-mkt-slate px-4 text-sm font-medium text-white transition hover:bg-mkt-slate-deep focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mkt-terracotta md:px-5"
           >
-            Staff
+            Ingreso
           </Link>
           <button
             type="button"
@@ -103,11 +97,11 @@ export function LandingHeader() {
             </a>
           ))}
           <Link
-            href="/cuenta"
+            href="/login"
             className="rounded-lg px-3 py-2.5 hover:bg-mkt-canvas focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mkt-terracotta"
             onClick={() => setOpen(false)}
           >
-            Mi cuenta
+            Ingreso
           </Link>
         </nav>
       </div>

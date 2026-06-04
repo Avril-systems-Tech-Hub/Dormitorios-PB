@@ -11,6 +11,7 @@ export async function POST(request: Request) {
 
   const loginUrl = new URL("/login", request.url);
   if (error) {
+    loginUrl.searchParams.set("staff", "1");
     loginUrl.searchParams.set("error", "Credenciales inválidas");
     return NextResponse.redirect(loginUrl);
   }

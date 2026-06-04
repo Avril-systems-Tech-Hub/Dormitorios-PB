@@ -53,6 +53,7 @@ export async function establishGuestSessionAction(
     if (existingGuestId) {
       await setGuestSessionCookie({ guestId: existingGuestId, walletAddress: address });
       revalidatePath("/cuenta");
+      revalidatePath("/login");
       return { ok: true, guestId: existingGuestId };
     }
 
@@ -119,6 +120,7 @@ export async function linkGuestPhoneAction(
     await linkWalletToGuest(guestId, address);
     await setGuestSessionCookie({ guestId, walletAddress: address });
     revalidatePath("/cuenta");
+    revalidatePath("/login");
 
     return { ok: true, guestId };
   } catch (error) {
@@ -132,6 +134,7 @@ export async function linkGuestPhoneAction(
 export async function guestLogoutAction() {
   await clearGuestSessionCookie();
   revalidatePath("/cuenta");
+  revalidatePath("/login");
 }
 
 export async function getGuestSessionAction() {
