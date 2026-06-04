@@ -14,6 +14,7 @@ import type {
   DailyFinanceGuestDetailsByDate,
   DayFinanceSummary,
 } from "@/lib/day-finance";
+import { pieSlicePath } from "@/lib/pie-chart-path";
 
 type ChartPeriod = "day" | "week" | "month";
 
@@ -70,15 +71,9 @@ function PieChart({ slices }: { slices: ChartSlice[] }) {
         const end = cursor + angle;
         cursor = end;
 
-        const x1 = center + radius * Math.cos(start);
-        const y1 = center + radius * Math.sin(start);
-        const x2 = center + radius * Math.cos(end);
-        const y2 = center + radius * Math.sin(end);
-        const largeArc = angle > Math.PI ? 1 : 0;
-
         return {
           ...slice,
-          d: `M ${center} ${center} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`,
+          d: pieSlicePath(center, radius, start, end),
           pct: (slice.value / total) * 100,
         };
       });

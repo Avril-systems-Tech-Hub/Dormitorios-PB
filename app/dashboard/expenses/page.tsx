@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { ExpenseRegisterPanel } from "@/components/dashboard/expense-register-panel";
-import { ExpensesOverview } from "@/components/dashboard/expenses-overview";
+import { PaymentsExpensesComparison } from "@/components/dashboard/payments-expenses-comparison";
 import { Card } from "@/components/ui/card";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
 import { requireRole } from "@/lib/auth/guards";
@@ -63,12 +63,27 @@ export default async function ExpensesPage({
   const dayOptions = getFinanceDayOptions(selectedMonth);
   const weekOptions = getFinanceWeekOptions(selectedMonth);
 
-  const summary =
+  const summaryPromise =
     expensePeriod === "day"
-      ? await getDayFinanceSummary(supabase, selectedDay)
+      ? getDayFinanceSummary(supabase, selectedDay)
       : expensePeriod === "week"
-        ? await getWeekFinanceSummary(supabase, selectedWeek)
-        : await getMonthFinanceSummary(supabase, monthAnchor);
+        ? getWeekFinanceSummary(supabase, selectedWeek)
+        : getMonthFinanceSummary(supabase, monthAnchor);
+
+  const [summary, { count: paymentCount }, { count: expenseCount }] = await Promise.all([
+    summaryPromise,
+    adminSupabase
+      .from("payments")
+      .select("id", { count: "exact", head: true })
+      .gte("received_at", periodBounds.startAt)
+      .lte("received_at", periodBounds.endAt),
+    adminSupabase
+      .from("cash_movements")
+      .select("id", { count: "exact", head: true })
+      .eq("direction", "expense")
+      .gte("movement_date", periodBounds.start)
+      .lte("movement_date", periodBounds.end),
+  ]);
 
   let query = adminSupabase
     .from("cash_movements")
@@ -146,16 +161,21 @@ export default async function ExpensesPage({
           <div className="h-48 animate-pulse rounded-xl border border-border-soft bg-surface-soft" />
         }
       >
-        <ExpensesOverview
-          expensePeriod={expensePeriod}
-          periodLabel={periodLabel}
-          selectedMonth={selectedMonth}
-          selectedDay={selectedDay}
-          selectedWeek={selectedWeek}
-          monthOptions={monthOptions}
-          dayOptions={dayOptions}
-          weekOptions={weekOptions}
+        <PaymentsExpensesComparison
           summary={summary}
+          periodLabel={periodLabel}
+          paymentCount={paymentCount ?? 0}
+          expenseCount={expenseCount ?? 0}
+          periodControls={{
+            period: expensePeriod,
+            periodParam: "expensePeriod",
+            selectedMonth,
+            selectedDay,
+            selectedWeek,
+            monthOptions,
+            dayOptions,
+            weekOptions,
+          }}
         />
       </Suspense>
 

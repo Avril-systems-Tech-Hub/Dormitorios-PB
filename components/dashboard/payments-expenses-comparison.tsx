@@ -2,16 +2,34 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { FinanceDaySelect } from "@/components/dashboard/finance-day-select";
+import { FinanceMonthSelect } from "@/components/dashboard/finance-month-select";
+import { FinanceWeekSelect } from "@/components/dashboard/finance-week-select";
 import { cn } from "@/lib/utils";
 import type { DayFinanceSummary } from "@/lib/day-finance";
+import { parseReservationPeriod, type ReservationPeriod } from "@/lib/dates";
+import { pieSlicePath } from "@/lib/pie-chart-path";
+
+type PeriodControlsConfig = {
+  period: ReservationPeriod;
+  periodParam: string;
+  selectedMonth: string;
+  selectedDay: string;
+  selectedWeek: string;
+  monthOptions: { value: string; label: string }[];
+  dayOptions: { value: string; label: string }[];
+  weekOptions: { value: string; label: string }[];
+};
 
 type PaymentsExpensesComparisonProps = {
   summary: DayFinanceSummary;
   periodLabel: string;
   paymentCount: number;
   expenseCount: number;
+  periodControls?: PeriodControlsConfig;
 };
 
 type ChartSlice = {
@@ -21,10 +39,16 @@ type ChartSlice = {
   color: string;
 };
 
+const PERIOD_OPTIONS: { value: ReservationPeriod; label: string }[] = [
+  { value: "day", label: "Día" },
+  { value: "week", label: "Semana" },
+  { value: "month", label: "Mes" },
+];
+
 function buildSlices(finance: DayFinanceSummary): ChartSlice[] {
   return [
-    { key: "income", label: "Pagos (ingresos)", value: finance.totalGuestIncome, color: "#1f8f4e" },
-    { key: "expenses", label: "Gastos (egresos)", value: finance.totalExpenses, color: "#c53b3b" },
+    { key: "income", label: "Ingresos", value: finance.totalGuestIncome, color: "#1f8f4e" },
+    { key: "expenses", label: "Egresos", value: finance.totalExpenses, color: "#c53b3b" },
   ];
 }
 
@@ -45,15 +69,9 @@ function PieChart({ slices }: { slices: ChartSlice[] }) {
         const end = cursor + angle;
         cursor = end;
 
-        const x1 = center + radius * Math.cos(start);
-        const y1 = center + radius * Math.sin(start);
-        const x2 = center + radius * Math.cos(end);
-        const y2 = center + radius * Math.sin(end);
-        const largeArc = angle > Math.PI ? 1 : 0;
-
         return {
           ...slice,
-          d: `M ${center} ${center} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`,
+          d: pieSlicePath(center, radius, start, end),
           pct: (slice.value / total) * 100,
         };
       });
@@ -62,7 +80,7 @@ function PieChart({ slices }: { slices: ChartSlice[] }) {
   if (total <= 0) {
     return (
       <div className="flex h-52 items-center justify-center rounded-lg border border-dashed border-border-soft bg-surface-soft/50 text-sm text-text-muted">
-        Sin pagos ni gastos en este periodo
+        Sin ingresos ni egresos en este periodo
       </div>
     );
   }
@@ -73,7 +91,7 @@ function PieChart({ slices }: { slices: ChartSlice[] }) {
         viewBox="0 0 200 200"
         className="h-52 w-52 shrink-0"
         role="img"
-        aria-label="Comparación pagos y gastos"
+        aria-label="Comparación ingresos y egresos"
       >
         {segments.map((segment) => (
           <path key={segment.key} d={segment.d} fill={segment.color} />
@@ -142,7 +160,11 @@ export function PaymentsExpensesComparison({
   periodLabel,
   paymentCount,
   expenseCount,
+  periodControls,
 }: PaymentsExpensesComparisonProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [view, setView] = useState<"pie" | "bar">("bar");
   const slices = buildSlices(summary);
   const expenseShare =
@@ -150,41 +172,106 @@ export function PaymentsExpensesComparison({
       ? (summary.totalExpenses / (summary.totalGuestIncome + summary.totalExpenses)) * 100
       : 0;
 
+  const activePeriod = periodControls
+    ? parseReservationPeriod(searchParams.get(periodControls.periodParam) ?? periodControls.period)
+    : null;
+
+  const setPeriod = (next: ReservationPeriod) => {
+    if (!periodControls) return;
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "month") {
+      params.delete(periodControls.periodParam);
+    } else {
+      params.set(periodControls.periodParam, next);
+    }
+    params.delete("page");
+    const qs = params.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
+  };
+
   return (
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-text-main">Pagos vs gastos</h3>
+          <h3 className="text-base font-semibold text-text-main">Ingresos vs Egresos</h3>
           <p className="mt-0.5 text-sm capitalize text-text-muted">
-            Ingresos por cobros frente a egresos operativos · {periodLabel}
+            Cobros de huéspedes frente a egresos operativos · {periodLabel}
           </p>
         </div>
-        <div
-          className="inline-flex rounded-lg border border-border-soft bg-surface-soft p-0.5 text-xs"
-          role="group"
-          aria-label="Tipo de gráfica"
-        >
-          {(["bar", "pie"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setView(value)}
-              className={cn(
-                "rounded-md px-2 py-1 font-medium transition",
-                view === value
-                  ? "bg-white text-text-main shadow-sm"
-                  : "text-text-muted hover:text-text-main",
-              )}
-            >
-              {value === "pie" ? "Pastel" : "Barras"}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          {periodControls ? (
+            <>
+              <FinanceMonthSelect
+                value={periodControls.selectedMonth}
+                options={periodControls.monthOptions}
+                className="max-w-[12rem] rounded-md border border-border-soft bg-white px-2 py-1 text-xs capitalize text-text-main"
+              />
+              {activePeriod === "day" ? (
+                <FinanceDaySelect
+                  value={periodControls.selectedDay}
+                  options={periodControls.dayOptions}
+                  monthKey={periodControls.selectedMonth}
+                  className="max-w-[12rem] rounded-md border border-border-soft bg-white px-2 py-1 text-xs capitalize text-text-main"
+                />
+              ) : null}
+              {activePeriod === "week" ? (
+                <FinanceWeekSelect
+                  value={periodControls.selectedWeek}
+                  options={periodControls.weekOptions}
+                  monthKey={periodControls.selectedMonth}
+                  className="max-w-[12rem] rounded-md border border-border-soft bg-white px-2 py-1 text-xs capitalize text-text-main"
+                />
+              ) : null}
+              <div
+                className="inline-flex rounded-lg border border-border-soft bg-surface-soft p-0.5 text-xs"
+                role="group"
+                aria-label="Periodo de ingresos y egresos"
+              >
+                {PERIOD_OPTIONS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setPeriod(value)}
+                    className={cn(
+                      "rounded-md px-2 py-1 font-medium transition",
+                      activePeriod === value
+                        ? "bg-white text-text-main shadow-sm"
+                        : "text-text-muted hover:text-text-main",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
+          <div
+            className="inline-flex rounded-lg border border-border-soft bg-surface-soft p-0.5 text-xs"
+            role="group"
+            aria-label="Tipo de gráfica"
+          >
+            {(["bar", "pie"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setView(value)}
+                className={cn(
+                  "rounded-md px-2 py-1 font-medium transition",
+                  view === value
+                    ? "bg-white text-text-main shadow-sm"
+                    : "text-text-muted hover:text-text-main",
+                )}
+              >
+                {value === "pie" ? "Pastel" : "Barras"}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <Card className="border-border-soft bg-surface-soft/40 p-3 shadow-none">
-          <p className="text-xs text-text-muted">Pagos (ingresos)</p>
+          <p className="text-xs text-text-muted">Ingresos</p>
           <p className="mt-1 text-xl font-semibold text-text-main">
             ${summary.totalGuestIncome.toFixed(2)}
           </p>
@@ -196,10 +283,10 @@ export function PaymentsExpensesComparison({
           </Link>
         </Card>
         <Card className="border-border-soft bg-surface-soft/40 p-3 shadow-none">
-          <p className="text-xs text-text-muted">Gastos (egresos)</p>
+          <p className="text-xs text-text-muted">Egresos</p>
           <p className="mt-1 text-xl font-semibold text-text-main">${summary.totalExpenses.toFixed(2)}</p>
           <p className="mt-0.5 text-xs text-text-muted">
-            {expenseCount} gasto{expenseCount === 1 ? "" : "s"} · {expenseShare.toFixed(0)}% del flujo
+            {expenseCount} egreso{expenseCount === 1 ? "" : "s"} · {expenseShare.toFixed(0)}% del flujo
           </p>
           <Link href="/dashboard/expenses" className="mt-2 inline-block text-xs text-brand-primary underline">
             Ver gastos
@@ -208,7 +295,7 @@ export function PaymentsExpensesComparison({
         <Card className="border-border-soft bg-surface-soft/40 p-3 shadow-none">
           <p className="text-xs text-text-muted">Balance del periodo</p>
           <p className="mt-1 text-xl font-semibold text-text-main">${summary.netResult.toFixed(2)}</p>
-          <p className="mt-0.5 text-xs text-text-muted">Pagos menos gastos operativos</p>
+          <p className="mt-0.5 text-xs text-text-muted">Ingresos menos egresos operativos</p>
           <Badge variant={summary.netResult >= 0 ? "success" : "warning"} className="mt-2">
             {summary.netResult >= 0 ? "Superávit" : "Déficit"}
           </Badge>
