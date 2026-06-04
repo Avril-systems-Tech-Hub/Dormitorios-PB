@@ -52,7 +52,7 @@ export function BedCardAccordion({ detail }: { detail: ReservationDetail | null 
       </button>
 
       {open && (
-        <div className="mt-2 space-y-1.5 rounded-lg border border-border-soft bg-gray-50 p-2 text-xs">
+        <div className="mt-2 max-h-[min(70vh,20rem)] space-y-1.5 overflow-y-auto overscroll-contain rounded-lg border border-border-soft bg-gray-50 p-2 text-xs [-webkit-overflow-scrolling:touch]">
           <div className="flex justify-between">
             <span className="text-text-muted">Huésped</span>
             <span className="text-text-main font-medium">{detail.guest_name ?? "—"}</span>

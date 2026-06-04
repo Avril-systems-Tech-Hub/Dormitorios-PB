@@ -24,6 +24,42 @@ type GuestRow = {
   beds?: BedInfo | BedInfo[] | null;
 };
 
+function GuestAssignmentActions({
+  reservationId,
+  guestId,
+  bedLabel,
+  lockerNum,
+  lockerDays,
+  nights,
+  returnTo,
+}: {
+  reservationId: string;
+  guestId: string;
+  bedLabel: string;
+  lockerNum: number | null;
+  lockerDays: number;
+  nights: number;
+  returnTo: string;
+}) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-0.5">
+      <BedChangeButton
+        reservationId={reservationId}
+        guestId={guestId}
+        currentBed={bedLabel}
+      />
+      <LockerAssignButton
+        reservationId={reservationId}
+        guestId={guestId}
+        lockerNumber={lockerNum}
+        lockerDays={lockerDays}
+        nights={nights}
+        returnTo={returnTo}
+      />
+    </span>
+  );
+}
+
 export function ReservationGuestsAccordion({
   guests,
   reservationId,
@@ -59,58 +95,96 @@ export function ReservationGuestsAccordion({
       </button>
 
       {open && (
-        <div className="mt-2 overflow-hidden rounded-lg border border-border-soft bg-gray-50">
-          <table className="w-full text-xs">
-            <thead className="bg-gray-100 text-text-muted">
-              <tr>
-                <th className="px-3 py-1.5 text-left font-medium">#</th>
-                <th className="px-3 py-1.5 text-left font-medium">Nombre</th>
-                <th className="px-3 py-1.5 text-left font-medium">Teléfono</th>
-                <th className="px-3 py-1.5 text-left font-medium">Correo</th>
-                <th className="px-3 py-1.5 text-left font-medium">Cama / Locker</th>
-              </tr>
-            </thead>
-            <tbody>
-              {guests.map((g, i) => {
-                const rawGuest = Array.isArray(g.guests) ? g.guests[0] : g.guests;
-                const guest = rawGuest as GuestInfo | undefined;
-                const rawBed = Array.isArray(g.beds) ? g.beds[0] : g.beds;
-                const bed = rawBed as BedInfo | undefined;
-                const bedLabel = bed?.bed_number ? `Cama ${bed.bed_number}` : "Pendiente";
-                const lockerDays = Number(g.locker_days ?? 0);
-                const lockerNum =
-                  g.locker_number != null && Number(g.locker_number) > 0
-                    ? Number(g.locker_number)
-                    : null;
+        <div className="mt-2 rounded-lg border border-border-soft bg-gray-50">
+          <div className="max-h-[min(70vh,24rem)] divide-y divide-border-soft overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] md:hidden">
+            {guests.map((g, i) => {
+              const rawGuest = Array.isArray(g.guests) ? g.guests[0] : g.guests;
+              const guest = rawGuest as GuestInfo | undefined;
+              const rawBed = Array.isArray(g.beds) ? g.beds[0] : g.beds;
+              const bed = rawBed as BedInfo | undefined;
+              const bedLabel = bed?.bed_number ? `Cama ${bed.bed_number}` : "Pendiente";
+              const lockerDays = Number(g.locker_days ?? 0);
+              const lockerNum =
+                g.locker_number != null && Number(g.locker_number) > 0
+                  ? Number(g.locker_number)
+                  : null;
 
-                return (
-                  <tr key={i} className="border-t border-border-soft">
-                    <td className="px-3 py-1.5 text-text-main">{i + 1}</td>
-                    <td className="px-3 py-1.5 text-text-main">{guest?.full_name ?? "—"}</td>
-                    <td className="px-3 py-1.5 text-text-main">{guest?.phone ?? "—"}</td>
-                    <td className="px-3 py-1.5 text-text-main">{guest?.email ?? "—"}</td>
-                    <td className="px-3 py-1.5 text-text-main">
-                      <span className="inline-flex flex-wrap items-center gap-0.5">
-                        <BedChangeButton
+              return (
+                <div key={i} className="space-y-2 p-3 text-xs">
+                  <p className="font-semibold text-text-main">
+                    Huésped {i + 1}
+                    {guest?.full_name ? ` · ${guest.full_name}` : ""}
+                  </p>
+                  <div className="grid grid-cols-[minmax(4.5rem,38%)_1fr] gap-x-3 gap-y-1.5">
+                    <span className="text-text-muted">Teléfono</span>
+                    <span className="text-text-main">{guest?.phone ?? "—"}</span>
+                    <span className="text-text-muted">Correo</span>
+                    <span className="min-w-0 break-all text-text-main">{guest?.email ?? "—"}</span>
+                    <span className="text-text-muted">Cama / Locker</span>
+                    <span className="text-text-main">
+                      <GuestAssignmentActions
+                        reservationId={reservationId}
+                        guestId={g.guest_id ?? ""}
+                        bedLabel={bedLabel}
+                        lockerNum={lockerNum}
+                        lockerDays={lockerDays}
+                        nights={nights}
+                        returnTo={returnTo}
+                      />
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="hidden max-h-[min(70vh,24rem)] overflow-auto overscroll-contain md:block">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 z-[1] bg-gray-100 text-text-muted">
+                <tr>
+                  <th className="px-3 py-1.5 text-left font-medium">#</th>
+                  <th className="px-3 py-1.5 text-left font-medium">Nombre</th>
+                  <th className="px-3 py-1.5 text-left font-medium">Teléfono</th>
+                  <th className="px-3 py-1.5 text-left font-medium">Correo</th>
+                  <th className="px-3 py-1.5 text-left font-medium">Cama / Locker</th>
+                </tr>
+              </thead>
+              <tbody>
+                {guests.map((g, i) => {
+                  const rawGuest = Array.isArray(g.guests) ? g.guests[0] : g.guests;
+                  const guest = rawGuest as GuestInfo | undefined;
+                  const rawBed = Array.isArray(g.beds) ? g.beds[0] : g.beds;
+                  const bed = rawBed as BedInfo | undefined;
+                  const bedLabel = bed?.bed_number ? `Cama ${bed.bed_number}` : "Pendiente";
+                  const lockerDays = Number(g.locker_days ?? 0);
+                  const lockerNum =
+                    g.locker_number != null && Number(g.locker_number) > 0
+                      ? Number(g.locker_number)
+                      : null;
+
+                  return (
+                    <tr key={i} className="border-t border-border-soft">
+                      <td className="px-3 py-1.5 text-text-main">{i + 1}</td>
+                      <td className="px-3 py-1.5 text-text-main">{guest?.full_name ?? "—"}</td>
+                      <td className="px-3 py-1.5 text-text-main">{guest?.phone ?? "—"}</td>
+                      <td className="px-3 py-1.5 text-text-main">{guest?.email ?? "—"}</td>
+                      <td className="px-3 py-1.5 text-text-main">
+                        <GuestAssignmentActions
                           reservationId={reservationId}
                           guestId={g.guest_id ?? ""}
-                          currentBed={bedLabel}
-                        />
-                        <LockerAssignButton
-                          reservationId={reservationId}
-                          guestId={g.guest_id ?? ""}
-                          lockerNumber={lockerNum}
+                          bedLabel={bedLabel}
+                          lockerNum={lockerNum}
                           lockerDays={lockerDays}
                           nights={nights}
                           returnTo={returnTo}
                         />
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

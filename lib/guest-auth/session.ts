@@ -4,20 +4,50 @@ import { cookies } from "next/headers";
 export const GUEST_SESSION_COOKIE = "guest_session";
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
 
+// Split keys so Next.js does not replace process.env.* with undefined at build time.
+const GUEST_SESSION_SECRET_KEY = ["GUEST", "SESSION", "SECRET"].join("_");
+const SERVICE_ROLE_KEY = ["SUPABASE", "SERVICE", "ROLE", "KEY"].join("_");
+
 export type GuestSession = {
   guestId: string;
   walletAddress: string;
   exp: number;
 };
 
-function getSessionSecret() {
-  const secret =
-    process.env.GUEST_SESSION_SECRET ??
-    (process.env.NODE_ENV === "development" ? "dev-guest-session-secret" : undefined);
-  if (!secret) {
-    throw new Error("Missing GUEST_SESSION_SECRET.");
+export class GuestSessionConfigError extends Error {
+  constructor() {
+    super("Missing GUEST_SESSION_SECRET.");
+    this.name = "GuestSessionConfigError";
   }
-  return secret;
+}
+
+function readRuntimeEnv(key: string): string | undefined {
+  const value = process.env[key];
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function deriveGuestSessionSecret(serviceRoleKey: string): string {
+  return createHmac("sha256", "dormitorios-guest-session-v1")
+    .update(serviceRoleKey)
+    .digest("base64url");
+}
+
+function getSessionSecret(): string {
+  const explicit = readRuntimeEnv(GUEST_SESSION_SECRET_KEY);
+  if (explicit) return explicit;
+
+  if (process.env.NODE_ENV === "development") {
+    return "dev-guest-session-secret";
+  }
+
+  const serviceRole = readRuntimeEnv(SERVICE_ROLE_KEY);
+  if (serviceRole) {
+    return deriveGuestSessionSecret(serviceRole);
+  }
+
+  throw new GuestSessionConfigError();
 }
 
 function signPayload(payload: string) {
@@ -42,9 +72,9 @@ export function parseGuestSession(value: string | undefined): GuestSession | nul
 
   const payload = value.slice(0, separator);
   const signature = value.slice(separator + 1);
-  const expected = signPayload(payload);
 
   try {
+    const expected = signPayload(payload);
     const sigBuf = Buffer.from(signature);
     const expectedBuf = Buffer.from(expected);
     if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) {

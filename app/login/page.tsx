@@ -4,6 +4,8 @@ import { WaaPProvider } from "@/components/guest/waap-provider";
 import { getGuestSession } from "@/lib/guest-auth/session";
 import { createClient } from "@/lib/supabase/server";
 
+export const dynamic = "force-dynamic";
+
 export default async function LoginPage({
   searchParams,
 }: {

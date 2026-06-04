@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSessionProfile } from "@/lib/auth/guards";
-import { buildBedOccupancyMap } from "@/lib/bed-occupancy";
+import { buildBedOccupancyMap, matchesBedOccupancySearch } from "@/lib/bed-occupancy";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BedCardAccordion } from "@/components/ui/bed-card-accordion";
@@ -13,10 +13,10 @@ import type { BedStatus } from "@/types/domain";
 export default async function BedsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ folio?: string }>;
+  searchParams: Promise<{ q?: string; folio?: string }>;
 }) {
   const params = await searchParams;
-  const folioFilter = params.folio?.trim() ?? "";
+  const searchQuery = (params.q ?? params.folio)?.trim() ?? "";
   const profile = await getSessionProfile();
   const isAdmin = profile.role === "admin";
 
@@ -42,15 +42,11 @@ export default async function BedsPage({
 
   const bedDetailMap = buildBedOccupancyMap(rgRows ?? []);
 
-  const filteredBeds = folioFilter
-    ? (beds ?? []).filter((bed) => {
-        const detail = bedDetailMap.get(bed.id);
-        if (!detail?.folio_code) return false;
-        return detail.folio_code.toLowerCase().includes(folioFilter.toLowerCase());
-      })
+  const filteredBeds = searchQuery
+    ? (beds ?? []).filter((bed) => matchesBedOccupancySearch(bedDetailMap.get(bed.id), searchQuery))
     : beds ?? [];
 
-  const matchCount = folioFilter ? filteredBeds.length : 0;
+  const matchCount = searchQuery ? filteredBeds.length : 0;
 
   return (
     <div className="space-y-4">
@@ -64,9 +60,11 @@ export default async function BedsPage({
           <Suspense fallback={null}>
             <FolioFilterInput />
           </Suspense>
-          {folioFilter && (
+          {searchQuery && (
             <p className="mt-2 text-xs text-text-muted">
-              Mostrando <span className="font-semibold text-text-main">{matchCount}</span> cama{matchCount !== 1 ? "s" : ""} del folio <span className="font-semibold text-text-main">{folioFilter}</span>
+              Mostrando <span className="font-semibold text-text-main">{matchCount}</span> cama
+              {matchCount !== 1 ? "s" : ""} para{" "}
+              <span className="font-semibold text-text-main">{searchQuery}</span>
             </p>
           )}
         </div>
@@ -122,8 +120,10 @@ export default async function BedsPage({
             </div>
           );
         })}
-        {folioFilter && filteredBeds.length === 0 && (
-          <p className="col-span-full text-sm text-text-muted">No se encontraron camas para el folio "{folioFilter}".</p>
+        {searchQuery && filteredBeds.length === 0 && (
+          <p className="col-span-full text-sm text-text-muted">
+            No se encontraron camas para &quot;{searchQuery}&quot;.
+          </p>
         )}
       </div>
     </div>

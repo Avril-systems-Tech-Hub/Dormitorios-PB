@@ -1,21 +1,26 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 export function FolioFilterInput() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const currentFolio = searchParams.get("folio") ?? "";
-  const [value, setValue] = useState(currentFolio);
+  const currentQuery = searchParams.get("q") ?? searchParams.get("folio") ?? "";
+  const [value, setValue] = useState(currentQuery);
+
+  useEffect(() => {
+    setValue(currentQuery);
+  }, [currentQuery]);
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     const params = new URLSearchParams(searchParams.toString());
+    params.delete("folio");
     if (value.trim()) {
-      params.set("folio", value.trim());
+      params.set("q", value.trim());
     } else {
-      params.delete("folio");
+      params.delete("q");
     }
     router.push(`/dashboard/beds?${params.toString()}`);
   }, [value, router, searchParams]);
@@ -31,7 +36,7 @@ export function FolioFilterInput() {
         type="text"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="Buscar por folio (ej. FPB-...)"
+        placeholder="Buscar por folio, nombre o teléfono…"
         className="h-9 rounded-lg border border-border-soft bg-white px-3 text-sm text-text-main outline-none focus:border-mkt-slate"
       />
       <button
@@ -40,7 +45,7 @@ export function FolioFilterInput() {
       >
         Filtrar
       </button>
-      {currentFolio && (
+      {currentQuery && (
         <button
           type="button"
           onClick={handleClear}

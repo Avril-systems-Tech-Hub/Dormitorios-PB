@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   clearGuestSessionCookie,
   getGuestSession,
+  GuestSessionConfigError,
   setGuestSessionCookie,
 } from "@/lib/guest-auth/session";
 import { normalizeGuestPhone, normalizeWalletAddress } from "@/lib/guest-auth/wallet";
@@ -59,6 +60,10 @@ export async function establishGuestSessionAction(
 
     return { ok: true, guestId: "", needsPhoneLink: true };
   } catch (error) {
+    if (error instanceof GuestSessionConfigError) {
+      console.error("[guest-auth]", error.message);
+      return { ok: false, error: "El inicio de sesión no está disponible. Intenta más tarde." };
+    }
     return {
       ok: false,
       error: error instanceof Error ? error.message : "No se pudo iniciar sesión.",
@@ -124,6 +129,10 @@ export async function linkGuestPhoneAction(
 
     return { ok: true, guestId };
   } catch (error) {
+    if (error instanceof GuestSessionConfigError) {
+      console.error("[guest-auth]", error.message);
+      return { ok: false, error: "El inicio de sesión no está disponible. Intenta más tarde." };
+    }
     return {
       ok: false,
       error: error instanceof Error ? error.message : "No se pudo vincular tu teléfono.",

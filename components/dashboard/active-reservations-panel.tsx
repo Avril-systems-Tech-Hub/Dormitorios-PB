@@ -67,10 +67,18 @@ export async function ActiveReservationsPanel({
     const nightsLabel = `${reservation.nights} noche(s)`;
     const nightsFilterText =
       lockerDays > 0 ? `${nightsLabel} Locker ${lockerDays} día(s)` : nightsLabel;
+    const allGuestsSearchText = allGuests
+      .map((row) => {
+        const raw = Array.isArray(row.guests) ? row.guests[0] : row.guests;
+        const info = raw as { full_name?: string; phone?: string; email?: string } | undefined;
+        return [info?.full_name, info?.phone, info?.email].filter(Boolean).join(" ");
+      })
+      .filter(Boolean)
+      .join(" ");
 
     return [
       ft(
-        folio?.folio_code ?? "Sin folio",
+        [folio?.folio_code ?? "Sin folio", allGuestsSearchText].filter(Boolean).join(" "),
         <div key={`f-${reservation.id}`}>
           <span>{folio?.folio_code ?? "Sin folio"}</span>
           <ReservationGuestsAccordion
@@ -162,7 +170,7 @@ export async function ActiveReservationsPanel({
         </div>
       ) : null}
 
-      <Card className="min-w-0 overflow-hidden">
+      <Card className="min-w-0">
         <div className="flex items-start justify-between gap-2">
           <div>
             <h2 className="text-base font-semibold text-text-main">Reservaciones activas</h2>
@@ -196,7 +204,8 @@ export async function ActiveReservationsPanel({
               "Cobro",
             ]}
             rows={tableRows}
-            mobileColumnIndices={[0, 1, 3, 4, 10, 11]}
+            filterMode="global"
+            mobileColumnIndices={[0, 1, 2, 3, 4, 10, 11]}
           />
         </div>
       </Card>

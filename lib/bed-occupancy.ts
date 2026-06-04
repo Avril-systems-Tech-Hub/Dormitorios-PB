@@ -161,3 +161,19 @@ export function buildBedOccupancyMap(
 
   return map;
 }
+
+/** Client-side search on beds map (folio, guest name, phone). */
+export function matchesBedOccupancySearch(
+  detail: BedOccupancyDetail | null | undefined,
+  query: string,
+): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  if (!detail) return false;
+
+  const fields = [detail.folio_code, detail.guest_name, detail.guest_phone].filter(
+    (value): value is string => Boolean(value?.trim()),
+  );
+
+  return fields.some((value) => value.toLowerCase().includes(needle));
+}

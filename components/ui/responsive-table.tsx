@@ -259,7 +259,7 @@ export function ResponsiveTable({
   const visibleEnd = Math.min(totalFiltered, (currentPage + 1) * pageSize);
 
   return (
-    <div className="max-w-full overflow-hidden rounded-xl border border-border-soft bg-white shadow-sm">
+    <div className="max-w-full rounded-xl border border-border-soft bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft bg-gray-50/50 px-3 py-2 sm:gap-3 sm:px-4">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:gap-3">
           <div className="flex items-center gap-2 text-xs text-text-muted">
@@ -359,8 +359,8 @@ export function ResponsiveTable({
         </div>
       </div>
 
-      <div className="hidden md:block">
-        <div className="overflow-x-auto">
+      <div className="hidden overflow-x-auto md:block">
+        <div>
           <table className={`w-full ${dense ? "text-sm" : "text-sm"}`}>
             <thead className="bg-surface-soft text-left text-text-muted">
               <tr>
