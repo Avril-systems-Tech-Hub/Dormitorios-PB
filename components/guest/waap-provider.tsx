@@ -26,24 +26,6 @@ type WaaPContextValue = {
 
 const WaaPContext = createContext<WaaPContextValue | null>(null);
 
-async function readConnectedAddress() {
-  if (typeof window === "undefined" || !window.waap) return null;
-
-  try {
-    const method = window.waap.getLoginMethod?.();
-    if (!method) return null;
-
-    const accounts = (await window.waap.request({
-      method: "eth_accounts",
-    })) as string[];
-
-    if (!accounts?.[0]) return null;
-    return normalizeWalletAddress(accounts[0]);
-  } catch {
-    return null;
-  }
-}
-
 export function WaaPProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [address, setAddress] = useState<string | null>(null);
@@ -51,10 +33,10 @@ export function WaaPProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Guest login only: hint WaaP / browser locale toward Mexico for phone OTP.
+    document.documentElement.lang = "es-MX";
     initWaaP(waapConfig);
     setReady(true);
-
-    void readConnectedAddress().then(setAddress);
   }, []);
 
   const fetchLoginEmail = useCallback(async () => {

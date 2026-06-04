@@ -108,5 +108,11 @@ export async function setGuestSessionCookie(session: Omit<GuestSession, "exp">) 
 
 export async function clearGuestSessionCookie() {
   const cookieStore = await cookies();
-  cookieStore.delete(GUEST_SESSION_COOKIE);
+  cookieStore.set(GUEST_SESSION_COOKIE, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
 }

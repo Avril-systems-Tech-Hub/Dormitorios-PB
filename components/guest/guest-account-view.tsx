@@ -29,9 +29,15 @@ export function GuestAccountView({
     startTransition(async () => {
       await guestLogoutAction();
       await logout();
+      router.push("/login");
       router.refresh();
     });
   };
+
+  const reservationEmail = account.guest.email;
+  const accessEmail = account.loginEmail;
+  const showAccessEmail =
+    accessEmail && reservationEmail && accessEmail.toLowerCase() !== reservationEmail.toLowerCase();
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4">
@@ -40,8 +46,17 @@ export function GuestAccountView({
           <div>
             <h1 className="text-xl font-semibold text-text-main">Hola, {account.guest.full_name}</h1>
             <p className="mt-1 text-sm text-text-muted">{account.guest.phone}</p>
-            {account.guest.email ? (
-              <p className="text-sm text-text-muted">{account.guest.email}</p>
+            {reservationEmail ? (
+              <p className="text-sm text-text-muted">
+                <span className="text-text-muted/80">Correo en reservas: </span>
+                {reservationEmail}
+              </p>
+            ) : null}
+            {showAccessEmail ? (
+              <p className="text-sm text-text-muted">
+                <span className="text-text-muted/80">Acceso con: </span>
+                {accessEmail}
+              </p>
             ) : null}
           </div>
           <Button type="button" variant="outline" disabled={isPending} onClick={handleLogout}>

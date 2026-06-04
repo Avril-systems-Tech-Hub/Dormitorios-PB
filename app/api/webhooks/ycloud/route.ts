@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import fs from "fs";
 import path from "path";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { normalizeMexicanPhone } from "@/lib/phone";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { pickAvailableBeds } from "@/actions/operations";
 
@@ -146,7 +147,7 @@ export async function POST(req: Request) {
     // 4. Registrar/Actualizar Huéspedes en BD
     const guestIds: string[] = [];
     for (const g of guests) {
-      const normalizedPhone = g.phone.replace(/\D/g, "");
+      const normalizedPhone = normalizeMexicanPhone(g.phone);
       const { data: existingGuest } = await supabase
         .from("guests")
         .select("id")

@@ -18,12 +18,13 @@ import { parseTsvToRows } from "@/lib/imports/tsv";
 import { sendWhatsAppTemplateMessage, sendWhatsAppDocument, buildPaymentConfirmationMessage } from "@/lib/ycloud";
 import { generatePaymentConfirmationPdf } from "@/lib/payment-pdf";
 import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
+import { normalizeMexicanPhone } from "@/lib/phone";
 
 const BASE_NIGHTLY_RATE = 120;
 const LOCKER_DAILY_PRICE = 30;
 
 function normalizePhone(value: string) {
-  return value.replace(/\D/g, "");
+  return normalizeMexicanPhone(value);
 }
 
 function normalizeName(value: string) {
@@ -193,10 +194,7 @@ export async function pickAvailableBeds({
 }
 
 export async function searchGuestByPhoneAction(phoneRaw: string) {
-  let phone = phoneRaw.replace(/\D/g, "");
-  if (phone.startsWith("52") && phone.length === 12) {
-    phone = phone.slice(2);
-  }
+  const phone = normalizeMexicanPhone(phoneRaw);
 
   if (!phone) return { success: false, guest: null };
 

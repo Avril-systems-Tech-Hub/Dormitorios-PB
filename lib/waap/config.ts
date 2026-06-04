@@ -5,15 +5,15 @@ export const waapConfig: InitSilkOptions = {
   walletConnectProjectId: process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID,
   project: {
     name: "Dormitorios Plaza Basílica",
-    entryTitle: "Inicia sesión",
+    entryTitle: "Dormitorios Plaza Basílica",
     projectId: process.env.NEXT_PUBLIC_WAAP_PROJECT_ID,
   },
   config: {
     authenticationMethods: ["email", "phone", "social"],
-    allowedSocials: ["google", "twitter", "discord"],
+    allowedSocials: ["google"],
     styles: {
       darkMode: false,
     },
-    showSecured: false,
+    showSecured: true,
   },
 };

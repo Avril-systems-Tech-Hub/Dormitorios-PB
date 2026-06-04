@@ -11,6 +11,8 @@ export type GuestAccountData = {
     phone: string;
     email: string | null;
   };
+  /** Verified WaaP login email on the linked wallet (may differ from guests.email). */
+  loginEmail: string | null;
   stays: GuestStaySummary[];
 };
 
@@ -69,6 +71,14 @@ export async function getGuestAccountDataAction(): Promise<GuestAccountData | nu
 
   if (!guest) return null;
 
+  const { data: wallet } = await supabase
+    .from("guest_wallets")
+    .select("email")
+    .eq("guest_id", session.guestId)
+    .eq("address", session.walletAddress)
+    .eq("chain", "celo")
+    .maybeSingle();
+
   const rows = Array.isArray(guest.reservation_guests) ? guest.reservation_guests : [];
   const stays = getStays(rows as ReservationGuestRow[]).sort((a, b) =>
     b.checkIn.localeCompare(a.checkIn),
@@ -81,6 +91,7 @@ export async function getGuestAccountDataAction(): Promise<GuestAccountData | nu
       phone: guest.phone,
       email: guest.email,
     },
+    loginEmail: wallet?.email ?? null,
     stays,
   };
 }

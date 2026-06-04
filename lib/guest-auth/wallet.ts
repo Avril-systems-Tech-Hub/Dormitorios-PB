@@ -1,3 +1,5 @@
+import { normalizeMexicanPhone } from "@/lib/phone";
+
 const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
 export function normalizeWalletAddress(address: string) {
@@ -9,7 +11,7 @@ export function normalizeWalletAddress(address: string) {
 }
 
 export function normalizeGuestPhone(value: string) {
-  return value.replace(/\D/g, "");
+  return normalizeMexicanPhone(value);
 }
 
 const LOGIN_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

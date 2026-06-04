@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { searchGuestByPhoneAction, getApplicableDiscountsAction, validatePromoCodeAction } from "@/actions/operations";
+import { normalizeMexicanPhone } from "@/lib/phone";
 import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
 import type { ApplicableDiscount } from "@/lib/discount-rules";
 import type { PromoCode } from "@/lib/promo-codes";
@@ -165,7 +166,7 @@ export function useReservationForm({
       setApplicableDiscount(null);
       return;
     }
-    const phone = guests[0]?.phone?.replace(/\D/g, "") || undefined;
+    const phone = guests[0]?.phone ? normalizeMexicanPhone(guests[0].phone) : undefined;
     if (!phone) {
       // Only fetch date-range discounts (no phone)
     }
