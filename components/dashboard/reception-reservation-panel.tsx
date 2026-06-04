@@ -14,6 +14,7 @@ export function ReceptionReservationPanel() {
     action: createReservationAction,
     reservationSource: "cashier_counter",
     returnTo: "/dashboard",
+    allowLockerSelection: true,
   });
   const [expanded, setExpanded] = useState(false);
 
@@ -102,7 +103,8 @@ export function ReceptionReservationPanel() {
                   guestIndex={index}
                   stayNights={form.stayNights}
                   isPrincipal={index === 0}
-                  variant="marketing"
+                  variant="dashboard"
+                  showLockerFields
                   onChange={(field, value) => form.updateGuest(index, field, value)}
                 />
               </div>

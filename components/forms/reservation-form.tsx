@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ReservationGuestFields } from "@/components/forms/reservation-guest-fields";
 import { NIGHTLY_PRICE_MXN, UBICACION_SURFACE_CLASS } from "@/components/landing/constants";
 import { DateRangeCalendar } from "@/components/ui/date-range-calendar";
-import { useReservationForm, LOCKER_DAILY_PRICE } from "@/hooks/use-reservation-form";
+import { useReservationForm } from "@/hooks/use-reservation-form";
 import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
 import { formatReservationDate } from "@/lib/guest-reservation-confirmation";
 import { applyDiscount } from "@/lib/discount-rules";
@@ -26,7 +26,6 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
   const [showReview, setShowReview] = useState(false);
 
   const bedTotal = form.estimatedBedTotal(NIGHTLY_PRICE_MXN);
-  const lockerTotal = form.estimatedLockerTotal();
 
   const handleReview = (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,13 +109,6 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
                     {g.phone || "—"}
                     {g.email ? ` · ${g.email}` : ""}
                   </p>
-                  {g.add_locker === "yes" && g.locker_days > 0 ? (
-                    <p className="mt-1 text-xs text-mkt-ink/60">
-                      Locker: {g.locker_days} día{g.locker_days === 1 ? "" : "s"}
-                      {g.locker_number ? ` · #${g.locker_number}` : " · pendiente"} — $
-                      {(g.locker_days * LOCKER_DAILY_PRICE).toFixed(0)} MXN
-                    </p>
-                  ) : null}
                 </li>
               ))}
             </ul>
@@ -150,12 +142,6 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
                 </span>
                 <span className="shrink-0 font-medium">${bedTotal.toFixed(0)} MXN</span>
               </li>
-              {lockerTotal > 0 ? (
-                <li className="flex justify-between gap-4">
-                  <span>Locker</span>
-                  <span className="shrink-0 font-medium">${lockerTotal.toFixed(0)} MXN</span>
-                </li>
-              ) : null}
               {(() => {
                 const promoDiscount = form.promoCodeResult?.valid ? form.promoCodeResult.promo : null;
                 const ruleDiscount = form.applicableDiscount;
@@ -167,7 +153,7 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
                     : null;
 
                 if (activeDiscount) {
-                  const subtotal = bedTotal + lockerTotal;
+                  const subtotal = bedTotal;
                   const disc = applyDiscount(subtotal, activeDiscount.percent);
                   return (
                     <>
@@ -193,7 +179,7 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
                 return (
                   <li className="flex justify-between gap-4 border-t border-white/15 pt-2 text-base font-semibold text-white">
                     <span>Total estimado</span>
-                    <span>${(bedTotal + lockerTotal).toFixed(0)} MXN</span>
+                    <span>${bedTotal.toFixed(0)} MXN</span>
                   </li>
                 );
               })()}
@@ -366,7 +352,7 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
           onChange={(e) => form.setReservationData((prev) => ({ ...prev, notes: e.target.value }))}
         />
         <p className="mt-3 text-xs text-white/70">
-          Las camas serán asignadas automáticamente al registrar tu reservación.
+          Las camas serán asignadas automáticamente al registrar tu reservación. Si necesitas locker, solicítalo en recepción al llegar.
         </p>
 
         {form.submitResult && !form.submitResult.success && (

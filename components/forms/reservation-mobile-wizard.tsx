@@ -225,7 +225,6 @@ export function ReservationWizard({ open, onOpenChange, action }: ReservationWiz
   const progress = ((stepIndex + 1) / totalSteps) * 100;
   const additionalGuestNumber = additionalGuestIndex + 2;
   const bedTotal = form.estimatedBedTotal(NIGHTLY_PRICE_MXN);
-  const lockerTotal = form.estimatedLockerTotal();
 
   if (!mounted || !open) return null;
 
@@ -284,7 +283,6 @@ export function ReservationWizard({ open, onOpenChange, action }: ReservationWiz
               additionalGuestIndex={additionalGuestIndex}
               additionalGuestNumber={additionalGuestNumber}
               bedTotal={bedTotal}
-              lockerTotal={lockerTotal}
               stepError={stepError}
               goToStep={(stepId) => {
                 const idx = stepOrder.indexOf(stepId);
@@ -351,7 +349,6 @@ function WizardStepContent({
   additionalGuestIndex,
   additionalGuestNumber,
   bedTotal,
-  lockerTotal,
   stepError,
   goToStep,
 }: {
@@ -360,7 +357,6 @@ function WizardStepContent({
   additionalGuestIndex: number;
   additionalGuestNumber: number;
   bedTotal: number;
-  lockerTotal: number;
   stepError: string | null;
   goToStep: (stepId: WizardStepId) => void;
 }) {
@@ -398,19 +394,6 @@ function WizardStepContent({
                   <dd className="font-medium text-white">{formatGuestSex(guest.sex)}</dd>
                 </div>
               </dl>
-              <div className="mt-4 border-t border-white/10 pt-4">
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-mkt-terracotta">
-                  Añadir locker
-                </label>
-                <select
-                  className="w-full rounded-lg border border-mkt-border bg-white px-3 py-2 text-sm text-mkt-ink"
-                  value={guest.add_locker}
-                  onChange={(e) => form.updateGuest(0, "add_locker", e.target.value)}
-                >
-                  <option value="no">No</option>
-                  <option value="yes">Sí (+$30/día)</option>
-                </select>
-              </div>
               <button
                 type="button"
                 onClick={form.clearRecurringGuest}
@@ -567,7 +550,7 @@ function WizardStepContent({
             }
           />
           <p className="mt-3 text-xs text-white/70">
-            Las camas se asignan automáticamente al confirmar.
+            Las camas se asignan automáticamente al confirmar. Si necesitas locker, solicítalo en recepción al llegar.
           </p>
         </div>
       );
@@ -616,12 +599,6 @@ function WizardStepContent({
                   ${bedTotal.toFixed(0)} MXN
                 </dd>
               </div>
-              {lockerTotal > 0 ? (
-                <div className="flex justify-between gap-3 border-b border-white/10 pb-3">
-                  <dt className="text-white/65">Locker</dt>
-                  <dd className="font-medium text-white">${lockerTotal.toFixed(0)} MXN</dd>
-                </div>
-              ) : null}
               {(() => {
                 const promoDiscount = form.promoCodeResult?.valid ? form.promoCodeResult.promo : null;
                 const ruleDiscount = form.applicableDiscount;
@@ -633,7 +610,7 @@ function WizardStepContent({
                     : null;
 
                 if (activeDiscount) {
-                  const subtotal = bedTotal + lockerTotal;
+                  const subtotal = bedTotal;
                   const disc = applyDiscount(subtotal, activeDiscount.percent);
                   return (
                     <>
@@ -660,7 +637,7 @@ function WizardStepContent({
                   <div className="flex justify-between gap-3 pt-1 text-base">
                     <dt className="font-semibold text-white">Total estimado</dt>
                     <dd className="font-semibold text-mkt-terracotta">
-                      ${(bedTotal + lockerTotal).toFixed(0)} MXN
+                      ${bedTotal.toFixed(0)} MXN
                     </dd>
                   </div>
                 );

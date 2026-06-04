@@ -323,9 +323,17 @@ export async function createReservationAction(
   const discountAmountPerNight = Math.round(nightlyRate * discountPercent) / 100;
   const finalRate = nightlyRate - discountAmountPerNight;
 
+  const reservationSource =
+    requestedSource === "cashier_counter" || (actorId && requestedSource !== "guest_app")
+      ? "cashier_counter"
+      : "guest_app";
+
   const lockerPriceWithDiscount = Math.round(LOCKER_DAILY_PRICE * (100 - discountPercent)) / 100;
 
   const lockerByGuest = guests.slice(0, guestIds.length).map((guest) => {
+    if (reservationSource === "guest_app") {
+      return { locker_days: 0, locker_price: 0, locker_amount: 0 };
+    }
     const wantsLocker = guest.add_locker === "yes";
     if (!wantsLocker) {
       return { locker_days: 0, locker_price: 0, locker_amount: 0 };
@@ -357,11 +365,6 @@ export async function createReservationAction(
   if (folioError || !folio) {
     return reservationFlowError(formData, returnTo, "No se pudo crear el folio.");
   }
-
-  const reservationSource =
-    requestedSource === "cashier_counter" || (actorId && requestedSource !== "guest_app")
-      ? "cashier_counter"
-      : "guest_app";
 
   const { data: reservation, error: reservationError } = await supabase
     .from("reservations")
@@ -395,9 +398,11 @@ export async function createReservationAction(
         ? Number(lockerNumberRaw)
         : null;
     const locker_number =
-      parsedLockerNumber != null && Number.isFinite(parsedLockerNumber) && parsedLockerNumber > 0
-        ? parsedLockerNumber
-        : null;
+      reservationSource === "guest_app"
+        ? null
+        : parsedLockerNumber != null && Number.isFinite(parsedLockerNumber) && parsedLockerNumber > 0
+          ? parsedLockerNumber
+          : null;
 
     return {
       reservation_id: reservation.id,

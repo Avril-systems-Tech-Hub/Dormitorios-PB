@@ -8,6 +8,7 @@ type ReservationGuestFieldsProps = {
   stayNights: number;
   isPrincipal?: boolean;
   variant?: "marketing" | "dashboard";
+  showLockerFields?: boolean;
   onChange: (field: keyof GuestFormRow, value: string | number) => void;
 };
 
@@ -17,6 +18,7 @@ export function ReservationGuestFields({
   stayNights,
   isPrincipal = guestIndex === 0,
   variant = "marketing",
+  showLockerFields = false,
   onChange,
 }: ReservationGuestFieldsProps) {
   const isDashboard = variant === "dashboard";
@@ -70,48 +72,52 @@ export function ReservationGuestFields({
         <option value="m">Masculino</option>
         <option value="x">Otro</option>
       </select>
-      <div>
-        <label className={labelClass}>Añadir locker</label>
-        <select
-          className={inputClass}
-          value={guest.add_locker}
-          onChange={(e) => onChange("add_locker", e.target.value)}
-        >
-          <option value="no">No</option>
-          <option value="yes">Sí (+${LOCKER_DAILY_PRICE}/día)</option>
-        </select>
-      </div>
-      {guest.add_locker === "yes" ? (
+      {showLockerFields ? (
         <>
           <div>
-            <label className={labelClass}>Días de locker</label>
-            <input
-              type="number"
-              min={1}
-              max={stayNights}
-              className={`${inputClass} max-w-[140px]`}
-              value={guest.locker_days}
-              onChange={(e) => onChange("locker_days", e.target.value)}
-            />
-            <p className={hintClass}>
-              Máx. {stayNights} noche{stayNights === 1 ? "" : "s"}. Cargo: $
-              {(guest.locker_days * LOCKER_DAILY_PRICE).toFixed(0)} MXN
-            </p>
+            <label className={labelClass}>Añadir locker</label>
+            <select
+              className={inputClass}
+              value={guest.add_locker}
+              onChange={(e) => onChange("add_locker", e.target.value)}
+            >
+              <option value="no">No</option>
+              <option value="yes">Sí (+${LOCKER_DAILY_PRICE}/día)</option>
+            </select>
           </div>
-          <div>
-            <label className={labelClass}>Número de locker (opcional)</label>
-            <input
-              type="number"
-              min={1}
-              className={`${inputClass} max-w-[140px]`}
-              placeholder="Ej. 12"
-              value={guest.locker_number}
-              onChange={(e) => onChange("locker_number", e.target.value)}
-            />
-            <p className={hintClass}>
-              Déjalo vacío si aún no asignas el locker; aparecerá como pendiente en reservas.
-            </p>
-          </div>
+          {guest.add_locker === "yes" ? (
+            <>
+              <div>
+                <label className={labelClass}>Días de locker</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={stayNights}
+                  className={`${inputClass} max-w-[140px]`}
+                  value={guest.locker_days}
+                  onChange={(e) => onChange("locker_days", e.target.value)}
+                />
+                <p className={hintClass}>
+                  Máx. {stayNights} noche{stayNights === 1 ? "" : "s"}. Cargo: $
+                  {(guest.locker_days * LOCKER_DAILY_PRICE).toFixed(0)} MXN
+                </p>
+              </div>
+              <div>
+                <label className={labelClass}>Número de locker (opcional)</label>
+                <input
+                  type="number"
+                  min={1}
+                  className={`${inputClass} max-w-[140px]`}
+                  placeholder="Ej. 12"
+                  value={guest.locker_number}
+                  onChange={(e) => onChange("locker_number", e.target.value)}
+                />
+                <p className={hintClass}>
+                  Déjalo vacío si aún no asignas el locker; aparecerá como pendiente en reservas.
+                </p>
+              </div>
+            </>
+          ) : null}
         </>
       ) : null}
     </div>

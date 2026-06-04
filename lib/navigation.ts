@@ -37,6 +37,16 @@ const HREF_TO_KEY: Record<string, string> = {
 /** Modules kept for permissions/URLs but omitted from sidebar navigation. */
 export const HIDDEN_NAV_MODULE_KEYS = new Set(["folios"]);
 
+/** Frontend display labels (RBAC module keys stay unchanged). */
+const NAV_LABEL_OVERRIDES: Record<string, string> = {
+  payments: "Ingresos",
+  expenses: "Egresos",
+};
+
+function navLabel(key: string, label: string): string {
+  return NAV_LABEL_OVERRIDES[key] ?? label;
+}
+
 export const NAV_GROUP_DEFS: { label: string; keys: string[] }[] = [
   {
     label: "Operación",
@@ -58,8 +68,8 @@ export const PAGE_TITLES: Record<string, string> = {
   "/dashboard/folios": "Folios",
   "/dashboard/beds": "Camas",
   "/dashboard/guests": "Huéspedes",
-  "/dashboard/payments": "Pagos",
-  "/dashboard/expenses": "Gastos",
+  "/dashboard/payments": "Ingresos",
+  "/dashboard/expenses": "Egresos",
   "/dashboard/imported-records": "Importados",
   "/dashboard/shifts": "Turnos",
   "/dashboard/cash-cuts": "Cortes",
@@ -74,8 +84,8 @@ const staticDashboardLinks: DashboardLink[] = [
   { href: "/dashboard/reservations", label: "Reservas", roles: ["admin", "reception"] },
   { href: "/dashboard/beds", label: "Camas", roles: ["admin", "reception"] },
   { href: "/dashboard/guests", label: "Huéspedes", roles: ["admin", "reception"] },
-  { href: "/dashboard/payments", label: "Pagos", roles: ["admin", "reception"] },
-  { href: "/dashboard/expenses", label: "Gastos", roles: ["admin"] },
+  { href: "/dashboard/payments", label: "Ingresos", roles: ["admin", "reception"] },
+  { href: "/dashboard/expenses", label: "Egresos", roles: ["admin"] },
   { href: "/dashboard/imported-records", label: "Importados", roles: ["admin"] },
   { href: "/dashboard/shifts", label: "Turnos", roles: ["admin", "reception"] },
   { href: "/dashboard/cash-cuts", label: "Cortes", roles: ["admin", "reception"] },
@@ -125,7 +135,7 @@ export function modulesToNavItems(modules: SystemModule[]): NavItem[] {
     .map((m) => ({
       key: m.key,
       href: m.href,
-      label: m.label,
+      label: navLabel(m.key, m.label),
       sort_order: m.sort_order,
     }));
 }
@@ -137,7 +147,7 @@ export function linksToNavItems(links: DashboardLink[]): NavItem[] {
       return {
         key,
         href: link.href,
-        label: link.label,
+        label: navLabel(key, link.label),
         sort_order: STATIC_SORT_ORDER[key] ?? 999,
       };
     })

@@ -55,6 +55,7 @@ type UseReservationFormOptions = {
   onConfirmed?: (data: GuestConfirmationPayload) => void;
   reservationSource?: "guest_app" | "cashier_counter";
   returnTo?: string;
+  allowLockerSelection?: boolean;
   recurringGuest?: {
     full_name?: string | null;
     email?: string | null;
@@ -68,6 +69,7 @@ export function useReservationForm({
   onConfirmed,
   reservationSource = "guest_app",
   returnTo = "/",
+  allowLockerSelection = false,
   recurringGuest,
 }: UseReservationFormOptions) {
   const [guestCount, setGuestCount] = useState(1);
@@ -290,7 +292,15 @@ export function useReservationForm({
     setIsSubmitting(true);
     try {
       const formData = new FormData();
-      formData.set("guests_data", JSON.stringify(guests));
+      const guestsPayload = allowLockerSelection
+        ? guests
+        : guests.map((guest) => ({
+            ...guest,
+            add_locker: "no" as const,
+            locker_days: 0,
+            locker_number: "",
+          }));
+      formData.set("guests_data", JSON.stringify(guestsPayload));
       formData.set("check_in_date", reservationData.check_in_date);
       formData.set("check_out_date", reservationData.check_out_date);
       formData.set("notes", reservationData.notes);
@@ -346,10 +356,12 @@ export function useReservationForm({
   const estimatedBedTotal = (bedPricePerNight: number) => guestCount * stayNights * bedPricePerNight;
 
   const estimatedLockerTotal = () =>
-    guests.reduce((sum, g) => {
-      if (g.add_locker !== "yes") return sum;
-      return sum + g.locker_days * LOCKER_DAILY_PRICE;
-    }, 0);
+    allowLockerSelection
+      ? guests.reduce((sum, g) => {
+          if (g.add_locker !== "yes") return sum;
+          return sum + g.locker_days * LOCKER_DAILY_PRICE;
+        }, 0)
+      : 0;
 
   return {
     guestCount,
