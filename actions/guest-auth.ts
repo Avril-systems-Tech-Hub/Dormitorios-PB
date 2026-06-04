@@ -8,7 +8,11 @@ import {
   GuestSessionConfigError,
   setGuestSessionCookie,
 } from "@/lib/guest-auth/session";
-import { normalizeGuestPhone, normalizeWalletAddress } from "@/lib/guest-auth/wallet";
+import {
+  normalizeGuestPhone,
+  normalizeLoginEmail,
+  normalizeWalletAddress,
+} from "@/lib/guest-auth/wallet";
 
 export type GuestAuthResult =
   | { ok: true; guestId: string; needsPhoneLink?: boolean }
@@ -26,18 +30,32 @@ async function findGuestByWallet(address: string) {
   return data?.guest_id ?? null;
 }
 
-async function linkWalletToGuest(guestId: string, address: string) {
+async function linkWalletToGuest(
+  guestId: string,
+  address: string,
+  loginEmail?: string | null,
+) {
   const supabase = createAdminClient();
-  const { error } = await supabase.from("guest_wallets").upsert(
-    {
-      guest_id: guestId,
-      chain: "celo",
-      address,
-      is_primary: true,
-      linked_at: new Date().toISOString(),
-    },
-    { onConflict: "chain,address" },
-  );
+  const email = normalizeLoginEmail(loginEmail);
+  const row: {
+    guest_id: string;
+    chain: "celo";
+    address: string;
+    is_primary: boolean;
+    linked_at: string;
+    email?: string;
+  } = {
+    guest_id: guestId,
+    chain: "celo",
+    address,
+    is_primary: true,
+    linked_at: new Date().toISOString(),
+  };
+  if (email) row.email = email;
+
+  const { error } = await supabase.from("guest_wallets").upsert(row, {
+    onConflict: "chain,address",
+  });
 
   if (error) {
     throw new Error(error.message);
@@ -46,12 +64,14 @@ async function linkWalletToGuest(guestId: string, address: string) {
 
 export async function establishGuestSessionAction(
   walletAddress: string,
+  loginEmail?: string | null,
 ): Promise<GuestAuthResult> {
   try {
     const address = normalizeWalletAddress(walletAddress);
     const existingGuestId = await findGuestByWallet(address);
 
     if (existingGuestId) {
+      await linkWalletToGuest(existingGuestId, address, loginEmail);
       await setGuestSessionCookie({ guestId: existingGuestId, walletAddress: address });
       revalidatePath("/cuenta");
       revalidatePath("/login");
@@ -75,6 +95,7 @@ export async function linkGuestPhoneAction(
   walletAddress: string,
   phone: string,
   fullName?: string,
+  loginEmail?: string | null,
 ): Promise<GuestAuthResult> {
   try {
     const address = normalizeWalletAddress(walletAddress);
@@ -122,7 +143,7 @@ export async function linkGuestPhoneAction(
         .eq("id", guestId);
     }
 
-    await linkWalletToGuest(guestId, address);
+    await linkWalletToGuest(guestId, address, loginEmail);
     await setGuestSessionCookie({ guestId, walletAddress: address });
     revalidatePath("/cuenta");
     revalidatePath("/login");

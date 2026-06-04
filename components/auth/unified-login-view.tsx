@@ -24,10 +24,12 @@ export function UnifiedLoginView({
   initialMode?: Mode;
 }) {
   const router = useRouter();
-  const { ready, address, isConnecting, error, login, logout, clearError } = useWaaP();
+  const { ready, address, isConnecting, error, login, fetchLoginEmail, logout, clearError } =
+    useWaaP();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [guestStep, setGuestStep] = useState<GuestStep>("login");
   const [pendingAddress, setPendingAddress] = useState<string | null>(null);
+  const [pendingLoginEmail, setPendingLoginEmail] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
   const [fullName, setFullName] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -46,7 +48,8 @@ export function UnifiedLoginView({
       const connectedAddress = address ?? (await login());
       if (!connectedAddress) return;
 
-      const result = await establishGuestSessionAction(connectedAddress);
+      const loginEmail = await fetchLoginEmail();
+      const result = await establishGuestSessionAction(connectedAddress, loginEmail);
       if (!result.ok) {
         setFormError(result.error);
         return;
@@ -54,6 +57,7 @@ export function UnifiedLoginView({
 
       if (result.needsPhoneLink) {
         setPendingAddress(connectedAddress);
+        setPendingLoginEmail(loginEmail);
         setGuestStep("link-phone");
         return;
       }
@@ -67,7 +71,12 @@ export function UnifiedLoginView({
     setFormError(null);
 
     startTransition(async () => {
-      const result = await linkGuestPhoneAction(pendingAddress, phone, fullName);
+      const result = await linkGuestPhoneAction(
+        pendingAddress,
+        phone,
+        fullName,
+        pendingLoginEmail,
+      );
       if (!result.ok) {
         setFormError(result.error);
         return;
@@ -82,6 +91,7 @@ export function UnifiedLoginView({
       await logout();
       setGuestStep("login");
       setPendingAddress(null);
+      setPendingLoginEmail(null);
       setPhone("");
       setFullName("");
     });

@@ -19,6 +19,7 @@ type WaaPContextValue = {
   isConnecting: boolean;
   error: string | null;
   login: () => Promise<string | null>;
+  fetchLoginEmail: () => Promise<string | null>;
   logout: () => Promise<void>;
   clearError: () => void;
 };
@@ -54,6 +55,19 @@ export function WaaPProvider({ children }: { children: ReactNode }) {
     setReady(true);
 
     void readConnectedAddress().then(setAddress);
+  }, []);
+
+  const fetchLoginEmail = useCallback(async () => {
+    if (typeof window === "undefined" || !window.waap?.requestEmail) {
+      return null;
+    }
+
+    try {
+      const email = await window.waap.requestEmail();
+      return typeof email === "string" && email.includes("@") ? email.trim().toLowerCase() : null;
+    } catch {
+      return null;
+    }
   }, []);
 
   const login = useCallback(async () => {
@@ -104,10 +118,11 @@ export function WaaPProvider({ children }: { children: ReactNode }) {
       isConnecting,
       error,
       login,
+      fetchLoginEmail,
       logout,
       clearError: () => setError(null),
     }),
-    [ready, address, isConnecting, error, login, logout],
+    [ready, address, isConnecting, error, login, fetchLoginEmail, logout],
   );
 
   return <WaaPContext.Provider value={value}>{children}</WaaPContext.Provider>;
