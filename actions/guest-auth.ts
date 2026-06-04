@@ -58,17 +58,7 @@ async function findGuestByEmail(email: string): Promise<GuestRow | null> {
   return guest;
 }
 
-async function getGuestById(guestId: string): Promise<GuestRow | null> {
-  const supabase = createAdminClient();
-  const { data } = await supabase
-    .from("guests")
-    .select("id, email, phone")
-    .eq("id", guestId)
-    .maybeSingle();
-  return data ?? null;
-}
-
-async function assertWalletNotLinkedToOtherGuest(guestId: string, address: string) {
+async function unlinkWalletFromOtherGuests(guestId: string, address: string) {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("guest_wallets")
@@ -78,7 +68,14 @@ async function assertWalletNotLinkedToOtherGuest(guestId: string, address: strin
     .maybeSingle();
 
   if (data && data.guest_id !== guestId) {
-    throw new Error("Esta wallet ya está vinculada a otra cuenta.");
+    const { error } = await supabase
+      .from("guest_wallets")
+      .delete()
+      .eq("chain", "celo")
+      .eq("address", address);
+    if (error) {
+      throw new Error(error.message);
+    }
   }
 }
 
@@ -90,7 +87,7 @@ async function linkWalletToGuest(
   const supabase = createAdminClient();
   const email = normalizeLoginEmail(loginEmail);
 
-  await assertWalletNotLinkedToOtherGuest(guestId, address);
+  await unlinkWalletFromOtherGuests(guestId, address);
 
   await supabase
     .from("guest_wallets")
@@ -123,16 +120,15 @@ async function linkWalletToGuest(
   }
 }
 
-async function completeGuestSession(guestId: string, address: string, loginEmail?: string | null) {
+async function completeGuestSession(
+  guestId: string,
+  address: string,
+  loginEmail?: string | null,
+) {
   await linkWalletToGuest(guestId, address, loginEmail);
   await setGuestSessionCookie({ guestId, walletAddress: address });
   revalidatePath("/cuenta");
   revalidatePath("/login");
-}
-
-function emailsMatch(guestEmail: string | null | undefined, loginEmail: string | null) {
-  if (!loginEmail) return false;
-  return normalizeLoginEmail(guestEmail) === loginEmail;
 }
 
 export async function establishGuestSessionAction(
@@ -153,11 +149,16 @@ export async function establishGuestSessionAction(
 
     const guestIdByWallet = await findGuestByWallet(address);
     if (guestIdByWallet) {
-      const guest = await getGuestById(guestIdByWallet);
-      if (guest && emailsMatch(guest.email, normalizedLoginEmail)) {
-        await completeGuestSession(guest.id, address, normalizedLoginEmail);
-        return { ok: true, guestId: guest.id };
-      }
+      await completeGuestSession(guestIdByWallet, address, normalizedLoginEmail);
+      return { ok: true, guestId: guestIdByWallet };
+    }
+
+    if (!normalizedLoginEmail) {
+      return {
+        ok: false,
+        error:
+          "Entra con correo o Google. Si ya reservaste, usa el mismo correo que pusiste en la reserva.",
+      };
     }
 
     return {
@@ -178,27 +179,19 @@ export async function establishGuestSessionAction(
   }
 }
 
-/** Link wallet to an existing guest by reservation email + phone (source of truth). */
+/** Confirm reservation email when Human login email differs from the one on file. */
 export async function linkGuestReservationAction(
   walletAddress: string,
   reservationEmail: string,
-  phone: string,
   loginEmail?: string | null,
 ): Promise<GuestAuthResult> {
   try {
     const address = normalizeWalletAddress(walletAddress);
     const normalizedReservationEmail = normalizeLoginEmail(reservationEmail);
     const normalizedLoginEmail = normalizeLoginEmail(loginEmail);
-    const normalizedPhone = normalizeGuestPhone(phone);
 
     if (!normalizedReservationEmail) {
       return { ok: false, error: "Ingresa el correo que usaste al reservar." };
-    }
-    if (normalizedPhone.length !== 10) {
-      return {
-        ok: false,
-        error: "Ingresa un teléfono mexicano de 10 dígitos.",
-      };
     }
 
     const guest = await findGuestByEmail(normalizedReservationEmail);
@@ -209,14 +202,11 @@ export async function linkGuestReservationAction(
       };
     }
 
-    if (normalizeGuestPhone(guest.phone) !== normalizedPhone) {
-      return {
-        ok: false,
-        error: "El teléfono no coincide con el de tu reserva. Usa el mismo que registraste.",
-      };
-    }
-
-    await completeGuestSession(guest.id, address, normalizedLoginEmail ?? normalizedReservationEmail);
+    await completeGuestSession(
+      guest.id,
+      address,
+      normalizedLoginEmail ?? normalizedReservationEmail,
+    );
     return { ok: true, guestId: guest.id };
   } catch (error) {
     if (error instanceof GuestSessionConfigError) {
@@ -230,10 +220,10 @@ export async function linkGuestReservationAction(
   }
 }
 
-/** @deprecated Use linkGuestReservationAction */
+/** @deprecated Phone verification removed; use linkGuestReservationAction with email only. */
 export async function linkGuestPhoneAction(
   walletAddress: string,
-  phone: string,
+  _phone: string,
   _fullName?: string,
   loginEmail?: string | null,
   reservationEmail?: string | null,
@@ -245,7 +235,52 @@ export async function linkGuestPhoneAction(
       error: "Ingresa el correo que usaste al reservar.",
     };
   }
-  return linkGuestReservationAction(walletAddress, email, phone, loginEmail);
+  return linkGuestReservationAction(walletAddress, email, loginEmail);
+}
+
+/** @deprecated Use linkGuestReservationAction (email only). */
+export async function linkGuestReservationWithPhoneAction(
+  walletAddress: string,
+  reservationEmail: string,
+  phone: string,
+  loginEmail?: string | null,
+): Promise<GuestAuthResult> {
+  const normalizedPhone = normalizeGuestPhone(phone);
+  if (normalizedPhone.length !== 10) {
+    return {
+      ok: false,
+      error: "Ingresa un teléfono mexicano de 10 dígitos.",
+    };
+  }
+
+  const address = normalizeWalletAddress(walletAddress);
+  const normalizedReservationEmail = normalizeLoginEmail(reservationEmail);
+  if (!normalizedReservationEmail) {
+    return { ok: false, error: "Ingresa el correo que usaste al reservar." };
+  }
+
+  const supabase = createAdminClient();
+  const guest = await findGuestByEmail(normalizedReservationEmail);
+  if (!guest) {
+    return {
+      ok: false,
+      error: "No encontramos una reserva con ese correo. Revisa el correo o reserva primero.",
+    };
+  }
+
+  if (normalizeGuestPhone(guest.phone) !== normalizedPhone) {
+    return {
+      ok: false,
+      error: "El teléfono no coincide con el de tu reserva. Usa el mismo que registraste.",
+    };
+  }
+
+  await completeGuestSession(
+    guest.id,
+    address,
+    normalizeLoginEmail(loginEmail) ?? normalizedReservationEmail,
+  );
+  return { ok: true, guestId: guest.id };
 }
 
 export async function guestLogoutAction() {

@@ -5,6 +5,42 @@ export function getMexicoCityDateString(date = new Date()) {
 /** CDMX is UTC−6 year-round (no DST since 2022). */
 const CDMX_OFFSET = "-06:00";
 
+/** Parse YYYY-MM-DD as noon CDMX so labels/weekdays match on UTC servers (e.g. Vercel). */
+export function mexicoCityCalendarDate(dateString: string) {
+  return new Date(`${dateString}T12:00:00.000${CDMX_OFFSET}`);
+}
+
+function daysInCalendarMonth(year: number, month: number) {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function mexicoCityYmdFromDate(date: Date) {
+  const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City" }).format(date);
+  const [year, month, day] = ymd.split("-").map(Number);
+  return { year, month, day };
+}
+
+export function mexicoCityMondayFirstColumnOffset(dateString: string) {
+  return (mexicoCityWeekday(dateString) + 6) % 7;
+}
+
+function mexicoCityWeekday(dateString: string) {
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Mexico_City",
+    weekday: "short",
+  }).format(mexicoCityCalendarDate(dateString));
+  const map: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+  return map[weekday] ?? 0;
+}
+
 export function paymentReceivedAtToMexicoDate(receivedAt: string) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City" }).format(
     new Date(receivedAt),
@@ -25,7 +61,7 @@ export function getMexicoCityMonthBounds(dateString: string) {
   const year = Number(yearStr);
   const month = Number(monthStr);
   const start = `${yearStr}-${monthStr}-01`;
-  const lastDay = new Date(year, month, 0).getDate();
+  const lastDay = daysInCalendarMonth(year, month);
   const end = `${yearStr}-${monthStr}-${String(lastDay).padStart(2, "0")}`;
   const startBounds = getMexicoCityDayBounds(start);
   const endBounds = getMexicoCityDayBounds(end);
@@ -39,8 +75,9 @@ export function getMexicoCityMonthBounds(dateString: string) {
 }
 
 export function formatMexicoCityMonthLabel(dateString: string) {
-  const [year, month, day] = dateString.split("-").map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString("es-MX", {
+  const monthKey = dateString.slice(0, 7);
+  const [year, month] = monthKey.split("-").map(Number);
+  return mexicoCityCalendarDate(formatDateParts(year, month, 15)).toLocaleDateString("es-MX", {
     month: "long",
     year: "numeric",
     timeZone: "America/Mexico_City",
@@ -72,7 +109,7 @@ export function getMexicoCityMonthBoundsFromKey(monthKey: string) {
 }
 
 export function formatMexicoCityDayLabel(dateString: string) {
-  return new Date(`${dateString}T12:00:00`).toLocaleDateString("es-MX", {
+  return mexicoCityCalendarDate(dateString).toLocaleDateString("es-MX", {
     weekday: "long",
     day: "numeric",
     month: "long",
@@ -198,19 +235,14 @@ function formatDateParts(year: number, month: number, day: number) {
 }
 
 function addDays(year: number, month: number, day: number, delta: number) {
-  const date = new Date(year, month - 1, day);
-  date.setDate(date.getDate() + delta);
-  return {
-    year: date.getFullYear(),
-    month: date.getMonth() + 1,
-    day: date.getDate(),
-  };
+  const date = mexicoCityCalendarDate(formatDateParts(year, month, day));
+  date.setTime(date.getTime() + delta * 24 * 60 * 60 * 1000);
+  return mexicoCityYmdFromDate(date);
 }
 
 export function getMexicoCityWeekBounds(dateString: string) {
   const [year, month, day] = dateString.split("-").map(Number);
-  const anchor = new Date(year, month - 1, day);
-  const dayOfWeek = anchor.getDay();
+  const dayOfWeek = mexicoCityWeekday(dateString);
   const daysFromMonday = (dayOfWeek + 6) % 7;
   const startParts = addDays(year, month, day, -daysFromMonday);
   const endParts = addDays(startParts.year, startParts.month, startParts.day, 6);
@@ -233,7 +265,7 @@ export function getReservationPeriodBounds(
 ) {
   if (period === "day") {
     const { startAt, endAt } = getMexicoCityDayBounds(dateString);
-    const label = new Date(`${dateString}T12:00:00`).toLocaleDateString("es-MX", {
+    const label = mexicoCityCalendarDate(dateString).toLocaleDateString("es-MX", {
       weekday: "long",
       day: "numeric",
       month: "long",
@@ -245,12 +277,12 @@ export function getReservationPeriodBounds(
 
   if (period === "week") {
     const bounds = getMexicoCityWeekBounds(dateString);
-    const startLabel = new Date(`${bounds.start}T12:00:00`).toLocaleDateString("es-MX", {
+    const startLabel = mexicoCityCalendarDate(bounds.start).toLocaleDateString("es-MX", {
       day: "numeric",
       month: "short",
       timeZone: "America/Mexico_City",
     });
-    const endLabel = new Date(`${bounds.end}T12:00:00`).toLocaleDateString("es-MX", {
+    const endLabel = mexicoCityCalendarDate(bounds.end).toLocaleDateString("es-MX", {
       day: "numeric",
       month: "short",
       year: "numeric",

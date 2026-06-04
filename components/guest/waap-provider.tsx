@@ -33,7 +33,6 @@ export function WaaPProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Guest login only: hint WaaP / browser locale toward Mexico for phone OTP.
     document.documentElement.lang = "es-MX";
     initWaaP(waapConfig);
     setReady(true);

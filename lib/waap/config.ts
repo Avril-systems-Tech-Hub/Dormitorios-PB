@@ -9,7 +9,7 @@ export const waapConfig: InitSilkOptions = {
     projectId: process.env.NEXT_PUBLIC_WAAP_PROJECT_ID,
   },
   config: {
-    authenticationMethods: ["email", "phone", "social"],
+    authenticationMethods: ["email", "social"],
     allowedSocials: ["google"],
     styles: {
       darkMode: false,

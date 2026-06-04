@@ -7,6 +7,7 @@ import {
   formatMexicoCityMonthLabel,
   getMexicoCityDateString,
   getMexicoCityWeekBounds,
+  mexicoCityMondayFirstColumnOffset,
 } from "@/lib/dates";
 import type { DailyFinanceEntry, DailyFinanceGuestDetailsByDate } from "@/lib/day-finance";
 import { FinanceDayDetailModal } from "@/components/dashboard/finance-day-detail-modal";
@@ -55,11 +56,9 @@ export function FinanceCalendarView({
   const monthLabel = formatMexicoCityMonthLabel(financeMonthKeyToAnchorDate(monthKey));
 
   const cells = useMemo(() => {
-    const firstDay = new Date(year, month - 1, 1);
-    const lastDay = new Date(year, month, 0);
-    const daysInMonth = lastDay.getDate();
-    let startDow = firstDay.getDay() - 1;
-    if (startDow < 0) startDow = 6;
+    const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const startDow = mexicoCityMondayFirstColumnOffset(monthStart);
 
     const grid: Array<{
       day: number;

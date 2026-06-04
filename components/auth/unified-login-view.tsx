@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import {
@@ -8,12 +9,10 @@ import {
   guestLogoutAction,
   linkGuestReservationAction,
 } from "@/actions/guest-auth";
-import { MexicanPhoneInput } from "@/components/guest/mexican-phone-input";
 import { useWaaP } from "@/components/guest/waap-provider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { isCompleteMexicanPhone, MEXICO_PHONE_PREFIX } from "@/lib/phone";
 
 type Mode = "guest" | "staff";
 type GuestStep = "login" | "reservation-link";
@@ -32,7 +31,6 @@ export function UnifiedLoginView({
   const [pendingAddress, setPendingAddress] = useState<string | null>(null);
   const [pendingLoginEmail, setPendingLoginEmail] = useState<string | null>(null);
   const [reservationEmail, setReservationEmail] = useState("");
-  const [phone, setPhone] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -59,7 +57,7 @@ export function UnifiedLoginView({
       if ("step" in result && result.step === "reservation-link") {
         setPendingAddress(connectedAddress);
         setPendingLoginEmail(result.loginEmail);
-        setReservationEmail(result.loginEmail ?? "");
+        setReservationEmail("");
         setGuestStep("reservation-link");
         return;
       }
@@ -76,7 +74,6 @@ export function UnifiedLoginView({
       const result = await linkGuestReservationAction(
         pendingAddress,
         reservationEmail,
-        phone,
         pendingLoginEmail,
       );
       if (!result.ok) {
@@ -95,7 +92,6 @@ export function UnifiedLoginView({
       setPendingAddress(null);
       setPendingLoginEmail(null);
       setReservationEmail("");
-      setPhone("");
     });
   };
 
@@ -152,11 +148,16 @@ export function UnifiedLoginView({
             height={72}
             className="mx-auto rounded-md"
           />
-          <h1 className="text-xl font-semibold">Vincula tu reserva</h1>
+          <h1 className="text-xl font-semibold">Correo de tu reserva</h1>
           <p className="text-sm text-text-muted">
-            {pendingLoginEmail
-              ? `Iniciaste sesión con ${pendingLoginEmail}. Confirma el correo y teléfono que usaste al reservar.`
-              : "Confirma el correo y teléfono que usaste al reservar para ver tu cuenta."}
+            {pendingLoginEmail ? (
+              <>
+                Entraste con <span className="font-medium text-text-main">{pendingLoginEmail}</span>.
+                Si reservaste con otro correo, escríbelo aquí.
+              </>
+            ) : (
+              "Escribe el correo que usaste al reservar para ver tus estadías."
+            )}
           </p>
         </div>
 
@@ -170,30 +171,24 @@ export function UnifiedLoginView({
             onChange={(event) => setReservationEmail(event.target.value)}
             required
           />
-          <MexicanPhoneInput
-            name="phone"
-            value={phone}
-            onChange={setPhone}
-            required
-          />
-          <p className="text-xs text-text-muted">
-            Escribe solo los 10 dígitos de tu celular (ej. 5512345678). El prefijo {MEXICO_PHONE_PREFIX}{" "}
-            ya está incluido.
-          </p>
           {formError ? <p className="text-sm text-danger">{formError}</p> : null}
           <Button
             className="w-full"
             type="button"
-            disabled={
-              isPending || reservationEmail.trim().length < 5 || !isCompleteMexicanPhone(phone)
-            }
+            disabled={isPending || reservationEmail.trim().length < 5}
             onClick={handleLinkReservation}
           >
-            {isPending ? "Vinculando…" : "Continuar"}
+            {isPending ? "Verificando…" : "Ver mis reservas"}
           </Button>
           <Button className="w-full" type="button" variant="ghost" onClick={handleCancelLink}>
             Cancelar
           </Button>
+          <p className="text-center text-xs text-text-muted">
+            ¿Aún no reservas?{" "}
+            <Link href="/" className="font-medium text-brand-primary hover:underline">
+              Reservar ahora
+            </Link>
+          </p>
         </div>
       </Card>
     );
@@ -211,7 +206,7 @@ export function UnifiedLoginView({
         />
         <h1 className="text-xl font-semibold">Ingreso</h1>
         <p className="text-sm text-text-muted">
-          Inicia sesión para ver tus reservas y administrar tu perfil.
+          Entra con el mismo correo que usaste al reservar (correo o Google).
         </p>
       </div>
 
@@ -233,9 +228,7 @@ export function UnifiedLoginView({
       </Button>
 
       <p className="text-center text-xs text-text-muted">
-        Puedes entrar con correo, teléfono o Google. Si usas teléfono en Human Wallet, elige
-        México ({MEXICO_PHONE_PREFIX}) y escribe solo tus 10 dígitos (sin volver a poner el 52). Usa
-        el mismo correo de tu reserva cuando sea posible.
+        Human Wallet creará tu wallet con ese correo para futuros beneficios.
       </p>
 
       <div className="border-t border-border-soft pt-3">
