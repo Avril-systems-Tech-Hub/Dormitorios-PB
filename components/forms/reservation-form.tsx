@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { ReservationGuestFields } from "@/components/forms/reservation-guest-fields";
 import { NIGHTLY_PRICE_MXN, UBICACION_SURFACE_CLASS } from "@/components/landing/constants";
 import { DateRangeCalendar } from "@/components/ui/date-range-calendar";
@@ -8,6 +8,7 @@ import { LOCKER_DAILY_PRICE, useReservationForm } from "@/hooks/use-reservation-
 import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
 import { formatReservationDate } from "@/lib/guest-reservation-confirmation";
 import { applyDiscount } from "@/lib/discount-rules";
+import { captureReservationScroll, restoreReservationScroll } from "@/lib/preserve-scroll";
 
 type ReservationFormProps = {
   action: (formData: FormData) => Promise<CreateGuestReservationResult | void>;
@@ -28,12 +29,23 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
   const bedTotal = form.estimatedBedTotal(NIGHTLY_PRICE_MXN);
   const lockerTotal = form.estimatedLockerTotal();
 
+  useLayoutEffect(() => {
+    restoreReservationScroll();
+  }, [showReview]);
+
+  const exitReview = () => {
+    captureReservationScroll();
+    setShowReview(false);
+  };
+
   const handleReview = (e: React.FormEvent) => {
     e.preventDefault();
+    captureReservationScroll();
     setShowReview(true);
   };
 
   const handleSubmit = async () => {
+    captureReservationScroll();
     setShowReview(false);
     await form.submitReservation();
   };
@@ -53,7 +65,7 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
               <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-mkt-terracotta">Estancia</h4>
               <button
                 type="button"
-                onClick={() => setShowReview(false)}
+                onClick={exitReview}
                 className="rounded-full border border-mkt-terracotta/50 px-3 py-1 text-xs font-semibold text-mkt-terracotta transition hover:bg-mkt-terracotta/15"
               >
                 ✏️ Editar
@@ -93,7 +105,7 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
               <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-mkt-terracotta">Huéspedes</h4>
               <button
                 type="button"
-                onClick={() => setShowReview(false)}
+                onClick={exitReview}
                 className="rounded-full border border-mkt-terracotta/50 px-3 py-1 text-xs font-semibold text-mkt-terracotta transition hover:bg-mkt-terracotta/15"
               >
                 ✏️ Editar
@@ -128,7 +140,7 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
                 <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-mkt-terracotta">Notas</h4>
                 <button
                   type="button"
-                  onClick={() => setShowReview(false)}
+                  onClick={exitReview}
                   className="rounded-full border border-mkt-terracotta/50 px-3 py-1 text-xs font-semibold text-mkt-terracotta transition hover:bg-mkt-terracotta/15"
                 >
                   ✏️ Editar
@@ -217,7 +229,7 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
           <div className="mt-4 flex gap-3">
             <button
               type="button"
-              onClick={() => setShowReview(false)}
+              onClick={exitReview}
               className="flex h-11 flex-1 items-center justify-center rounded-full border border-white/30 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/20"
             >
               Modificar

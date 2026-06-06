@@ -511,11 +511,13 @@ export async function createReservationAction(
       },
   });
 
-  revalidatePath("/");
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/reservations");
   revalidatePath("/dashboard/folios");
   revalidatePath("/dashboard/beds");
+  if (reservationSource !== "guest_app") {
+    revalidatePath("/");
+  }
 
   const originalBedTotal = nightlyRate * nights * guestIds.length;
   const originalTotal = originalBedTotal + originalLockerTotal;

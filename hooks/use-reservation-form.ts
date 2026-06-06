@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { searchGuestByPhoneAction, getApplicableDiscountsAction, validatePromoCodeAction } from "@/actions/operations";
 import { normalizeMexicanPhone } from "@/lib/phone";
+import { captureReservationScroll, restoreReservationScroll, withPreservedScroll } from "@/lib/preserve-scroll";
 import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
 import type { ApplicableDiscount } from "@/lib/discount-rules";
 import type { PromoCode } from "@/lib/promo-codes";
@@ -98,6 +99,7 @@ export function useReservationForm({
       return;
     }
     setPromoCodeValidating(true);
+    captureReservationScroll();
     try {
       const result = await validatePromoCodeAction(code.trim());
       setPromoCodeResult(result);
@@ -105,6 +107,7 @@ export function useReservationForm({
       setPromoCodeResult({ valid: false, error: "Error al validar el código." });
     } finally {
       setPromoCodeValidating(false);
+      restoreReservationScroll();
     }
   }, []);
 
@@ -173,12 +176,20 @@ export function useReservationForm({
       // Only fetch date-range discounts (no phone)
     }
     let cancelled = false;
-    getApplicableDiscountsAction(reservationData.check_in_date, phone).then((discount) => {
-      if (!cancelled) setApplicableDiscount(discount);
-    }).catch(() => {
-      if (!cancelled) setApplicableDiscount(null);
-    });
-    return () => { cancelled = true; };
+    captureReservationScroll();
+    getApplicableDiscountsAction(reservationData.check_in_date, phone)
+      .then((discount) => {
+        if (!cancelled) setApplicableDiscount(discount);
+      })
+      .catch(() => {
+        if (!cancelled) setApplicableDiscount(null);
+      })
+      .finally(() => {
+        if (!cancelled) restoreReservationScroll();
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [reservationData.check_in_date, guests[0]?.phone]);
 
   useEffect(() => {
@@ -249,6 +260,7 @@ export function useReservationForm({
     setSearchError("");
     if (!searchPhone) return;
     setIsSearching(true);
+    captureReservationScroll();
     try {
       const res = await searchGuestByPhoneAction(searchPhone);
       if (res.success && res.guest) {
@@ -273,6 +285,7 @@ export function useReservationForm({
       setSearchError("Error al buscar.");
     } finally {
       setIsSearching(false);
+      restoreReservationScroll();
     }
   };
 
@@ -290,6 +303,7 @@ export function useReservationForm({
     }
 
     setIsSubmitting(true);
+    captureReservationScroll();
     try {
       const formData = new FormData();
       const guestsPayload = allowLockerSelection
@@ -322,7 +336,7 @@ export function useReservationForm({
         formData.set("discount_percent", String(ruleDiscount.rule.discount_percent));
       }
 
-      const result = await action(formData);
+      const result = await withPreservedScroll(() => action(formData));
       if (result) {
         if (result.ok) {
           onConfirmed?.(result.confirmation);
@@ -347,6 +361,7 @@ export function useReservationForm({
       return { ok: false as const, message };
     } finally {
       setIsSubmitting(false);
+      restoreReservationScroll();
     }
   };
 

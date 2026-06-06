@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ReservationForm } from "@/components/forms/reservation-form";
 import { ReservationConfirmation } from "@/components/forms/reservation-confirmation";
@@ -9,6 +9,7 @@ import {
   type CreateGuestReservationResult,
   type GuestConfirmationPayload,
 } from "@/lib/guest-reservation-confirmation";
+import { restoreReservationScroll } from "@/lib/preserve-scroll";
 
 type ReservationBookingSectionProps = {
   action: (formData: FormData) => Promise<CreateGuestReservationResult | void>;
@@ -39,11 +40,19 @@ export function ReservationBookingSection({
   const activeConfirmation = confirmationData;
 
   useEffect(() => {
-    if (activeConfirmation) {
-      const el = document.getElementById("reserva");
-      el?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [activeConfirmation]);
+    if (typeof window === "undefined") return;
+    const previous = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+    return () => {
+      window.history.scrollRestoration = previous;
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    restoreReservationScroll();
+    const id = window.setTimeout(restoreReservationScroll, 100);
+    return () => window.clearTimeout(id);
+  });
 
   const handleConfirmed = useCallback((data: GuestConfirmationPayload) => {
     setConfirmationData(data);
