@@ -27,6 +27,9 @@ export function DashboardShell({
     modules && modules.length > 0 ? groupModules(modules, role) : groupDashboardLinks(role);
 
   const showSidebar = role === "admin" || (modules !== undefined && modules.length > 0);
+  const showSidebarNav = showSidebar && role !== "reception";
+  const showMobileNav = showSidebar && !(role === "reception" && navGroups.every((g) => g.items.length <= 1));
+  const isReception = role === "reception";
 
   return (
     <div className="dashboard-canvas min-h-screen overflow-x-hidden">
@@ -59,18 +62,24 @@ export function DashboardShell({
           </div>
         </div>
       </header>
-      {showSidebar ? <DashboardNavMobileBar groups={navGroups} /> : null}
+      {showMobileNav ? <DashboardNavMobileBar groups={navGroups} /> : null}
       <div
         className={`w-full gap-4 px-3 py-3 sm:px-4 sm:py-4 lg:px-6 ${
-          showSidebar ? "grid md:grid-cols-[240px_minmax(0,1fr)]" : ""
+          showSidebarNav ? "grid md:grid-cols-[240px_minmax(0,1fr)]" : ""
         }`}
       >
-        {showSidebar ? (
+        {showSidebarNav ? (
           <aside className="hidden shrink-0 rounded-xl border border-brand-primary/15 bg-white/95 p-3 shadow-sm shadow-brand-primary/5 backdrop-blur-sm md:block md:sticky md:top-[4.25rem] md:self-start">
             <DashboardNav groups={navGroups} />
           </aside>
         ) : null}
-        <main className="safe-area-pb-footer min-w-0 space-y-4">{children}</main>
+        <main
+          className={`safe-area-pb-footer min-w-0 space-y-4 ${
+            isReception ? "mx-auto w-full max-w-6xl lg:max-w-7xl" : ""
+          }`}
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

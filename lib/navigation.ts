@@ -39,6 +39,7 @@ export const HIDDEN_NAV_MODULE_KEYS = new Set(["folios", "users"]);
 
 /** Frontend display labels (RBAC module keys stay unchanged). */
 const NAV_LABEL_OVERRIDES: Record<string, string> = {
+  dashboard: "Recepción",
   payments: "Ingresos",
   expenses: "Egresos",
 };
@@ -62,24 +63,16 @@ export const NAV_GROUP_DEFS: { label: string; keys: string[] }[] = [
   },
 ];
 
-/** Recepción: egresos en Operación; sin huéspedes (cubierto por reservas). */
+/** Recepción: operación + listado de huéspedes. */
 export const RECEPTION_NAV_GROUP_DEFS: { label: string; keys: string[] }[] = [
   {
     label: "Operación",
-    keys: ["dashboard", "reservations", "beds", "expenses"],
-  },
-  {
-    label: "Finanzas",
-    keys: ["payments", "cash_cuts"],
-  },
-  {
-    label: "Administración",
-    keys: ["shifts"],
+    keys: ["dashboard", "guests"],
   },
 ];
 
 export const PAGE_TITLES: Record<string, string> = {
-  "/dashboard": "Resumen",
+  "/dashboard": "Recepción",
   "/dashboard/reservations": "Reservas",
   "/dashboard/folios": "Folios",
   "/dashboard/beds": "Camas",
@@ -212,12 +205,20 @@ export function groupNavItems(
 
 export function groupModules(modules: SystemModule[], role?: UserRole): NavGroup[] {
   const groupDefs = role === "reception" ? RECEPTION_NAV_GROUP_DEFS : NAV_GROUP_DEFS;
-  return groupNavItems(modulesToNavItems(modules), groupDefs);
+  let items = modulesToNavItems(modules);
+  if (role === "reception") {
+    items = items.filter((item) => item.key === "dashboard" || item.key === "guests");
+  }
+  return groupNavItems(items, groupDefs);
 }
 
 export function groupDashboardLinks(role: UserRole): NavGroup[] {
   const groupDefs = role === "reception" ? RECEPTION_NAV_GROUP_DEFS : NAV_GROUP_DEFS;
-  return groupNavItems(linksToNavItems(getDashboardLinks(role)), groupDefs);
+  let items = linksToNavItems(getDashboardLinks(role));
+  if (role === "reception") {
+    items = items.filter((item) => item.key === "dashboard" || item.key === "guests");
+  }
+  return groupNavItems(items, groupDefs);
 }
 
 export function getPageTitle(pathname: string, fallback = "Panel operativo"): string {

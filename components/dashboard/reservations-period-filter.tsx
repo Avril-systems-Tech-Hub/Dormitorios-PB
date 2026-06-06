@@ -16,21 +16,29 @@ export function ReservationsPeriodFilter({
   periodLabel,
   selectedMonth,
   monthOptions,
+  basePath = "/dashboard/reservations",
+  paramPrefix,
 }: {
   period: ReservationPeriod;
   periodLabel: string;
   selectedMonth: string;
   monthOptions: { value: string; label: string }[];
+  basePath?: string;
+  paramPrefix?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const periodKey = paramPrefix ? `${paramPrefix}_period` : "period";
 
   function setPeriod(next: ReservationPeriod) {
     const params = new URLSearchParams(searchParams.toString());
-    params.set("period", next);
+    params.set(periodKey, next);
     params.delete("page");
+    if (paramPrefix) {
+      params.delete(`${paramPrefix}_page`);
+    }
     const qs = params.toString();
-    router.push(qs ? `/dashboard/reservations?${qs}` : "/dashboard/reservations");
+    router.push(qs ? `${basePath}?${qs}` : basePath);
   }
 
   return (
@@ -41,6 +49,8 @@ export function ReservationsPeriodFilter({
           options={monthOptions}
           ariaLabel="Mes de reservaciones"
           className="rounded-md border border-border-soft bg-white px-2 py-1 text-sm capitalize text-text-main"
+          monthParam={paramPrefix ? `${paramPrefix}_financeMonth` : "financeMonth"}
+          clearParams={paramPrefix ? [`${paramPrefix}_page`] : undefined}
         />
       ) : (
         <p className="text-sm capitalize text-text-muted">{periodLabel}</p>

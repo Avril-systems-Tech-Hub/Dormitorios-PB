@@ -1,11 +1,11 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { ReceptionOperationsSummary } from "@/components/dashboard/reception-operations-summary";
+import { ReceptionHome } from "@/components/dashboard/reception-home";
+import { ReceptionShiftGate } from "@/components/dashboard/reception-shift-gate";
 import { BedSummaryCard } from "@/components/dashboard/bed-summary-card";
 import { FolioSummaryCard } from "@/components/dashboard/folio-summary-card";
 import { buildBedOccupancyMap } from "@/lib/bed-occupancy";
 import { computeBedSummaryCounts, parseBedSummaryFilter } from "@/lib/bed-summary";
-import { ReceptionReservationPanel } from "@/components/dashboard/reception-reservation-panel";
 import { FinanceResultCard } from "@/components/dashboard/finance-result-card";
 import { ReservationsFinanceChart } from "@/components/dashboard/reservations-finance-chart";
 import { Card } from "@/components/ui/card";
@@ -34,6 +34,7 @@ import {
   parseFinanceWeekAnchor,
 } from "@/lib/dates";
 import { parseFolioSummaryFilter } from "@/lib/folio-summary";
+import { getOpenShift, getShiftExpenseTotal } from "@/lib/open-shift";
 
 export const dynamic = "force-dynamic";
 
@@ -51,10 +52,24 @@ export default async function DashboardPage({
   const monthOptions = getFinanceMonthOptions(24, today);
 
   if (profile.role !== "admin") {
+    const openShift = await getOpenShift();
+    if (!openShift) {
+      return (
+        <div className="min-w-0 space-y-4">
+          <ReceptionShiftGate />
+        </div>
+      );
+    }
+
+    const shiftExpenseTotal = await getShiftExpenseTotal(openShift.id);
+
     return (
       <div className="min-w-0 space-y-4">
-        <ReceptionReservationPanel />
-        <ReceptionOperationsSummary />
+        <ReceptionHome
+          openShift={openShift}
+          shiftExpenseTotal={shiftExpenseTotal}
+          searchParams={params}
+        />
       </div>
     );
   }

@@ -19,6 +19,13 @@ import { sendWhatsAppTemplateMessage, sendWhatsAppDocument, buildPaymentConfirma
 import { generatePaymentConfirmationPdf } from "@/lib/payment-pdf";
 import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
 import { normalizeMexicanPhone } from "@/lib/phone";
+import { escapeIlike } from "@/lib/pagination";
+import {
+  mapReservationToReceptionSearch,
+  normalizeRecentReservationLimit,
+  type ReceptionCheckInResult,
+  type ReceptionSearchResult,
+} from "@/lib/reception-check-in";
 
 const BASE_NIGHTLY_RATE = 120;
 const LOCKER_DAILY_PRICE = 30;
@@ -506,20 +513,63 @@ export async function createReservationAction(
   return redirectWithResult(returnTo, "success", `Reserva registrada. Folio ${folioCode}.`);
 }
 
-export async function registerPaymentAction(formData: FormData): Promise<void> {
+const RECEPTION_RESERVATION_SELECT =
+  "id, status, created_at, check_in_date, check_out_date, nights, folio_id, folios!inner(id, folio_code, payment_status, balance_due, total_amount, paid_amount), reservation_guests(guest_id, bed_id, locker_number, locker_days, guests(full_name, phone, email), beds(bed_number))";
+
+const RECENT_RECEPTION_RESERVATIONS_LIMIT = 20;
+
+async function fetchRecentReceptionReservations(
+  supabase: ReturnType<typeof createAdminClient>,
+  limit = RECENT_RECEPTION_RESERVATIONS_LIMIT,
+): Promise<ReceptionSearchResult[]> {
+  const { data } = await supabase
+    .from("reservations")
+    .select(RECEPTION_RESERVATION_SELECT)
+    .neq("status", "cancelled")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  return (data ?? [])
+    .map((row) => mapReservationToReceptionSearch(row))
+    .filter((row): row is ReceptionSearchResult => row != null);
+}
+
+export async function getRecentReceptionReservations(
+  limit = RECENT_RECEPTION_RESERVATIONS_LIMIT,
+): Promise<ReceptionSearchResult[]> {
+  const supabase = createAdminClient();
+  return fetchRecentReceptionReservations(supabase, limit);
+}
+
+type PaymentCoreInput = {
+  folioId: string;
+  amount: number;
+  method: PaymentMethod;
+  notes: string;
+  isOverride?: boolean;
+  overrideReason?: string;
+};
+
+type PaymentCoreSuccess = {
+  ok: true;
+  message: string;
+  newStatus: "liquidated" | "partial";
+  balanceDue: number;
+  folioCode: string;
+  folioId: string;
+  whatsappSent: boolean;
+};
+
+type PaymentCoreFailure = { ok: false; message: string };
+
+async function registerPaymentCore(input: PaymentCoreInput): Promise<PaymentCoreSuccess | PaymentCoreFailure> {
   const supabase = createAdminClient();
   const actor = await getActorProfile();
   const actorId = actor?.id ?? null;
-  const returnTo = String(formData.get("return_to") ?? "/dashboard/payments");
-  const folioId = String(formData.get("folio_id") ?? "");
-  const amount = Number(formData.get("amount") ?? 0);
-  const method = String(formData.get("method") ?? "cash") as PaymentMethod;
-  const notes = String(formData.get("notes") ?? "");
-  const isOverride = String(formData.get("admin_override") ?? "") === "on";
-  const overrideReason = String(formData.get("override_reason") ?? "").trim();
+  const { folioId, amount, method, notes, isOverride = false, overrideReason = "" } = input;
 
   if (!folioId || amount <= 0) {
-    return redirectWithResult(returnTo, "error", "Folio y monto son obligatorios.");
+    return { ok: false, message: "Folio y monto son obligatorios." };
   }
 
   const { data: folio } = await supabase
@@ -529,7 +579,7 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
     .single();
 
   if (!folio) {
-    return redirectWithResult(returnTo, "error", "No se encontró el folio.");
+    return { ok: false, message: "No se encontró el folio." };
   }
 
   const { data: reservationForPayment } = await supabase
@@ -548,11 +598,10 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
     parseReservationGuestAssignments(guestRowsForPayment);
 
   if (!allBedsAssigned) {
-    return redirectWithResult(
-      returnTo,
-      "error",
-      "Asigna todas las camas en recepción antes de registrar el pago.",
-    );
+    return {
+      ok: false,
+      message: "Asigna todas las camas en recepción antes de registrar el pago.",
+    };
   }
 
   const expectedTotal = await getFolioExpectedTotal(supabase, folioId);
@@ -563,11 +612,10 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
   if (paymentDifference > 0) {
     const isAdmin = actor?.role === "admin";
     if (!isAdmin || !isOverride || !overrideReason) {
-      return redirectWithResult(
-        returnTo,
-        "error",
-        `El monto excede el total de la reservación por $${paymentDifference.toFixed(2)}. Monto máximo: $${(expectedTotal - Number(folio.paid_amount)).toFixed(2)}.`,
-      );
+      return {
+        ok: false,
+        message: `El monto excede el total de la reservación por $${paymentDifference.toFixed(2)}. Monto máximo: $${(expectedTotal - Number(folio.paid_amount)).toFixed(2)}.`,
+      };
     }
   }
 
@@ -618,6 +666,7 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
   });
 
   // --- Generar PDF y enviar WhatsApp automático al huésped (solo al liquidar) ---
+  let whatsappSent = false;
   if (newStatus === "liquidated") {
   try {
     if (reservationForPayment) {
@@ -711,27 +760,60 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
             delivered_at: waResult.success ? new Date().toISOString() : null,
             error_message: waResult.error ?? null,
           });
+          whatsappSent = Boolean(waResult.success);
         }
       }
     }
   } catch (waError) {
     // No bloquear el flujo principal si falla WhatsApp
-    console.error("[registerPaymentAction] Error enviando WhatsApp:", waError);
+    console.error("[registerPaymentCore] Error enviando WhatsApp:", waError);
   }
   } // fin if liquidated
+
+  const successMessage =
+    newStatus === "liquidated"
+      ? `Pago completo aplicado al folio ${folio.folio_code}.`
+      : `Pago parcial aplicado al folio ${folio.folio_code}.`;
+
+  return {
+    ok: true,
+    message: successMessage,
+    newStatus,
+    balanceDue: newBalance,
+    folioCode: folio.folio_code,
+    folioId,
+    whatsappSent,
+  };
+}
+
+export async function registerPaymentAction(formData: FormData): Promise<void> {
+  const returnTo = String(formData.get("return_to") ?? "/dashboard/payments");
+  const folioId = String(formData.get("folio_id") ?? "");
+  const amount = Number(formData.get("amount") ?? 0);
+  const method = String(formData.get("method") ?? "cash") as PaymentMethod;
+  const notes = String(formData.get("notes") ?? "");
+  const isOverride = String(formData.get("admin_override") ?? "") === "on";
+  const overrideReason = String(formData.get("override_reason") ?? "").trim();
+
+  const result = await registerPaymentCore({
+    folioId,
+    amount,
+    method,
+    notes,
+    isOverride,
+    overrideReason,
+  });
+
+  if (!result.ok) {
+    return redirectWithResult(returnTo, "error", result.message);
+  }
 
   revalidatePath("/dashboard/payments");
   revalidatePath("/dashboard/folios");
   revalidatePath("/dashboard/reservations");
   revalidatePath("/dashboard");
 
-  return redirectWithResult(
-    returnTo,
-    "success",
-    newStatus === "liquidated"
-      ? `Pago completo aplicado al folio ${folio.folio_code}.`
-      : `Pago parcial aplicado al folio ${folio.folio_code}.`,
-  );
+  return redirectWithResult(returnTo, "success", result.message);
 }
 
 export async function receptionReservationPaymentAction(formData: FormData): Promise<void> {
@@ -2103,6 +2185,208 @@ export async function addFolioExtraServiceAction(formData: FormData): Promise<vo
   revalidatePath("/dashboard/folios");
   revalidatePath("/dashboard/payments");
   return redirectWithResult(returnTo, "success", "Extra service agregado al folio.");
+}
+
+async function fetchReceptionReservationsByIds(
+  supabase: ReturnType<typeof createAdminClient>,
+  reservationIds: string[],
+): Promise<ReceptionSearchResult[]> {
+  if (reservationIds.length === 0) return [];
+
+  const { data } = await supabase
+    .from("reservations")
+    .select(RECEPTION_RESERVATION_SELECT)
+    .in("id", reservationIds)
+    .neq("status", "cancelled")
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  return (data ?? [])
+    .map((row) => mapReservationToReceptionSearch(row))
+    .filter((row): row is ReceptionSearchResult => row != null);
+}
+
+export async function searchReservationsForReceptionAction(query: string): Promise<{
+  success: boolean;
+  results: ReceptionSearchResult[];
+  message?: string;
+}> {
+  const actor = await getActorProfile();
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return { success: false, results: [], message: "No autorizado." };
+  }
+
+  const trimmed = query.trim();
+  if (trimmed.length < 2) {
+    return { success: true, results: [], message: "Escribe al menos 2 caracteres." };
+  }
+
+  const supabase = createAdminClient();
+  const safe = escapeIlike(trimmed);
+  const reservationIds = new Set<string>();
+
+  const { data: byFolio } = await supabase
+    .from("reservations")
+    .select(RECEPTION_RESERVATION_SELECT)
+    .neq("status", "cancelled")
+    .ilike("folios.folio_code", `%${safe}%`)
+    .limit(10);
+
+  for (const row of byFolio ?? []) {
+    reservationIds.add(row.id);
+  }
+
+  const normalizedPhone = normalizeMexicanPhone(trimmed);
+  let guestFilter = `full_name.ilike.%${safe}%,phone.ilike.%${safe}%,email.ilike.%${safe}%`;
+  if (normalizedPhone) {
+    guestFilter += `,normalized_phone.eq.${normalizedPhone}`;
+  }
+
+  const { data: matchingGuests } = await supabase.from("guests").select("id").or(guestFilter).limit(20);
+
+  const guestIds = (matchingGuests ?? []).map((g) => g.id).filter(Boolean);
+  if (guestIds.length > 0) {
+    const { data: guestReservations } = await supabase
+      .from("reservation_guests")
+      .select("reservation_id, reservations!inner(status)")
+      .in("guest_id", guestIds)
+      .neq("reservations.status", "cancelled")
+      .limit(20);
+
+    for (const row of guestReservations ?? []) {
+      if (row.reservation_id) reservationIds.add(row.reservation_id);
+    }
+  }
+
+  const results = await fetchReceptionReservationsByIds(supabase, Array.from(reservationIds));
+  return { success: true, results };
+}
+
+export async function listRecentReservationsForReceptionAction(
+  limit = 20,
+): Promise<{
+  success: boolean;
+  results: ReceptionSearchResult[];
+  message?: string;
+}> {
+  const actor = await getActorProfile();
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return { success: false, results: [], message: "No autorizado." };
+  }
+
+  const safeLimit = normalizeRecentReservationLimit(limit);
+  const supabase = createAdminClient();
+  const results = await fetchRecentReceptionReservations(supabase, safeLimit);
+  return { success: true, results };
+}
+
+export async function getReceptionReservationDetailAction(
+  reservationId: string,
+): Promise<{ success: boolean; result?: ReceptionSearchResult; message?: string }> {
+  const actor = await getActorProfile();
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return { success: false, message: "No autorizado." };
+  }
+
+  if (!reservationId) {
+    return { success: false, message: "Reservación no indicada." };
+  }
+
+  const supabase = createAdminClient();
+  const results = await fetchReceptionReservationsByIds(supabase, [reservationId]);
+  const result = results[0];
+  if (!result) {
+    return { success: false, message: "No se encontró la reservación." };
+  }
+
+  return { success: true, result };
+}
+
+export async function completeReceptionCheckInAction(formData: FormData): Promise<ReceptionCheckInResult> {
+  const actor = await getActorProfile();
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return { ok: false, message: "No autorizado." };
+  }
+
+  const folioId = String(formData.get("folio_id") ?? "");
+  const folioCode = String(formData.get("folio_code") ?? "");
+  const amount = Number(formData.get("amount") ?? 0);
+  const method = String(formData.get("method") ?? "cash") as PaymentMethod;
+  const notes =
+    String(formData.get("notes") ?? "").trim() ||
+    `Cobro recepción - Folio ${folioCode || folioId}`;
+
+  if (!folioId) {
+    return { ok: false, message: "Folio no indicado." };
+  }
+
+  const supabase = createAdminClient();
+  const { data: reservation } = await supabase
+    .from("reservations")
+    .select(RECEPTION_RESERVATION_SELECT)
+    .eq("folio_id", folioId)
+    .neq("status", "cancelled")
+    .maybeSingle();
+
+  const mapped = reservation ? mapReservationToReceptionSearch(reservation) : null;
+  if (!mapped) {
+    return { ok: false, message: "No se encontró la reservación." };
+  }
+
+  if (!mapped.allBedsAssigned) {
+    return { ok: false, message: "Asigna todas las camas antes de confirmar." };
+  }
+
+  if (!mapped.allLockersAssigned) {
+    return { ok: false, message: "Asigna todos los lockers pendientes antes de confirmar." };
+  }
+
+  if (mapped.balanceDue <= 0 || mapped.paymentStatus === "liquidated") {
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/reservations");
+    revalidatePath("/dashboard/beds");
+    return {
+      ok: true,
+      message: "Asignación completada. No hay saldo pendiente.",
+      newStatus: mapped.paymentStatus === "liquidated" ? "liquidated" : "pending",
+      balanceDue: mapped.balanceDue,
+      folioCode: mapped.folioCode,
+      folioId: mapped.folioId,
+      whatsappSent: false,
+      skippedPayment: true,
+    };
+  }
+
+  if (amount <= 0) {
+    return { ok: false, message: "Indica el monto recibido." };
+  }
+
+  const paymentResult = await registerPaymentCore({
+    folioId,
+    amount,
+    method,
+    notes,
+  });
+
+  if (!paymentResult.ok) {
+    return { ok: false, message: paymentResult.message };
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/payments");
+  revalidatePath("/dashboard/folios");
+  revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/beds");
+
+  return {
+    ok: true,
+    message: paymentResult.message,
+    newStatus: paymentResult.newStatus,
+    balanceDue: paymentResult.balanceDue,
+    folioCode: paymentResult.folioCode,
+    folioId: paymentResult.folioId,
+    whatsappSent: paymentResult.whatsappSent,
+  };
 }
 
 /**

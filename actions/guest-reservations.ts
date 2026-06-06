@@ -2,6 +2,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getGuestSession } from "@/lib/guest-auth/session";
+import { normalizeLoginEmail } from "@/lib/guest-auth/wallet";
 import type { GuestStaySummary } from "@/components/dashboard/guest-history-detail";
 
 export type GuestAccountData = {
@@ -63,13 +64,28 @@ export async function getGuestAccountDataAction(): Promise<GuestAccountData | nu
   const supabase = createAdminClient();
   const { data: guest } = await supabase
     .from("guests")
-    .select(
-      "id,full_name,phone,email,reservation_guests(beds(bed_number),locker_number,reservations(check_in_date,check_out_date,nights,status,reservation_source,folios(folio_code,payment_status)))",
-    )
+    .select("id,full_name,phone,email")
     .eq("id", session.guestId)
     .maybeSingle();
 
   if (!guest) return null;
+
+  const normalizedEmail = normalizeLoginEmail(guest.email);
+  let guestIds = [session.guestId];
+
+  if (normalizedEmail) {
+    const { data: emailMatches } = await supabase
+      .from("guests")
+      .select("id, email")
+      .ilike("email", normalizedEmail);
+
+    const ids =
+      emailMatches
+        ?.filter((row) => normalizeLoginEmail(row.email) === normalizedEmail)
+        .map((row) => row.id) ?? [];
+
+    if (ids.length) guestIds = ids;
+  }
 
   const { data: wallet } = await supabase
     .from("guest_wallets")
@@ -79,7 +95,14 @@ export async function getGuestAccountDataAction(): Promise<GuestAccountData | nu
     .eq("chain", "celo")
     .maybeSingle();
 
-  const rows = Array.isArray(guest.reservation_guests) ? guest.reservation_guests : [];
+  const { data: reservationRows } = await supabase
+    .from("reservation_guests")
+    .select(
+      "beds(bed_number),locker_number,reservations(check_in_date,check_out_date,nights,status,reservation_source,folios(folio_code,payment_status))",
+    )
+    .in("guest_id", guestIds);
+
+  const rows = Array.isArray(reservationRows) ? reservationRows : [];
   const stays = getStays(rows as ReservationGuestRow[]).sort((a, b) =>
     b.checkIn.localeCompare(a.checkIn),
   );

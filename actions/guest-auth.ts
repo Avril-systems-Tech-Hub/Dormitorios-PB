@@ -19,7 +19,7 @@ export type GuestAuthResult =
   | { ok: true; guestId: ""; step: "reservation-link"; loginEmail: string | null }
   | { ok: false; error: string };
 
-type GuestRow = { id: string; email: string | null; phone: string };
+type GuestRow = { id: string; email: string | null; phone: string; updated_at: string };
 
 async function findGuestByWallet(address: string) {
   const supabase = createAdminClient();
@@ -33,29 +33,36 @@ async function findGuestByWallet(address: string) {
   return data?.guest_id ?? null;
 }
 
-async function findGuestByEmail(email: string): Promise<GuestRow | null> {
+/** Pick one guest when several reservation profiles share the same email. */
+async function resolveGuestByEmail(
+  email: string,
+  walletAddress?: string | null,
+): Promise<GuestRow | null> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("guests")
-    .select("id, email, phone")
-    .ilike("email", email)
-    .limit(2);
+    .select("id, email, phone, updated_at")
+    .ilike("email", email);
 
   if (error) {
     throw new Error(error.message);
   }
 
-  if (!data?.length) return null;
-  if (data.length > 1) {
-    throw new Error(
-      "Hay más de un perfil con este correo. Contacta a recepción para vincular tu cuenta.",
-    );
+  const matches = (data ?? []).filter((guest) => normalizeLoginEmail(guest.email) === email);
+  if (!matches.length) return null;
+  if (matches.length === 1) return matches[0];
+
+  if (walletAddress) {
+    const linkedGuestId = await findGuestByWallet(walletAddress);
+    if (linkedGuestId) {
+      const linked = matches.find((guest) => guest.id === linkedGuestId);
+      if (linked) return linked;
+    }
   }
 
-  const guest = data[0];
-  const stored = normalizeLoginEmail(guest.email);
-  if (!stored || stored !== email) return null;
-  return guest;
+  return matches.sort(
+    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+  )[0];
 }
 
 async function unlinkWalletFromOtherGuests(guestId: string, address: string) {
@@ -139,18 +146,18 @@ export async function establishGuestSessionAction(
     const address = normalizeWalletAddress(walletAddress);
     const normalizedLoginEmail = normalizeLoginEmail(loginEmail);
 
-    if (normalizedLoginEmail) {
-      const guestByEmail = await findGuestByEmail(normalizedLoginEmail);
-      if (guestByEmail) {
-        await completeGuestSession(guestByEmail.id, address, normalizedLoginEmail);
-        return { ok: true, guestId: guestByEmail.id };
-      }
-    }
-
     const guestIdByWallet = await findGuestByWallet(address);
     if (guestIdByWallet) {
       await completeGuestSession(guestIdByWallet, address, normalizedLoginEmail);
       return { ok: true, guestId: guestIdByWallet };
+    }
+
+    if (normalizedLoginEmail) {
+      const guestByEmail = await resolveGuestByEmail(normalizedLoginEmail, address);
+      if (guestByEmail) {
+        await completeGuestSession(guestByEmail.id, address, normalizedLoginEmail);
+        return { ok: true, guestId: guestByEmail.id };
+      }
     }
 
     if (!normalizedLoginEmail) {
@@ -194,7 +201,7 @@ export async function linkGuestReservationAction(
       return { ok: false, error: "Ingresa el correo que usaste al reservar." };
     }
 
-    const guest = await findGuestByEmail(normalizedReservationEmail);
+    const guest = await resolveGuestByEmail(normalizedReservationEmail, address);
     if (!guest) {
       return {
         ok: false,
@@ -260,7 +267,7 @@ export async function linkGuestReservationWithPhoneAction(
   }
 
   const supabase = createAdminClient();
-  const guest = await findGuestByEmail(normalizedReservationEmail);
+  const guest = await resolveGuestByEmail(normalizedReservationEmail, address);
   if (!guest) {
     return {
       ok: false,

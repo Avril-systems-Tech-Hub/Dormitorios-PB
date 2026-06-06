@@ -9,7 +9,8 @@ import {
   type GuestStaySummary,
 } from "@/components/dashboard/guest-history-detail";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireModulePermission } from "@/lib/auth/guards";
+import { getSessionProfile, requireModulePermission } from "@/lib/auth/guards";
+import { ReceptionGuestRosterPage } from "@/components/dashboard/reception-guest-roster-page";
 import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 
 type ReservationInfo = {
@@ -89,6 +90,12 @@ export default async function GuestsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   await requireModulePermission("guests");
+  const profile = await getSessionProfile();
+
+  if (profile.role === "reception") {
+    return <ReceptionGuestRosterPage searchParams={searchParams} />;
+  }
+
   const params = await searchParams;
   const { page, pageSize, q } = parsePagination(params);
   const [from, to] = getRange(page, pageSize);
