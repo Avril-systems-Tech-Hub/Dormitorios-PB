@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ReservationGuestFields } from "@/components/forms/reservation-guest-fields";
 import { NIGHTLY_PRICE_MXN, UBICACION_SURFACE_CLASS } from "@/components/landing/constants";
 import { DateRangeCalendar } from "@/components/ui/date-range-calendar";
-import { useReservationForm } from "@/hooks/use-reservation-form";
+import { LOCKER_DAILY_PRICE, useReservationForm } from "@/hooks/use-reservation-form";
 import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
 import { formatReservationDate } from "@/lib/guest-reservation-confirmation";
 import { applyDiscount } from "@/lib/discount-rules";
@@ -22,10 +22,11 @@ type ReservationFormProps = {
 };
 
 export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGuest }: ReservationFormProps) {
-  const form = useReservationForm({ action, onConfirmed, recurringGuest });
+  const form = useReservationForm({ action, onConfirmed, recurringGuest, allowLockerSelection: true });
   const [showReview, setShowReview] = useState(false);
 
   const bedTotal = form.estimatedBedTotal(NIGHTLY_PRICE_MXN);
+  const lockerTotal = form.estimatedLockerTotal();
 
   const handleReview = (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,6 +110,12 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
                     {g.phone || "—"}
                     {g.email ? ` · ${g.email}` : ""}
                   </p>
+                  {g.add_locker === "yes" ? (
+                    <p className="mt-1 text-xs text-mkt-ink/75">
+                      Locker: {g.locker_days} día{g.locker_days === 1 ? "" : "s"} · $
+                      {(g.locker_days * LOCKER_DAILY_PRICE).toFixed(0)} MXN
+                    </p>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -142,6 +149,12 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
                 </span>
                 <span className="shrink-0 font-medium">${bedTotal.toFixed(0)} MXN</span>
               </li>
+              {lockerTotal > 0 ? (
+                <li className="flex justify-between gap-4">
+                  <span>Locker</span>
+                  <span className="shrink-0 font-medium">${lockerTotal.toFixed(0)} MXN</span>
+                </li>
+              ) : null}
               {(() => {
                 const promoDiscount = form.promoCodeResult?.valid ? form.promoCodeResult.promo : null;
                 const ruleDiscount = form.applicableDiscount;
@@ -152,9 +165,13 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
                     ? { percent: ruleDiscount.rule.discount_percent, reason: ruleDiscount.reason }
                     : null;
 
+                const subtotal = bedTotal + lockerTotal;
+
                 if (activeDiscount) {
-                  const subtotal = bedTotal;
-                  const disc = applyDiscount(subtotal, activeDiscount.percent);
+                  const discountedBeds = applyDiscount(bedTotal, activeDiscount.percent).finalTotal;
+                  const discountedLockers = form.estimatedLockerTotal(activeDiscount.percent);
+                  const finalTotal = discountedBeds + discountedLockers;
+                  const discountAmount = subtotal - finalTotal;
                   return (
                     <>
                       <li className="flex justify-between gap-4">
@@ -167,11 +184,11 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
                           <br />
                           <span className="text-xs text-green-200/70">{activeDiscount.reason}</span>
                         </span>
-                        <span className="shrink-0 font-medium">-${disc.discountAmount.toFixed(0)} MXN</span>
+                        <span className="shrink-0 font-medium">-${discountAmount.toFixed(0)} MXN</span>
                       </li>
                       <li className="flex justify-between gap-4 border-t border-white/15 pt-2 text-base font-semibold text-white">
                         <span>Total con descuento</span>
-                        <span>${disc.finalTotal.toFixed(0)} MXN</span>
+                        <span>${finalTotal.toFixed(0)} MXN</span>
                       </li>
                     </>
                   );
@@ -179,7 +196,7 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
                 return (
                   <li className="flex justify-between gap-4 border-t border-white/15 pt-2 text-base font-semibold text-white">
                     <span>Total estimado</span>
-                    <span>${bedTotal.toFixed(0)} MXN</span>
+                    <span>${subtotal.toFixed(0)} MXN</span>
                   </li>
                 );
               })()}
@@ -294,6 +311,7 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
                 guestIndex={index}
                 stayNights={form.stayNights}
                 isPrincipal={index === 0}
+                showLockerFields
                 onChange={(field, value) => form.updateGuest(index, field, value)}
               />
             </div>
@@ -352,7 +370,8 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
           onChange={(e) => form.setReservationData((prev) => ({ ...prev, notes: e.target.value }))}
         />
         <p className="mt-3 text-xs text-white/70">
-          Las camas se asignan en recepción al llegar. Si necesitas locker, solicítalo al hacer check-in.
+          Las camas se asignan en recepción al llegar. Si contrataste locker, te asignamos el número al hacer
+          check-in.
         </p>
 
         {form.submitResult && !form.submitResult.success && (
