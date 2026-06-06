@@ -33,8 +33,9 @@ export function ReservationConfirmation({ data, onNewReservation }: ReservationC
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-mkt-terracotta">Confirmación</p>
           <h3 className="mt-2 text-2xl font-semibold text-white">¡Reservación registrada!</h3>
           <p className="mt-2 text-sm leading-relaxed text-white/75">
-            Tu solicitud ya está en el sistema. Al llegar, pasa por recepción: te asignamos cama (y locker si
-            lo necesitas), registramos el pago y te enviamos la confirmación con los detalles.
+            Tu solicitud ya está en el sistema. Al llegar, pasa por recepción: te asignamos cama
+            {lockerTotal > 0 ? " y locker" : ""}, registramos el pago y te enviamos la confirmación con los
+            detalles.
           </p>
           <p className="mt-4 rounded-xl bg-white/10 px-4 py-2 font-mono text-lg font-semibold tracking-wide text-white">
             Folio {data.folio}
@@ -74,7 +75,9 @@ export function ReservationConfirmation({ data, onNewReservation }: ReservationC
           </p>
         ) : (
           <p className="mb-4 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white/80">
-            Cama y locker se confirman en recepción al completar el pago.
+            {lockerTotal > 0
+              ? "Cama y número de locker se confirman en recepción al completar el pago."
+              : "Cama y locker se confirman en recepción al completar el pago."}
           </p>
         )}
 

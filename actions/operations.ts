@@ -369,13 +369,34 @@ export async function createReservationAction(
       ? "cashier_counter"
       : "guest_app";
 
-  const lockerByGuest = guests.slice(0, guestIds.length).map(() => ({
-    locker_days: 0,
-    locker_price: 0,
-    locker_amount: 0,
-  }));
+  const lockerByGuest = guests.slice(0, guestIds.length).map((guest) => {
+    const wantsLocker = guest.add_locker === "yes";
+    if (!wantsLocker) {
+      return { locker_days: 0, locker_price: 0, locker_amount: 0, locker_number: null as number | null };
+    }
+
+    const lockerPriceWithDiscount = Math.round(LOCKER_DAILY_PRICE * (100 - discountPercent)) / 100;
+    const requestedDays = Number(guest.locker_days ?? nights);
+    const locker_days = Math.min(
+      Math.max(1, Number.isFinite(requestedDays) ? requestedDays : nights),
+      nights,
+    );
+    const locker_price = lockerPriceWithDiscount;
+    const locker_amount = Number((locker_days * locker_price).toFixed(2));
+    const lockerNumberRaw = String(guest.locker_number ?? "").trim();
+    let locker_number: number | null = lockerNumberRaw ? Number(lockerNumberRaw) : null;
+    if (locker_number != null && (!Number.isFinite(locker_number) || locker_number <= 0)) {
+      locker_number = null;
+    }
+
+    return { locker_days, locker_price, locker_amount, locker_number };
+  });
 
   const lockerTotal = lockerByGuest.reduce((sum, row) => sum + row.locker_amount, 0);
+  const originalLockerTotal = lockerByGuest.reduce(
+    (sum, row) => sum + row.locker_days * LOCKER_DAILY_PRICE,
+    0,
+  );
   const totalAmount = finalRate * nights * guestIds.length + lockerTotal;
 
   const { data: folio, error: folioError } = await supabase
@@ -427,7 +448,7 @@ export async function createReservationAction(
       nightly_rate: nightlyRate,
       discount_amount: discountAmountPerNight,
       final_rate: finalRate,
-      locker_number: null,
+      locker_number: locker.locker_number,
       locker_price: locker.locker_price,
       locker_days: locker.locker_days,
       locker_amount: locker.locker_amount,
@@ -438,6 +459,20 @@ export async function createReservationAction(
   const { error: guestReservationError } = await supabase.from("reservation_guests").insert(guestInserts);
 
   if (guestReservationError) {
+    console.error("[createReservationAction] reservation_guests insert:", guestReservationError);
+    if (
+      guestReservationError.code === "23502" &&
+      guestReservationError.message.includes("bed_id")
+    ) {
+      console.error(
+        "[createReservationAction] Apply supabase/migrations/20260604_optional_bed_assignment.sql (npm run db:apply-optional-bed)",
+      );
+      return reservationFlowError(
+        formData,
+        returnTo,
+        "No se pudo completar la reservación en este momento. Si el problema continúa, contacta a recepción.",
+      );
+    }
     return reservationFlowError(formData, returnTo, "No se pudo registrar a los huéspedes.");
   }
 
@@ -482,8 +517,8 @@ export async function createReservationAction(
   revalidatePath("/dashboard/folios");
   revalidatePath("/dashboard/beds");
 
-  const bedSubtotal = finalRate * nights * guestIds.length;
   const originalBedTotal = nightlyRate * nights * guestIds.length;
+  const originalTotal = originalBedTotal + originalLockerTotal;
 
   if (reservationSource === "guest_app") {
     const confirmationPayload: GuestConfirmationPayload = {
@@ -492,19 +527,22 @@ export async function createReservationAction(
       check_out: checkOutDate,
       nights,
       bed_subtotal: originalBedTotal,
-      locker_total: 0,
+      locker_total: originalLockerTotal,
       total_amount: totalAmount,
       discount_percent: discountPercent > 0 ? discountPercent : undefined,
-      discount_amount: discountPercent > 0 ? originalBedTotal - totalAmount : undefined,
-      original_total: discountPercent > 0 ? originalBedTotal : undefined,
+      discount_amount: discountPercent > 0 ? originalTotal - totalAmount : undefined,
+      original_total: discountPercent > 0 ? originalTotal : undefined,
       notes: notes || undefined,
-      guests: guests.slice(0, guestIds.length).map((guest) => ({
-        full_name: guest.full_name.trim(),
-        phone: guest.phone.trim(),
-        email: guest.email.trim(),
-        locker_days: 0,
-        locker_amount: 0,
-      })),
+      guests: guests.slice(0, guestIds.length).map((guest, index) => {
+        const locker = lockerByGuest[index] ?? { locker_days: 0, locker_amount: 0 };
+        return {
+          full_name: guest.full_name.trim(),
+          phone: guest.phone.trim(),
+          email: guest.email.trim(),
+          locker_days: locker.locker_days,
+          locker_amount: locker.locker_amount,
+        };
+      }),
     };
 
     return { ok: true, confirmation: confirmationPayload };

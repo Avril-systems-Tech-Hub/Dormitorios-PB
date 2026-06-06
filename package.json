@@ -10,6 +10,7 @@
     "bootstrap:staff": "node scripts/bootstrap-staff.mjs",
     "db:apply-guest-wallets": "node scripts/apply-guest-wallets.mjs",
     "db:apply-guest-wallets-email": "APPLY_GUEST_WALLETS_ONLY=1 node scripts/apply-guest-wallets.mjs",
+    "db:apply-optional-bed": "node scripts/apply-optional-bed.mjs",
     "favicon:sync": "node scripts/sync-favicon-svg.mjs"
   },
   "dependencies": {

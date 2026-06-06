@@ -34,6 +34,24 @@ export async function getAllDiscountRules(): Promise<DiscountRule[]> {
 }
 
 /**
+ * Deactivate all currently active discount rules.
+ */
+export async function deactivateAllDiscountRules(): Promise<number> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("discount_rules")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("is_active", true)
+    .select("id");
+
+  if (error) {
+    throw new Error(`Error deactivating discount rules: ${error.message}`);
+  }
+
+  return data?.length ?? 0;
+}
+
+/**
  * Find applicable discounts for a given reservation.
  * - checkInDate: ISO date string (YYYY-MM-DD)
  * - guestPhone: optional, used for loyalty discounts

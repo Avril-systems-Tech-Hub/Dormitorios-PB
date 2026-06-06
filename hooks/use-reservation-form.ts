@@ -355,13 +355,17 @@ export function useReservationForm({
 
   const estimatedBedTotal = (bedPricePerNight: number) => guestCount * stayNights * bedPricePerNight;
 
-  const estimatedLockerTotal = () =>
-    allowLockerSelection
-      ? guests.reduce((sum, g) => {
-          if (g.add_locker !== "yes") return sum;
-          return sum + g.locker_days * LOCKER_DAILY_PRICE;
-        }, 0)
-      : 0;
+  const estimatedLockerTotal = (discountPercent = 0) => {
+    if (!allowLockerSelection) return 0;
+    const lockerPrice =
+      discountPercent > 0
+        ? Math.round(LOCKER_DAILY_PRICE * (100 - discountPercent)) / 100
+        : LOCKER_DAILY_PRICE;
+    return guests.reduce((sum, g) => {
+      if (g.add_locker !== "yes") return sum;
+      return sum + g.locker_days * lockerPrice;
+    }, 0);
+  };
 
   return {
     guestCount,

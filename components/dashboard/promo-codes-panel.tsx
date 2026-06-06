@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -30,6 +30,14 @@ export function PromoCodesPanel({ initialCodes }: PromoCodesPanelProps) {
       setCodes(data);
     }
   }, []);
+
+  useEffect(() => {
+    const handler = () => {
+      void refresh();
+    };
+    window.addEventListener("promotions-updated", handler);
+    return () => window.removeEventListener("promotions-updated", handler);
+  }, [refresh]);
 
   const handleGenerate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -65,6 +73,7 @@ export function PromoCodesPanel({ initialCodes }: PromoCodesPanelProps) {
       setSuccessMsg(`Se generaron ${generated.length} códigos para "${payload.batchName}".`);
       setIsCreating(false);
       await refresh();
+      window.dispatchEvent(new CustomEvent("promotions-updated"));
     } else {
       const data = await res.json().catch(() => ({}));
       setError(data.error || "Error al generar códigos.");
@@ -78,13 +87,19 @@ export function PromoCodesPanel({ initialCodes }: PromoCodesPanelProps) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ is_active: !code.is_active }),
     });
-    if (res.ok) await refresh();
+    if (res.ok) {
+      await refresh();
+      window.dispatchEvent(new CustomEvent("promotions-updated"));
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("¿Eliminar este código promo?")) return;
     const res = await fetch(`/api/admin/promo-codes?id=${id}`, { method: "DELETE" });
-    if (res.ok) await refresh();
+    if (res.ok) {
+      await refresh();
+      window.dispatchEvent(new CustomEvent("promotions-updated"));
+    }
   };
 
   const copyCode = (code: string) => {

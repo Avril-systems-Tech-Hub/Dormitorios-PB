@@ -248,6 +248,24 @@ export async function togglePromoCodeActive(codeId: string, isActive: boolean): 
 }
 
 /**
+ * Deactivate all currently active promo codes.
+ */
+export async function deactivateAllPromoCodes(): Promise<number> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("promo_codes")
+    .update({ is_active: false })
+    .eq("is_active", true)
+    .select("id");
+
+  if (error) {
+    throw new Error(`Error deactivating promo codes: ${error.message}`);
+  }
+
+  return data?.length ?? 0;
+}
+
+/**
  * Get unique batch names for filtering.
  */
 export async function getPromoCodeBatches(): Promise<string[]> {

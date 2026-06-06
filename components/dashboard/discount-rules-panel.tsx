@@ -25,6 +25,14 @@ export function DiscountRulesPanel({ initialRules }: DiscountRulesPanelProps) {
     }
   }, []);
 
+  useEffect(() => {
+    const handler = () => {
+      void refresh();
+    };
+    window.addEventListener("promotions-updated", handler);
+    return () => window.removeEventListener("promotions-updated", handler);
+  }, [refresh]);
+
   const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSaving(true);
@@ -61,6 +69,7 @@ export function DiscountRulesPanel({ initialRules }: DiscountRulesPanelProps) {
       setEditing(null);
       setIsCreating(false);
       await refresh();
+      window.dispatchEvent(new CustomEvent("promotions-updated"));
     } else {
       const data = await res.json().catch(() => ({}));
       setError(data.error || "Error al guardar.");
@@ -74,13 +83,19 @@ export function DiscountRulesPanel({ initialRules }: DiscountRulesPanelProps) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...rule, is_active: !rule.is_active }),
     });
-    if (res.ok) await refresh();
+    if (res.ok) {
+      await refresh();
+      window.dispatchEvent(new CustomEvent("promotions-updated"));
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("¿Eliminar esta regla de descuento?")) return;
     const res = await fetch(`/api/admin/discount-rules?id=${id}`, { method: "DELETE" });
-    if (res.ok) await refresh();
+    if (res.ok) {
+      await refresh();
+      window.dispatchEvent(new CustomEvent("promotions-updated"));
+    }
   };
 
   return (

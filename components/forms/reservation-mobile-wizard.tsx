@@ -8,7 +8,7 @@ import { ReservationConfirmation } from "@/components/forms/reservation-confirma
 import { ReservationGuestFields } from "@/components/forms/reservation-guest-fields";
 import { NIGHTLY_PRICE_MXN, UBICACION_SURFACE_CLASS } from "@/components/landing/constants";
 import { DateRangeCalendar } from "@/components/ui/date-range-calendar";
-import { useReservationForm, validateGuestRow } from "@/hooks/use-reservation-form";
+import { useReservationForm, validateGuestRow, LOCKER_DAILY_PRICE } from "@/hooks/use-reservation-form";
 import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
 import { formatReservationDate } from "@/lib/guest-reservation-confirmation";
 
@@ -70,6 +70,7 @@ export function ReservationWizard({ open, onOpenChange, action }: ReservationWiz
   const form = useReservationForm({
     action,
     onConfirmed: (data) => setConfirmation(data),
+    allowLockerSelection: true,
   });
   const { resetForm } = form;
 
@@ -225,6 +226,7 @@ export function ReservationWizard({ open, onOpenChange, action }: ReservationWiz
   const progress = ((stepIndex + 1) / totalSteps) * 100;
   const additionalGuestNumber = additionalGuestIndex + 2;
   const bedTotal = form.estimatedBedTotal(NIGHTLY_PRICE_MXN);
+  const lockerTotal = form.estimatedLockerTotal();
 
   if (!mounted || !open) return null;
 
@@ -283,6 +285,7 @@ export function ReservationWizard({ open, onOpenChange, action }: ReservationWiz
               additionalGuestIndex={additionalGuestIndex}
               additionalGuestNumber={additionalGuestNumber}
               bedTotal={bedTotal}
+              lockerTotal={lockerTotal}
               stepError={stepError}
               goToStep={(stepId) => {
                 const idx = stepOrder.indexOf(stepId);
@@ -296,9 +299,10 @@ export function ReservationWizard({ open, onOpenChange, action }: ReservationWiz
       {!confirmation ? (
         <footer className="safe-area-pb-footer shrink-0 border-t border-white/10 bg-mkt-slate-deep/95 px-4 pt-3 backdrop-blur-md md:px-6">
           <div className="mx-auto w-full md:max-w-lg lg:max-w-xl">
-          {stepError ? <p className="mb-2 text-center text-xs text-red-300">{stepError}</p> : null}
-          {form.submitResult && !form.submitResult.success ? (
-            <p className="mb-2 text-center text-xs text-red-300">{form.submitResult.message}</p>
+          {(stepError || (form.submitResult && !form.submitResult.success)) ? (
+            <p className="mb-2 text-center text-xs text-red-300">
+              {stepError || form.submitResult?.message}
+            </p>
           ) : null}
           <div className="flex gap-3">
             {stepIndex > 0 ? (
@@ -349,6 +353,7 @@ function WizardStepContent({
   additionalGuestIndex,
   additionalGuestNumber,
   bedTotal,
+  lockerTotal,
   stepError,
   goToStep,
 }: {
@@ -357,6 +362,7 @@ function WizardStepContent({
   additionalGuestIndex: number;
   additionalGuestNumber: number;
   bedTotal: number;
+  lockerTotal: number;
   stepError: string | null;
   goToStep: (stepId: WizardStepId) => void;
 }) {
@@ -403,6 +409,22 @@ function WizardStepContent({
               </button>
             </div>
             <WizardStayDateFields form={form} panelClass={panelClass} />
+            <div className={panelClass}>
+              <h3 className="text-base font-semibold text-white">Locker (opcional)</h3>
+              <p className="mt-1 text-xs text-white/70">
+                Puedes reservar locker por día. El número físico se asigna en recepción.
+              </p>
+              <div className="mt-4">
+                <ReservationGuestFields
+                  guest={guest}
+                  guestIndex={0}
+                  stayNights={form.stayNights}
+                  showIdentityFields={false}
+                  showLockerFields
+                  onChange={(field, value) => form.updateGuest(0, field, value)}
+                />
+              </div>
+            </div>
           </div>
         );
       }
@@ -462,6 +484,7 @@ function WizardStepContent({
                 guestIndex={0}
                 stayNights={form.stayNights}
                 isPrincipal
+                showLockerFields
                 onChange={(field, value) => form.updateGuest(0, field, value)}
               />
             </div>
@@ -484,6 +507,7 @@ function WizardStepContent({
                 guest={guest}
                 guestIndex={guestIdx}
                 stayNights={form.stayNights}
+                showLockerFields
                 onChange={(field, value) => form.updateGuest(guestIdx, field, value)}
               />
             </div>
@@ -550,7 +574,8 @@ function WizardStepContent({
             }
           />
           <p className="mt-3 text-xs text-white/70">
-            Las camas se asignan en recepción al llegar. Si necesitas locker, solicítalo al hacer check-in.
+            Las camas se asignan en recepción al llegar. Si contrataste locker, te asignamos el número al
+            hacer check-in.
           </p>
         </div>
       );
@@ -599,6 +624,12 @@ function WizardStepContent({
                   ${bedTotal.toFixed(0)} MXN
                 </dd>
               </div>
+              {lockerTotal > 0 ? (
+                <div className="flex justify-between gap-3 border-b border-white/10 pb-3">
+                  <dt className="text-white/65">Locker</dt>
+                  <dd className="font-medium text-white">${lockerTotal.toFixed(0)} MXN</dd>
+                </div>
+              ) : null}
               {(() => {
                 const promoDiscount = form.promoCodeResult?.valid ? form.promoCodeResult.promo : null;
                 const ruleDiscount = form.applicableDiscount;
@@ -609,9 +640,13 @@ function WizardStepContent({
                     ? { percent: ruleDiscount.rule.discount_percent, reason: ruleDiscount.reason }
                     : null;
 
+                const subtotal = bedTotal + lockerTotal;
+
                 if (activeDiscount) {
-                  const subtotal = bedTotal;
-                  const disc = applyDiscount(subtotal, activeDiscount.percent);
+                  const discountedBeds = applyDiscount(bedTotal, activeDiscount.percent).finalTotal;
+                  const discountedLockers = form.estimatedLockerTotal(activeDiscount.percent);
+                  const finalTotal = discountedBeds + discountedLockers;
+                  const discountAmount = subtotal - finalTotal;
                   return (
                     <>
                       <div className="flex justify-between gap-3 border-b border-white/10 pb-3">
@@ -624,11 +659,11 @@ function WizardStepContent({
                           <br />
                           <span className="text-xs text-green-200/70">{activeDiscount.reason}</span>
                         </dt>
-                        <dd className="font-medium">-${disc.discountAmount.toFixed(0)} MXN</dd>
+                        <dd className="font-medium">-${discountAmount.toFixed(0)} MXN</dd>
                       </div>
                       <div className="flex justify-between gap-3 pt-1 text-base">
                         <dt className="font-semibold text-white">Total con descuento</dt>
-                        <dd className="font-semibold text-mkt-terracotta">${disc.finalTotal.toFixed(0)} MXN</dd>
+                        <dd className="font-semibold text-mkt-terracotta">${finalTotal.toFixed(0)} MXN</dd>
                       </div>
                     </>
                   );
@@ -637,7 +672,7 @@ function WizardStepContent({
                   <div className="flex justify-between gap-3 pt-1 text-base">
                     <dt className="font-semibold text-white">Total estimado</dt>
                     <dd className="font-semibold text-mkt-terracotta">
-                      ${bedTotal.toFixed(0)} MXN
+                      ${subtotal.toFixed(0)} MXN
                     </dd>
                   </div>
                 );
@@ -652,7 +687,7 @@ function WizardStepContent({
           <div className={panelClass}>
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-white">Huéspedes</h3>
-              <button type="button" className={editBtnClass} onClick={() => goToStep(form.guestCount > 1 ? "additional" : "principal")}>
+              <button type="button" className={editBtnClass} onClick={() => goToStep(form.recurringGuestMatched ? "returning" : form.guestCount > 1 ? "additional" : "principal")}>
                 ✏️ Editar
               </button>
             </div>
@@ -664,6 +699,12 @@ function WizardStepContent({
                   </span>
                   <p className="mt-1 font-medium">{g.full_name || "—"}</p>
                   <p className="text-xs text-white/60">{g.phone || "—"}{g.email ? ` · ${g.email}` : ""}</p>
+                  {g.add_locker === "yes" ? (
+                    <p className="mt-1 text-xs text-white/75">
+                      Locker: {g.locker_days} día{g.locker_days === 1 ? "" : "s"} · $
+                      {(g.locker_days * LOCKER_DAILY_PRICE).toFixed(0)} MXN
+                    </p>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -681,8 +722,6 @@ function WizardStepContent({
               {form.reservationData.notes || <span className="italic text-white/50">Sin notas</span>}
             </p>
           </div>
-
-          {stepError ? <p className="text-xs text-red-300">{stepError}</p> : null}
         </div>
       );
     }
