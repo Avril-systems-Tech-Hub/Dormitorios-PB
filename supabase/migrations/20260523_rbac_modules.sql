@@ -91,7 +91,7 @@ select sr.id, sm.id
 from public.system_roles sr
 cross join public.system_modules sm
 where sr.name = 'reception'
-  and sm.key in ('dashboard', 'reservations', 'folios', 'beds', 'guests', 'payments', 'shifts', 'cash_cuts')
+  and sm.key in ('dashboard', 'reservations', 'folios', 'beds', 'guests', 'payments', 'expenses', 'shifts', 'cash_cuts')
 on conflict do nothing;
 
 -- 10. Migrar profiles existentes: asignar system_role_id basado en el campo role

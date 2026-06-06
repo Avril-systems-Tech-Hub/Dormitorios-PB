@@ -5,7 +5,7 @@ import { createReservationAction } from "@/actions/operations";
 import { ReservationGuestFields } from "@/components/forms/reservation-guest-fields";
 import { Card } from "@/components/ui/card";
 import { DateRangeCalendar } from "@/components/ui/date-range-calendar";
-import { useReservationForm, LOCKER_DAILY_PRICE } from "@/hooks/use-reservation-form";
+import { useReservationForm } from "@/hooks/use-reservation-form";
 
 const NIGHTLY_RATE = 120;
 
@@ -14,12 +14,10 @@ export function ReceptionReservationPanel() {
     action: createReservationAction,
     reservationSource: "cashier_counter",
     returnTo: "/dashboard",
-    allowLockerSelection: true,
   });
   const [expanded, setExpanded] = useState(false);
 
   const bedTotal = form.estimatedBedTotal(NIGHTLY_RATE);
-  const lockerTotal = form.estimatedLockerTotal();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,8 +33,8 @@ export function ReceptionReservationPanel() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h2 className="text-base font-semibold text-text-main sm:text-lg">Nueva reservación (recepción)</h2>
-          <p className="mt-1 text-sm text-text-muted">
-            Registra huéspedes con cama y locker por persona. El locker puede quedar pendiente hasta asignar número.
+          <p className="text-sm text-text-muted">
+            Registra huéspedes y fechas. La cama y el locker se asignan en reservas antes de cobrar.
           </p>
         </div>
         <button
@@ -104,7 +102,6 @@ export function ReceptionReservationPanel() {
                   stayNights={form.stayNights}
                   isPrincipal={index === 0}
                   variant="dashboard"
-                  showLockerFields
                   onChange={(field, value) => form.updateGuest(index, field, value)}
                 />
               </div>
@@ -118,11 +115,7 @@ export function ReceptionReservationPanel() {
             onChange={(e) => form.setReservationData((prev) => ({ ...prev, notes: e.target.value }))}
           />
 
-          <p className="text-sm text-white/75">
-            Estimado: ${bedTotal.toFixed(0)} camas
-            {lockerTotal > 0 ? ` + $${lockerTotal.toFixed(0)} lockers (${LOCKER_DAILY_PRICE}/día)` : ""} = $
-            {(bedTotal + lockerTotal).toFixed(0)} MXN
-          </p>
+          <p className="text-sm text-white/75">Estimado camas: ${bedTotal.toFixed(0)} MXN</p>
 
           {form.submitResult && !form.submitResult.success ? (
             <p className="text-sm text-red-300">{form.submitResult.message}</p>

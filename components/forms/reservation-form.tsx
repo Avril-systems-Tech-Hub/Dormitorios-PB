@@ -352,7 +352,7 @@ export function ReservationForm({ action, onConfirmed, beds: _beds, recurringGue
           onChange={(e) => form.setReservationData((prev) => ({ ...prev, notes: e.target.value }))}
         />
         <p className="mt-3 text-xs text-white/70">
-          Las camas serán asignadas automáticamente al registrar tu reservación. Si necesitas locker, solicítalo en recepción al llegar.
+          Las camas se asignan en recepción al llegar. Si necesitas locker, solicítalo al hacer check-in.
         </p>
 
         {form.submitResult && !form.submitResult.success && (

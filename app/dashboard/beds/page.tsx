@@ -18,7 +18,7 @@ export default async function BedsPage({
   const params = await searchParams;
   const searchQuery = (params.q ?? params.folio)?.trim() ?? "";
   const profile = await getSessionProfile();
-  const isAdmin = profile.role === "admin";
+  const canManageBedStatus = profile.role === "admin" || profile.role === "reception";
 
   const admin = createAdminClient();
 
@@ -54,7 +54,7 @@ export default async function BedsPage({
         <h2 className="text-lg font-semibold text-text-main">Mapa de 60 camas</h2>
         <p className="mt-1 text-sm text-text-muted">
           Misma asignación que en Reservas (folio, huésped, locker). Ocupada = en casa hoy; Asignada = reserva activa en sistema.
-          {isAdmin ? " Como admin puedes bloquear o desbloquear camas en cada tarjeta." : null}
+          {canManageBedStatus ? " Puedes bloquear o desbloquear camas en cada tarjeta." : null}
         </p>
         <div className="mt-3">
           <Suspense fallback={null}>
@@ -109,7 +109,7 @@ export default async function BedsPage({
               ) : (
                 <Badge variant="success" className="mt-2">Libre</Badge>
               )}
-              {isAdmin ? (
+              {canManageBedStatus ? (
                 <BedStatusToggle
                   bedId={bed.id}
                   bedNumber={bed.bed_number}

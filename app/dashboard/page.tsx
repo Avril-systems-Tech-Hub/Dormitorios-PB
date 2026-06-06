@@ -1,12 +1,11 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { ActiveReservationsPanel } from "@/components/dashboard/active-reservations-panel";
+import { ReceptionOperationsSummary } from "@/components/dashboard/reception-operations-summary";
 import { BedSummaryCard } from "@/components/dashboard/bed-summary-card";
 import { FolioSummaryCard } from "@/components/dashboard/folio-summary-card";
 import { buildBedOccupancyMap } from "@/lib/bed-occupancy";
 import { computeBedSummaryCounts, parseBedSummaryFilter } from "@/lib/bed-summary";
 import { ReceptionReservationPanel } from "@/components/dashboard/reception-reservation-panel";
-import { ExpenseRegisterPanel } from "@/components/dashboard/expense-register-panel";
 import { FinanceResultCard } from "@/components/dashboard/finance-result-card";
 import { ReservationsFinanceChart } from "@/components/dashboard/reservations-finance-chart";
 import { Card } from "@/components/ui/card";
@@ -55,8 +54,7 @@ export default async function DashboardPage({
     return (
       <div className="min-w-0 space-y-4">
         <ReceptionReservationPanel />
-        <ActiveReservationsPanel />
-        <ExpenseRegisterPanel returnTo="/dashboard" />
+        <ReceptionOperationsSummary />
       </div>
     );
   }

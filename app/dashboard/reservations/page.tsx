@@ -5,8 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
 import { ft } from "@/components/ui/filterable-cell";
 import { ReservationGuestsAccordion } from "@/components/ui/reservation-guests-accordion";
+import { GuestAssignmentCell } from "@/components/ui/guest-assignment-actions";
 import {
-  formatBedLockerLabel,
   ReservationNightsCell,
   sumLockerDays,
 } from "@/components/ui/reservation-nights-cell";
@@ -62,15 +62,6 @@ export default async function ReservationsPage({
       const allGuests = Array.isArray(reservation.reservation_guests) ? reservation.reservation_guests : [];
       const assignment = allGuests[0] ?? null;
       const guest = assignment?.guests as { full_name?: string; phone?: string } | undefined;
-      const bed = assignment?.beds as { bed_number?: number } | undefined;
-      const assignmentLocker = assignment as
-        | { locker_number?: number | null; locker_days?: number | null }
-        | null;
-      const bedLockerLabel = formatBedLockerLabel(
-        bed?.bed_number,
-        assignmentLocker?.locker_number,
-        assignmentLocker?.locker_days,
-      );
       const folio = reservation.folios as {
         id?: string;
         folio_code?: string;
@@ -100,7 +91,19 @@ export default async function ReservationsPage({
         ),
         guest?.full_name ?? "Sin huésped",
         guest?.phone ?? "-",
-        bedLockerLabel,
+        ft(
+          allGuests.map((g) => {
+            const bed = (Array.isArray(g.beds) ? g.beds[0] : g.beds) as { bed_number?: number } | undefined;
+            return bed?.bed_number ? `Cama ${bed.bed_number}` : "Pendiente";
+          }).join(" "),
+          <GuestAssignmentCell
+            key={`assign-${reservation.id}`}
+            guests={allGuests}
+            reservationId={reservation.id}
+            nights={reservation.nights}
+            returnTo="/dashboard/reservations"
+          />,
+        ),
         `${reservation.check_in_date} -> ${reservation.check_out_date}`,
         ft(
           nightsFilterText,

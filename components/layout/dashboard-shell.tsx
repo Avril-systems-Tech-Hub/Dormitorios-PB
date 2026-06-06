@@ -24,7 +24,7 @@ export function DashboardShell({
   children: React.ReactNode;
 }) {
   const navGroups =
-    modules && modules.length > 0 ? groupModules(modules) : groupDashboardLinks(role);
+    modules && modules.length > 0 ? groupModules(modules, role) : groupDashboardLinks(role);
 
   const showSidebar = role === "admin" || (modules !== undefined && modules.length > 0);
 

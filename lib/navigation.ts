@@ -35,7 +35,7 @@ const HREF_TO_KEY: Record<string, string> = {
 };
 
 /** Modules kept for permissions/URLs but omitted from sidebar navigation. */
-export const HIDDEN_NAV_MODULE_KEYS = new Set(["folios"]);
+export const HIDDEN_NAV_MODULE_KEYS = new Set(["folios", "users"]);
 
 /** Frontend display labels (RBAC module keys stay unchanged). */
 const NAV_LABEL_OVERRIDES: Record<string, string> = {
@@ -62,6 +62,22 @@ export const NAV_GROUP_DEFS: { label: string; keys: string[] }[] = [
   },
 ];
 
+/** Recepción: egresos en Operación; sin huéspedes (cubierto por reservas). */
+export const RECEPTION_NAV_GROUP_DEFS: { label: string; keys: string[] }[] = [
+  {
+    label: "Operación",
+    keys: ["dashboard", "reservations", "beds", "expenses"],
+  },
+  {
+    label: "Finanzas",
+    keys: ["payments", "cash_cuts"],
+  },
+  {
+    label: "Administración",
+    keys: ["shifts"],
+  },
+];
+
 export const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Resumen",
   "/dashboard/reservations": "Reservas",
@@ -83,9 +99,9 @@ const staticDashboardLinks: DashboardLink[] = [
   { href: "/dashboard", label: "Resumen", roles: ["admin", "reception"] },
   { href: "/dashboard/reservations", label: "Reservas", roles: ["admin", "reception"] },
   { href: "/dashboard/beds", label: "Camas", roles: ["admin", "reception"] },
-  { href: "/dashboard/guests", label: "Huéspedes", roles: ["admin", "reception"] },
+  { href: "/dashboard/guests", label: "Huéspedes", roles: ["admin"] },
   { href: "/dashboard/payments", label: "Ingresos", roles: ["admin", "reception"] },
-  { href: "/dashboard/expenses", label: "Egresos", roles: ["admin"] },
+  { href: "/dashboard/expenses", label: "Egresos", roles: ["admin", "reception"] },
   { href: "/dashboard/imported-records", label: "Importados", roles: ["admin"] },
   { href: "/dashboard/shifts", label: "Turnos", roles: ["admin", "reception"] },
   { href: "/dashboard/cash-cuts", label: "Cortes", roles: ["admin", "reception"] },
@@ -154,11 +170,14 @@ export function linksToNavItems(links: DashboardLink[]): NavItem[] {
     .filter((item) => !HIDDEN_NAV_MODULE_KEYS.has(item.key));
 }
 
-export function groupNavItems(items: NavItem[]): NavGroup[] {
+export function groupNavItems(
+  items: NavItem[],
+  groupDefs: { label: string; keys: string[] }[] = NAV_GROUP_DEFS,
+): NavGroup[] {
   const assigned = new Set<string>();
   const groups: NavGroup[] = [];
 
-  for (const def of NAV_GROUP_DEFS) {
+  for (const def of groupDefs) {
     const groupItems = items
       .filter((item) => def.keys.includes(item.key))
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -191,12 +210,14 @@ export function groupNavItems(items: NavItem[]): NavGroup[] {
   return groups;
 }
 
-export function groupModules(modules: SystemModule[]): NavGroup[] {
-  return groupNavItems(modulesToNavItems(modules));
+export function groupModules(modules: SystemModule[], role?: UserRole): NavGroup[] {
+  const groupDefs = role === "reception" ? RECEPTION_NAV_GROUP_DEFS : NAV_GROUP_DEFS;
+  return groupNavItems(modulesToNavItems(modules), groupDefs);
 }
 
 export function groupDashboardLinks(role: UserRole): NavGroup[] {
-  return groupNavItems(linksToNavItems(getDashboardLinks(role)));
+  const groupDefs = role === "reception" ? RECEPTION_NAV_GROUP_DEFS : NAV_GROUP_DEFS;
+  return groupNavItems(linksToNavItems(getDashboardLinks(role)), groupDefs);
 }
 
 export function getPageTitle(pathname: string, fallback = "Panel operativo"): string {

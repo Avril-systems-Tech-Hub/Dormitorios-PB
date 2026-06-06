@@ -133,6 +133,8 @@ export function UnifiedLoginView({
         <Button className="w-full" type="button" variant="ghost" onClick={switchToGuest}>
           Volver
         </Button>
+
+        <LoginHomeLink />
       </Card>
     );
   }
@@ -190,6 +192,8 @@ export function UnifiedLoginView({
             </Link>
           </p>
         </div>
+
+        <LoginHomeLink />
       </Card>
     );
   }
@@ -236,6 +240,19 @@ export function UnifiedLoginView({
           Staff
         </Button>
       </div>
+
+      <LoginHomeLink />
     </Card>
+  );
+}
+
+function LoginHomeLink() {
+  return (
+    <Link
+      href="/"
+      className="flex h-10 w-full items-center justify-center rounded-lg text-sm font-medium text-text-muted transition-colors hover:bg-surface-soft hover:text-text-main"
+    >
+      Ir a inicio
+    </Link>
   );
 }

@@ -6,7 +6,6 @@ import path from "path";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizeMexicanPhone } from "@/lib/phone";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
-import { pickAvailableBeds } from "@/actions/operations";
 
 // Función para validar que la petición realmente viene de Ycloud
 function verifySignature(bodyText: string, headerValue: string | null, secret: string) {
@@ -136,15 +135,7 @@ export async function POST(req: Request) {
 
     const supabase = createAdminClient();
 
-    // 3. Asignar camas automáticamente
-    const bedIds = await pickAvailableBeds({ count: guests.length, checkInDate: checkInStr, checkOutDate: checkOutStr });
-    
-    if (bedIds.length < guests.length) {
-      console.error("No hay suficientes camas disponibles");
-      return NextResponse.json({ success: false, reason: "No enough beds" });
-    }
-
-    // 4. Registrar/Actualizar Huéspedes en BD
+    // 3. Registrar/Actualizar Huéspedes en BD
     const guestIds: string[] = [];
     for (const g of guests) {
       const normalizedPhone = normalizeMexicanPhone(g.phone);
@@ -216,11 +207,11 @@ export async function POST(req: Request) {
         .single();
 
       if (reservation) {
-        // 6. Asignar las camas en reservation_guests
-        const guestInserts = guestIds.map((gId, i) => ({
+        // 6. Registrar huéspedes sin cama asignada
+        const guestInserts = guestIds.map((gId) => ({
           reservation_id: reservation.id,
           guest_id: gId,
-          bed_id: bedIds[i],
+          bed_id: null,
           nightly_rate: baseRate,
           discount_amount: 0,
           final_rate: baseRate,

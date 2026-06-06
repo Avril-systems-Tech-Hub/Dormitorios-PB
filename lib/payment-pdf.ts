@@ -22,6 +22,12 @@ export type PaymentPdfData = {
   discountPercent?: number;
   discountAmount?: number;
   originalTotal?: number;
+  assignments?: Array<{
+    guestName: string;
+    bedNumber: number;
+    lockerNumber?: number | null;
+    lockerDays?: number;
+  }>;
 };
 
 const METHOD_LABELS: Record<string, string> = {
@@ -33,9 +39,10 @@ const METHOD_LABELS: Record<string, string> = {
 export async function generatePaymentConfirmationPdf(
   data: PaymentPdfData,
 ): Promise<Uint8Array> {
-  // Calculamos la altura necesaria según si hay descuento
+  // Calculamos la altura necesaria según si hay descuento o asignaciones
   const hasDiscount = !!(data.discountPercent && data.discountPercent > 0);
-  const offsetY = hasDiscount ? 60 : 0;
+  const assignmentCount = data.assignments?.length ?? 0;
+  const offsetY = (hasDiscount ? 60 : 0) + assignmentCount * 16;
   const pageHeight = 620 + offsetY;
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([400, pageHeight]);
@@ -108,6 +115,22 @@ export async function generatePaymentConfirmationPdf(
 
   page.drawText("Salida:", { x: 220, y: startY - 45, size: 10, font: regularFont, color: grayText });
   page.drawText(data.checkOutDate, { x: 220, y: startY - 59, size: 12, font: boldFont, color: primaryColor });
+
+  if (data.assignments?.length) {
+    let assignY = startY - 118;
+    page.drawText("Asignaciones:", { x: 40, y: assignY, size: 10, font: boldFont, color: primaryColor });
+    for (const assignment of data.assignments) {
+      assignY -= 14;
+      let line = `${assignment.guestName}: Cama ${assignment.bedNumber}`;
+      const lockerDays = Number(assignment.lockerDays ?? 0);
+      if (lockerDays > 0) {
+        line += assignment.lockerNumber
+          ? ` · Locker ${assignment.lockerNumber} (${lockerDays}d)`
+          : ` · Locker pendiente (${lockerDays}d)`;
+      }
+      page.drawText(line, { x: 40, y: assignY, size: 9, font: regularFont, color: primaryColor });
+    }
+  }
 
   // ---- Línea separadora ----
   page.drawLine({

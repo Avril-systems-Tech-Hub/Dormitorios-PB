@@ -550,7 +550,7 @@ function WizardStepContent({
             }
           />
           <p className="mt-3 text-xs text-white/70">
-            Las camas se asignan automáticamente al confirmar. Si necesitas locker, solicítalo en recepción al llegar.
+            Las camas se asignan en recepción al llegar. Si necesitas locker, solicítalo al hacer check-in.
           </p>
         </div>
       );
@@ -753,7 +753,7 @@ function WizardStayDateFields({
           }}
         />
         <p className="mt-2 text-xs text-white/65">
-          Una cama por persona. Las camas se asignan al registrar.
+          Una cama por persona. La asignación se hace en recepción.
         </p>
       </div>
     </div>

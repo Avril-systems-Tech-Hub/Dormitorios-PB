@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { getBedsMapForChange, getBedReservations, reassignBedAction } from "@/actions/operations";
 
 type BedInfo = {
@@ -135,17 +137,20 @@ function BedCalendar({
 export function BedChangeButton({
   reservationId,
   guestId,
-  currentBed,
+  bedNumber = null,
+  returnTo = "/dashboard/reservations",
 }: {
   reservationId: string;
   guestId: string;
-  currentBed: string;
+  bedNumber?: number | null;
+  returnTo?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [beds, setBeds] = useState<BedInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
 
   // Calendar state
   const [calendarBedId, setCalendarBedId] = useState<string | null>(null);
@@ -183,44 +188,81 @@ export function BedChangeButton({
     });
   };
 
+  const hasBed = bedNumber != null && bedNumber > 0;
+
+  const closeModal = () => {
+    setOpen(false);
+    setSelected(null);
+    setCalendarBedId(null);
+  };
+
   const handleAssign = () => {
     if (!selected) return;
-    startTransition(() => {
+    startTransition(async () => {
       const fd = new FormData();
       fd.set("reservation_id", reservationId);
       fd.set("guest_id", guestId);
       fd.set("new_bed_id", selected);
-      fd.set("return_to", "/dashboard/reservations");
-      reassignBedAction(fd);
+      fd.set("return_to", returnTo);
+      const result = await reassignBedAction(fd);
+      if (result.status === "success") {
+        toast.success(result.message);
+        closeModal();
+        router.refresh();
+      } else {
+        toast.error(result.message);
+      }
     });
   };
 
   return (
     <>
-      <button
-        type="button"
-        onClick={handleOpen}
-        className="cursor-pointer text-text-main underline decoration-dotted underline-offset-2 hover:text-mkt-slate transition"
-        title="Click para cambiar cama"
-      >
-        {currentBed}
-      </button>
+      {hasBed ? (
+        <>
+          <span className="rounded-full bg-surface-soft px-2 py-0.5 text-xs font-medium text-text-main">
+            Cama {bedNumber}
+          </span>
+          <button
+            type="button"
+            onClick={handleOpen}
+            className="inline-flex h-7 items-center rounded-md border border-border-soft bg-white px-2 text-xs font-medium text-text-main transition hover:bg-surface-soft"
+          >
+            Cambiar
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={handleOpen}
+          className="inline-flex h-7 items-center rounded-md border border-brand-primary/30 bg-brand-primary/5 px-2.5 text-xs font-semibold text-brand-primary transition hover:bg-brand-primary/10"
+        >
+          Agregar cama
+        </button>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-xl bg-white p-5 shadow-lg">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-text-main">Cambiar cama</h3>
+              <h3 className="text-lg font-semibold text-text-main">
+                {hasBed ? "Cambiar cama" : "Asignar cama"}
+              </h3>
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={closeModal}
                 className="text-text-muted hover:text-text-main text-xl leading-none"
               >
                 ×
               </button>
             </div>
             <p className="mt-1 text-sm text-text-muted">
-              Selecciona una cama libre para mover al huésped. Actual: <span className="font-medium text-text-main">{currentBed}</span>
+              Selecciona una cama libre para el huésped.
+              {hasBed ? (
+                <>
+                  {" "}
+                  Actual: <span className="font-medium text-text-main">Cama {bedNumber}</span>
+                </>
+              ) : null}
             </p>
 
             {loading ? (
@@ -318,7 +360,7 @@ export function BedChangeButton({
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => setOpen(false)}
+                      onClick={closeModal}
                       className="rounded-md border border-border-soft bg-white px-3 py-1.5 text-xs font-medium text-text-main hover:bg-gray-50 transition"
                     >
                       Cancelar
@@ -329,7 +371,7 @@ export function BedChangeButton({
                       onClick={handleAssign}
                       className="rounded-md bg-mkt-slate px-3 py-1.5 text-xs font-medium text-white hover:bg-mkt-slate-deep transition disabled:opacity-40"
                     >
-                      {pending ? "Asignando..." : "Confirmar cambio"}
+                      {pending ? "Asignando..." : hasBed ? "Confirmar cambio" : "Asignar cama"}
                     </button>
                   </div>
                 </div>

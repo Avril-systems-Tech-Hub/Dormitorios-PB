@@ -23,6 +23,15 @@ import { normalizeMexicanPhone } from "@/lib/phone";
 const BASE_NIGHTLY_RATE = 120;
 const LOCKER_DAILY_PRICE = 30;
 
+export type OperationResult = {
+  status: "success" | "error";
+  message: string;
+};
+
+function actionResult(status: "success" | "error", message: string): OperationResult {
+  return { status, message };
+}
+
 function normalizePhone(value: string) {
   return normalizeMexicanPhone(value);
 }
@@ -33,6 +42,40 @@ function normalizeName(value: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
+}
+
+type ReservationGuestAssignmentRow = {
+  bed_id?: string | null;
+  locker_number?: number | null;
+  locker_days?: number | null;
+  guests?: { full_name?: string; id?: string; phone?: string } | { full_name?: string; id?: string; phone?: string }[] | null;
+  beds?: { bed_number?: number } | { bed_number?: number }[] | null;
+};
+
+function unwrapAssignmentRelation<T>(value: T | T[] | null | undefined): T | undefined {
+  if (value == null) return undefined;
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function parseReservationGuestAssignments(rows: ReservationGuestAssignmentRow[]) {
+  const assignments = rows
+    .map((row) => {
+      const guest = unwrapAssignmentRelation(row.guests);
+      const bed = unwrapAssignmentRelation(row.beds);
+      const bedNumber = bed?.bed_number;
+      if (bedNumber == null) return null;
+      return {
+        guestName: guest?.full_name ?? "Huésped",
+        bedNumber,
+        lockerNumber:
+          row.locker_number != null && Number(row.locker_number) > 0 ? Number(row.locker_number) : null,
+        lockerDays: Number(row.locker_days ?? 0),
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => row != null);
+
+  const allBedsAssigned = rows.length > 0 && rows.every((row) => row.bed_id);
+  return { assignments, allBedsAssigned };
 }
 
 function generateFolioCode() {
@@ -247,15 +290,6 @@ export async function createReservationAction(
   }
 
   const nights = dateDiffInNights(checkInDate, checkOutDate);
-  const bedIds = await pickAvailableBeds({ count: guests.length, checkInDate, checkOutDate });
-
-  if (bedIds.length < guests.length) {
-    return reservationFlowError(
-      formData,
-      returnTo,
-      `Solo hay ${bedIds.length} camas disponibles para esas fechas.`,
-    );
-  }
 
   const guestIds: string[] = [];
 
@@ -328,24 +362,11 @@ export async function createReservationAction(
       ? "cashier_counter"
       : "guest_app";
 
-  const lockerPriceWithDiscount = Math.round(LOCKER_DAILY_PRICE * (100 - discountPercent)) / 100;
-
-  const lockerByGuest = guests.slice(0, guestIds.length).map((guest) => {
-    if (reservationSource === "guest_app") {
-      return { locker_days: 0, locker_price: 0, locker_amount: 0 };
-    }
-    const wantsLocker = guest.add_locker === "yes";
-    if (!wantsLocker) {
-      return { locker_days: 0, locker_price: 0, locker_amount: 0 };
-    }
-    const requestedDays = Number(guest.locker_days ?? nights);
-    const locker_days = Math.min(Math.max(1, requestedDays), nights);
-    return {
-      locker_days,
-      locker_price: lockerPriceWithDiscount,
-      locker_amount: locker_days * lockerPriceWithDiscount,
-    };
-  });
+  const lockerByGuest = guests.slice(0, guestIds.length).map(() => ({
+    locker_days: 0,
+    locker_price: 0,
+    locker_amount: 0,
+  }));
 
   const lockerTotal = lockerByGuest.reduce((sum, row) => sum + row.locker_amount, 0);
   const totalAmount = finalRate * nights * guestIds.length + lockerTotal;
@@ -391,27 +412,15 @@ export async function createReservationAction(
 
   const guestInserts = guestIds.map((gId, i) => {
     const locker = lockerByGuest[i] ?? { locker_days: 0, locker_price: 0, locker_amount: 0 };
-    const guestInput = guests[i];
-    const lockerNumberRaw = guestInput?.locker_number;
-    const parsedLockerNumber =
-      lockerNumberRaw != null && String(lockerNumberRaw).trim() !== ""
-        ? Number(lockerNumberRaw)
-        : null;
-    const locker_number =
-      reservationSource === "guest_app"
-        ? null
-        : parsedLockerNumber != null && Number.isFinite(parsedLockerNumber) && parsedLockerNumber > 0
-          ? parsedLockerNumber
-          : null;
 
     return {
       reservation_id: reservation.id,
       guest_id: gId,
-      bed_id: bedIds[i],
+      bed_id: null,
       nightly_rate: nightlyRate,
       discount_amount: discountAmountPerNight,
       final_rate: finalRate,
-      locker_number,
+      locker_number: null,
       locker_price: locker.locker_price,
       locker_days: locker.locker_days,
       locker_amount: locker.locker_amount,
@@ -422,7 +431,7 @@ export async function createReservationAction(
   const { error: guestReservationError } = await supabase.from("reservation_guests").insert(guestInserts);
 
   if (guestReservationError) {
-    return reservationFlowError(formData, returnTo, "No se pudo guardar la asignación de camas.");
+    return reservationFlowError(formData, returnTo, "No se pudo registrar a los huéspedes.");
   }
 
   // Redeem promo code if one was used
@@ -449,7 +458,7 @@ export async function createReservationAction(
       metadata: {
         folio_code: folioCode,
         guests_count: guestIds.length,
-        auto_assign: true,
+        auto_assign: false,
         nights,
         total_amount: totalAmount,
         locker_total: lockerTotal,
@@ -468,31 +477,26 @@ export async function createReservationAction(
 
   const bedSubtotal = finalRate * nights * guestIds.length;
   const originalBedTotal = nightlyRate * nights * guestIds.length;
-  const originalLockerTotal = lockerByGuest.reduce((s, r) => s + r.locker_days * LOCKER_DAILY_PRICE, 0);
 
   if (reservationSource === "guest_app") {
-    const { data: bedsData } = await supabase.from("beds").select("id, bed_number").in("id", bedIds);
-    const bedNumberById = new Map((bedsData ?? []).map((bed) => [bed.id, bed.bed_number]));
-
     const confirmationPayload: GuestConfirmationPayload = {
       folio: folioCode,
       check_in: checkInDate,
       check_out: checkOutDate,
       nights,
       bed_subtotal: originalBedTotal,
-      locker_total: originalLockerTotal,
+      locker_total: 0,
       total_amount: totalAmount,
       discount_percent: discountPercent > 0 ? discountPercent : undefined,
-      discount_amount: discountPercent > 0 ? (originalBedTotal + originalLockerTotal) - totalAmount : undefined,
-      original_total: discountPercent > 0 ? originalBedTotal + originalLockerTotal : undefined,
+      discount_amount: discountPercent > 0 ? originalBedTotal - totalAmount : undefined,
+      original_total: discountPercent > 0 ? originalBedTotal : undefined,
       notes: notes || undefined,
-      guests: guests.slice(0, guestIds.length).map((guest, index) => ({
+      guests: guests.slice(0, guestIds.length).map((guest) => ({
         full_name: guest.full_name.trim(),
         phone: guest.phone.trim(),
         email: guest.email.trim(),
-        locker_days: lockerByGuest[index]?.locker_days ?? 0,
-        locker_amount: lockerByGuest[index] ? lockerByGuest[index].locker_days * LOCKER_DAILY_PRICE : 0,
-        bed_number: bedNumberById.get(bedIds[index]),
+        locker_days: 0,
+        locker_amount: 0,
       })),
     };
 
@@ -526,6 +530,29 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
 
   if (!folio) {
     return redirectWithResult(returnTo, "error", "No se encontró el folio.");
+  }
+
+  const { data: reservationForPayment } = await supabase
+    .from("reservations")
+    .select(
+      "id, check_in_date, check_out_date, nights, discount_percent, reservation_guests(bed_id, locker_number, locker_days, guests(id, full_name, phone), beds(bed_number))",
+    )
+    .eq("folio_id", folioId)
+    .limit(1)
+    .maybeSingle();
+
+  const guestRowsForPayment = (Array.isArray(reservationForPayment?.reservation_guests)
+    ? reservationForPayment.reservation_guests
+    : []) as ReservationGuestAssignmentRow[];
+  const { assignments: paymentAssignments, allBedsAssigned } =
+    parseReservationGuestAssignments(guestRowsForPayment);
+
+  if (!allBedsAssigned) {
+    return redirectWithResult(
+      returnTo,
+      "error",
+      "Asigna todas las camas en recepción antes de registrar el pago.",
+    );
   }
 
   const expectedTotal = await getFolioExpectedTotal(supabase, folioId);
@@ -593,25 +620,16 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
   // --- Generar PDF y enviar WhatsApp automático al huésped (solo al liquidar) ---
   if (newStatus === "liquidated") {
   try {
-    const { data: reservationForFolio } = await supabase
-      .from("reservations")
-      .select("id, check_in_date, check_out_date, nights, discount_percent, reservation_guests(locker_days, guests(id, full_name, phone))")
-      .eq("folio_id", folioId)
-      .limit(1)
-      .maybeSingle();
-
-    if (reservationForFolio) {
-      const guestRows = (Array.isArray(reservationForFolio.reservation_guests)
-        ? reservationForFolio.reservation_guests
-        : []) as Array<{
+    if (reservationForPayment) {
+      const guestRows = guestRowsForPayment as Array<{
           locker_days?: number | null;
           guests?: { id?: string; full_name?: string; phone?: string };
         }>;
       const mainGuestRow = guestRows[0];
-      const mainGuest = mainGuestRow?.guests;
-      const discPercent = Number(reservationForFolio.discount_percent ?? 0) || 0;
+      const mainGuest = unwrapAssignmentRelation(mainGuestRow?.guests);
+      const discPercent = Number(reservationForPayment.discount_percent ?? 0) || 0;
       const totalLockerDays = guestRows.reduce((sum, row) => sum + Number(row.locker_days ?? 0), 0);
-      const bedDiscount = BASE_NIGHTLY_RATE * discPercent / 100 * guestRows.length * reservationForFolio.nights;
+      const bedDiscount = BASE_NIGHTLY_RATE * discPercent / 100 * guestRows.length * reservationForPayment.nights;
       const lockerDiscount = LOCKER_DAILY_PRICE * discPercent / 100 * totalLockerDays;
       const discAmount = discPercent > 0 ? Math.round((bedDiscount + lockerDiscount) * 100) / 100 : 0;
 
@@ -626,14 +644,15 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
             method,
             balanceDue: newBalance,
             paymentStatus: newStatus,
-            checkInDate: reservationForFolio.check_in_date,
-            checkOutDate: reservationForFolio.check_out_date,
-            nights: reservationForFolio.nights,
+            checkInDate: reservationForPayment.check_in_date,
+            checkOutDate: reservationForPayment.check_out_date,
+            nights: reservationForPayment.nights,
             guestCount: guestRows.length,
             totalAmount: expectedTotal,
             discountPercent: discPercent || undefined,
             discountAmount: discAmount || undefined,
             originalTotal: discPercent > 0 ? expectedTotal + discAmount : undefined,
+            assignments: paymentAssignments,
           });
 
           // 2. Subir PDF a Supabase Storage
@@ -667,9 +686,10 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
               method,
               balanceDue: newBalance,
               paymentStatus: newStatus,
-              checkInDate: reservationForFolio.check_in_date,
-              checkOutDate: reservationForFolio.check_out_date,
-              nights: reservationForFolio.nights,
+              checkInDate: reservationForPayment.check_in_date,
+              checkOutDate: reservationForPayment.check_out_date,
+              nights: reservationForPayment.nights,
+              assignments: paymentAssignments,
             });
             const { sendWhatsAppTextMessage } = await import("@/lib/ycloud");
             waResult = await sendWhatsAppTextMessage(guestPhone, whatsappMessage);
@@ -678,7 +698,7 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
           // Registrar el mensaje en whatsapp_messages
           await supabase.from("whatsapp_messages").insert({
             guest_id: mainGuest.id ?? null,
-            reservation_id: reservationForFolio.id,
+            reservation_id: reservationForPayment.id,
             folio_id: folioId,
             status: waResult.success ? "sent" : "failed",
             phone: guestPhone,
@@ -807,8 +827,95 @@ function isExpenseConcept(value: string): value is ExpenseConcept {
   return (EXPENSE_CONCEPTS as readonly string[]).includes(value);
 }
 
+export async function openShiftAction(formData: FormData): Promise<void> {
+  const adminSupabase = createAdminClient();
+  const actor = await getActorProfile();
+  const returnTo = String(formData.get("return_to") ?? "/dashboard");
+
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return redirectWithResult(returnTo, "error", "No tienes permiso para abrir turno.");
+  }
+
+  const { data: existing } = await adminSupabase
+    .from("shifts")
+    .select("id")
+    .eq("status", "open")
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) {
+    return redirectWithResult(returnTo, "error", "Ya hay un turno abierto.");
+  }
+
+  const { data: shift, error } = await adminSupabase
+    .from("shifts")
+    .insert({ opened_by: actor.id, status: "open" })
+    .select("id")
+    .single();
+
+  if (error || !shift) {
+    return redirectWithResult(returnTo, "error", "No se pudo abrir el turno.");
+  }
+
+  await adminSupabase.from("audit_logs").insert({
+    actor_user_id: actor.id,
+    action: "shift_opened",
+    entity_type: "shift",
+    entity_id: shift.id,
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/shifts");
+  return redirectWithResult(returnTo, "success", "Turno iniciado.");
+}
+
+export async function closeShiftAction(formData: FormData): Promise<void> {
+  const adminSupabase = createAdminClient();
+  const actor = await getActorProfile();
+  const returnTo = String(formData.get("return_to") ?? "/dashboard");
+
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return redirectWithResult(returnTo, "error", "No tienes permiso para cerrar turno.");
+  }
+
+  const { data: openShift } = await adminSupabase
+    .from("shifts")
+    .select("id")
+    .eq("status", "open")
+    .order("opened_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!openShift) {
+    return redirectWithResult(returnTo, "error", "No hay un turno abierto.");
+  }
+
+  const { error } = await adminSupabase
+    .from("shifts")
+    .update({
+      status: "closed",
+      closed_by: actor.id,
+      closed_at: new Date().toISOString(),
+    })
+    .eq("id", openShift.id);
+
+  if (error) {
+    return redirectWithResult(returnTo, "error", "No se pudo cerrar el turno.");
+  }
+
+  await adminSupabase.from("audit_logs").insert({
+    actor_user_id: actor.id,
+    action: "shift_closed",
+    entity_type: "shift",
+    entity_id: openShift.id,
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/shifts");
+  return redirectWithResult(returnTo, "success", "Turno finalizado.");
+}
+
 export async function createExpenseAction(formData: FormData): Promise<void> {
-  const supabase = await createClient();
   const adminSupabase = createAdminClient();
   const actor = await getActorProfile();
   const actorId = actor?.id ?? null;
@@ -840,13 +947,17 @@ export async function createExpenseAction(formData: FormData): Promise<void> {
 
   const movementDate = getMexicoCityDateString();
 
-  const { data: openShift } = await supabase
+  const { data: openShift } = await adminSupabase
     .from("shifts")
     .select("id")
     .eq("status", "open")
     .order("opened_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  if (actor.role === "reception" && !openShift) {
+    return redirectWithResult(returnTo, "error", "Inicia turno antes de registrar egresos.");
+  }
 
   const movementId = crypto.randomUUID();
   const { error: insertError } = await adminSupabase.from("cash_movements").insert({
@@ -901,6 +1012,7 @@ export async function createExpenseAction(formData: FormData): Promise<void> {
       amount,
       method,
       movement_date: movementDate,
+      shift_id: openShift?.id ?? null,
     },
   });
 
@@ -1241,7 +1353,9 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
 
   const { data: reservationForFolio } = await supabase
     .from("reservations")
-    .select("id, check_in_date, check_out_date, nights, discount_percent, reservation_guests(locker_days, guests(id, full_name, phone))")
+    .select(
+      "id, check_in_date, check_out_date, nights, discount_percent, reservation_guests(bed_id, locker_number, locker_days, guests(id, full_name, phone), beds(bed_number))",
+    )
     .eq("folio_id", folioId)
     .limit(1)
     .maybeSingle();
@@ -1252,12 +1366,20 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
 
   const guestRows = (Array.isArray(reservationForFolio.reservation_guests)
     ? reservationForFolio.reservation_guests
-    : []) as Array<{
-      locker_days?: number | null;
-      guests?: { id?: string; full_name?: string; phone?: string };
-    }>;
+    : []) as ReservationGuestAssignmentRow[];
+  const { assignments: paymentAssignments, allBedsAssigned } =
+    parseReservationGuestAssignments(guestRows);
+
+  if (!allBedsAssigned) {
+    return redirectWithResult(
+      returnTo,
+      "error",
+      "Asigna todas las camas antes de reenviar el comprobante.",
+    );
+  }
+
   const mainGuestRow = guestRows[0];
-  const mainGuest = mainGuestRow?.guests;
+  const mainGuest = unwrapAssignmentRelation(mainGuestRow?.guests);
 
   if (!mainGuest?.phone) {
     return redirectWithResult(returnTo, "error", "No hay teléfono válido para enviar el comprobante.");
@@ -1292,6 +1414,7 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
     discountPercent: discPercent || undefined,
     discountAmount: discAmount || undefined,
     originalTotal: originalTotal || undefined,
+    assignments: paymentAssignments,
   });
 
   // Upload PDF
@@ -1327,6 +1450,7 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
       checkInDate: reservationForFolio.check_in_date,
       checkOutDate: reservationForFolio.check_out_date,
       nights: reservationForFolio.nights,
+      assignments: paymentAssignments,
     });
     const { sendWhatsAppTextMessage } = await import("@/lib/ycloud");
     waResult = await sendWhatsAppTextMessage(guestPhone, whatsappMessage);
@@ -1435,22 +1559,21 @@ export async function getBedsMapForChange() {
   }));
 }
 
-export async function reassignBedAction(formData: FormData): Promise<void> {
+export async function reassignBedAction(formData: FormData): Promise<OperationResult> {
   const supabase = createAdminClient();
   const actorId = await getActorProfileId();
-  const returnTo = String(formData.get("return_to") ?? "/dashboard/reservations");
   const reservationId = String(formData.get("reservation_id") ?? "");
   const guestId = String(formData.get("guest_id") ?? "");
   const newBedId = String(formData.get("new_bed_id") ?? "");
 
   if (!reservationId || !guestId || !newBedId) {
-    return redirectWithResult(returnTo, "error", "Faltan datos para reasignar la cama.");
+    return actionResult("error", "Faltan datos para reasignar la cama.");
   }
 
   // Verify the bed is not blocked
   const { data: bed } = await supabase.from("beds").select("id, status, bed_number").eq("id", newBedId).single();
   if (!bed || bed.status === "blocked") {
-    return redirectWithResult(returnTo, "error", "La cama seleccionada no está disponible.");
+    return actionResult("error", "La cama seleccionada no está disponible.");
   }
 
   // Verify no overlapping reservation occupies this bed
@@ -1460,7 +1583,7 @@ export async function reassignBedAction(formData: FormData): Promise<void> {
     .eq("id", reservationId)
     .single();
   if (!reservation) {
-    return redirectWithResult(returnTo, "error", "Reservación no encontrada.");
+    return actionResult("error", "Reservación no encontrada.");
   }
 
   const { data: overlappingRg } = await supabase
@@ -1472,7 +1595,7 @@ export async function reassignBedAction(formData: FormData): Promise<void> {
   for (const rg of overlappingRg ?? []) {
     const overlap = rg.reservations as unknown as { check_in_date: string; check_out_date: string };
     if (overlap.check_in_date < reservation.check_out_date && overlap.check_out_date > reservation.check_in_date) {
-      return redirectWithResult(returnTo, "error", `Cama ${bed.bed_number} está ocupada en esas fechas.`);
+      return actionResult("error", `Cama ${bed.bed_number} está ocupada en esas fechas.`);
     }
   }
 
@@ -1494,7 +1617,7 @@ export async function reassignBedAction(formData: FormData): Promise<void> {
     .eq("guest_id", guestId);
 
   if (updateError) {
-    return redirectWithResult(returnTo, "error", "No se pudo actualizar la asignación de cama.");
+    return actionResult("error", "No se pudo actualizar la asignación de cama.");
   }
 
   await supabase.from("audit_logs").insert({
@@ -1514,21 +1637,20 @@ export async function reassignBedAction(formData: FormData): Promise<void> {
   revalidatePath("/dashboard/beds");
   revalidatePath("/dashboard/folios");
 
-  return redirectWithResult(returnTo, "success", `Cama cambiada a ${bed.bed_number}.`);
+  return actionResult("success", `Cama cambiada a ${bed.bed_number}.`);
 }
 
-export async function updateBedStatusAction(formData: FormData): Promise<void> {
+export async function updateBedStatusAction(formData: FormData): Promise<OperationResult> {
   const actor = await getActorProfile();
-  const returnTo = String(formData.get("return_to") ?? "/dashboard/beds");
   const bedId = String(formData.get("bed_id") ?? "").trim();
   const nextStatus = String(formData.get("status") ?? "").trim() as BedStatus;
 
-  if (!actor || actor.role !== "admin") {
-    return redirectWithResult(returnTo, "error", "Solo administradores pueden cambiar el estado de camas.");
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return actionResult("error", "No tienes permiso para cambiar el estado de camas.");
   }
 
   if (!bedId || (nextStatus !== "available" && nextStatus !== "blocked")) {
-    return redirectWithResult(returnTo, "error", "Estado de cama inválido.");
+    return actionResult("error", "Estado de cama inválido.");
   }
 
   const supabase = createAdminClient();
@@ -1539,12 +1661,11 @@ export async function updateBedStatusAction(formData: FormData): Promise<void> {
     .maybeSingle();
 
   if (!bed) {
-    return redirectWithResult(returnTo, "error", "Cama no encontrada.");
+    return actionResult("error", "Cama no encontrada.");
   }
 
   if (bed.status === nextStatus) {
-    return redirectWithResult(
-      returnTo,
+    return actionResult(
       "success",
       `Cama ${bed.bed_number} ya está ${nextStatus === "blocked" ? "bloqueada" : "disponible"}.`,
     );
@@ -1558,7 +1679,7 @@ export async function updateBedStatusAction(formData: FormData): Promise<void> {
   const { error: updateError } = await supabase.from("beds").update(updatePayload).eq("id", bedId);
 
   if (updateError) {
-    return redirectWithResult(returnTo, "error", "No se pudo actualizar el estado de la cama.");
+    return actionResult("error", "No se pudo actualizar el estado de la cama.");
   }
 
   await supabase.from("audit_logs").insert({
@@ -1581,7 +1702,7 @@ export async function updateBedStatusAction(formData: FormData): Promise<void> {
       ? `Cama ${bed.bed_number} bloqueada.`
       : `Cama ${bed.bed_number} disponible en inventario.`;
 
-  return redirectWithResult(returnTo, "success", message);
+  return actionResult("success", message);
 }
 
 async function syncFolioTotals(supabase: ReturnType<typeof createAdminClient>, folioId: string) {
@@ -1609,10 +1730,9 @@ async function syncFolioTotals(supabase: ReturnType<typeof createAdminClient>, f
   return { expectedTotal, balanceDue, paymentStatus };
 }
 
-export async function assignLockerAction(formData: FormData): Promise<void> {
+export async function assignLockerAction(formData: FormData): Promise<OperationResult> {
   const supabase = createAdminClient();
   const actor = await getActorProfile();
-  const returnTo = String(formData.get("return_to") ?? "/dashboard/reservations");
   const reservationId = String(formData.get("reservation_id") ?? "");
   const guestId = String(formData.get("guest_id") ?? "");
   const wantsLocker = String(formData.get("add_locker") ?? "no") === "yes";
@@ -1620,11 +1740,11 @@ export async function assignLockerAction(formData: FormData): Promise<void> {
   const lockerDaysRaw = String(formData.get("locker_days") ?? "").trim();
 
   if (!actor || !["admin", "reception"].includes(actor.role)) {
-    return redirectWithResult(returnTo, "error", "No autorizado.");
+    return actionResult("error", "No autorizado.");
   }
 
   if (!reservationId || !guestId) {
-    return redirectWithResult(returnTo, "error", "Faltan datos para asignar el locker.");
+    return actionResult("error", "Faltan datos para asignar el locker.");
   }
 
   const { data: reservation } = await supabase
@@ -1634,7 +1754,7 @@ export async function assignLockerAction(formData: FormData): Promise<void> {
     .single();
 
   if (!reservation?.folio_id) {
-    return redirectWithResult(returnTo, "error", "Reservación no encontrada.");
+    return actionResult("error", "Reservación no encontrada.");
   }
 
   const { data: currentRg } = await supabase
@@ -1645,7 +1765,7 @@ export async function assignLockerAction(formData: FormData): Promise<void> {
     .single();
 
   if (!currentRg) {
-    return redirectWithResult(returnTo, "error", "Huésped no encontrado en la reservación.");
+    return actionResult("error", "Huésped no encontrado en la reservación.");
   }
 
   const nights = Math.max(1, Number(reservation.nights ?? 1));
@@ -1665,7 +1785,7 @@ export async function assignLockerAction(formData: FormData): Promise<void> {
     locker_amount = Number((locker_days * locker_price).toFixed(2));
     locker_number = lockerNumberRaw ? Number(lockerNumberRaw) : null;
     if (locker_number != null && (!Number.isFinite(locker_number) || locker_number <= 0)) {
-      return redirectWithResult(returnTo, "error", "Número de locker inválido.");
+      return actionResult("error", "Número de locker inválido.");
     }
 
     if (locker_number != null) {
@@ -1686,11 +1806,7 @@ export async function assignLockerAction(formData: FormData): Promise<void> {
           overlap.check_in_date < reservation.check_out_date &&
           overlap.check_out_date > reservation.check_in_date
         ) {
-          return redirectWithResult(
-            returnTo,
-            "error",
-            `El locker ${locker_number} ya está asignado en esas fechas.`,
-          );
+          return actionResult("error", `El locker ${locker_number} ya está asignado en esas fechas.`);
         }
       }
     }
@@ -1713,7 +1829,7 @@ export async function assignLockerAction(formData: FormData): Promise<void> {
     .eq("guest_id", guestId);
 
   if (updateError) {
-    return redirectWithResult(returnTo, "error", "No se pudo actualizar el locker.");
+    return actionResult("error", "No se pudo actualizar el locker.");
   }
 
   await syncFolioTotals(supabase, reservation.folio_id);
@@ -1742,7 +1858,7 @@ export async function assignLockerAction(formData: FormData): Promise<void> {
       : "Servicio de locker registrado (número pendiente)."
     : "Locker removido de la reservación.";
 
-  return redirectWithResult(returnTo, "success", successMessage);
+  return actionResult("success", successMessage);
 }
 
 function deriveAnomalyFlagsForRecord(record: {

@@ -287,6 +287,13 @@ export async function sendWhatsAppTemplateMessage(
   }
 }
 
+export type PaymentGuestAssignment = {
+  guestName: string;
+  bedNumber: number;
+  lockerNumber?: number | null;
+  lockerDays?: number;
+};
+
 /**
  * Genera el mensaje de confirmación de pago para un huésped.
  */
@@ -300,6 +307,7 @@ export function buildPaymentConfirmationMessage(opts: {
   checkInDate: string;
   checkOutDate: string;
   nights: number;
+  assignments?: PaymentGuestAssignment[];
 }): string {
   const methodLabels: Record<string, string> = {
     cash: "Efectivo",
@@ -328,7 +336,21 @@ export function buildPaymentConfirmationMessage(opts: {
   msg += `📅 *Salida:* ${opts.checkOutDate}\n`;
   msg += `🌙 *Noches:* ${opts.nights}\n`;
 
-  msg += `\nPresenta tu folio en recepción al llegar. ¡Gracias por elegirnos! 🏨`;
+  if (opts.assignments?.length) {
+    msg += `\n🛏️ *Asignaciones:*\n`;
+    for (const assignment of opts.assignments) {
+      msg += `• *${assignment.guestName}*: Cama ${assignment.bedNumber}`;
+      const lockerDays = Number(assignment.lockerDays ?? 0);
+      if (lockerDays > 0) {
+        msg += assignment.lockerNumber
+          ? ` · Locker ${assignment.lockerNumber} (${lockerDays} día${lockerDays === 1 ? "" : "s"})`
+          : ` · Locker pendiente (${lockerDays} día${lockerDays === 1 ? "" : "s"})`;
+      }
+      msg += `\n`;
+    }
+  }
+
+  msg += `\nConserva este comprobante. ¡Gracias por elegirnos! 🏨`;
 
   return msg;
 }

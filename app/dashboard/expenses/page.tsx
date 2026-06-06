@@ -3,8 +3,9 @@ import { ExpenseRegisterPanel } from "@/components/dashboard/expense-register-pa
 import { PaymentsExpensesComparison } from "@/components/dashboard/payments-expenses-comparison";
 import { Card } from "@/components/ui/card";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
-import { requireRole } from "@/lib/auth/guards";
+import { requireModulePermission } from "@/lib/auth/guards";
 import { getExpenseConceptLabel } from "@/lib/expense-concepts";
+import { formatOpenShiftLabel, getOpenShift, getShiftExpenseTotal } from "@/lib/open-shift";
 import {
   getDayFinanceSummary,
   getMonthFinanceSummary,
@@ -42,7 +43,7 @@ export default async function ExpensesPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireRole(["admin"]);
+  const profile = await requireModulePermission("expenses");
   const params = await searchParams;
   const { page, pageSize, q } = parsePagination(params);
   const [from, to] = getRange(page, pageSize);
@@ -50,6 +51,102 @@ export default async function ExpensesPage({
   const supabase = await createClient();
   const adminSupabase = createAdminClient();
   const today = getMexicoCityDateString();
+  const isReception = profile.role === "reception";
+
+  if (isReception) {
+    const openShift = await getOpenShift();
+    const shiftLabel = openShift ? formatOpenShiftLabel(openShift) : undefined;
+    const shiftExpenseTotal = openShift ? await getShiftExpenseTotal(openShift.id) : 0;
+
+    const { data: expenses, count } = openShift
+      ? await adminSupabase
+          .from("cash_movements")
+          .select(
+            "id,movement_date,expense_concept,concept_detail,amount,method,notes,receipt_image_path,recorded_at,profiles:responsible_profile_id(full_name)",
+            { count: "exact" },
+          )
+          .eq("direction", "expense")
+          .eq("shift_id", openShift.id)
+          .order("recorded_at", { ascending: false })
+          .range(from, to)
+      : { data: [], count: 0 };
+
+    const rows = await Promise.all(
+      (expenses ?? []).map(async (expense) => {
+        const expenseProfile = expense.profiles as { full_name?: string } | undefined;
+        let photoCell: ReactNode = "—";
+
+        if (expense.receipt_image_path) {
+          const { data } = await adminSupabase.storage
+            .from(EXPENSE_RECEIPTS_BUCKET)
+            .createSignedUrl(expense.receipt_image_path, 3600);
+          if (data?.signedUrl) {
+            photoCell = (
+              <a
+                key={`photo-${expense.id}`}
+                href={data.signedUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm text-brand-primary underline"
+              >
+                Ver foto
+              </a>
+            );
+          }
+        }
+
+        const conceptLabel = getExpenseConceptLabel(expense.expense_concept);
+        const detail =
+          expense.expense_concept === "extras" && expense.concept_detail
+            ? `${conceptLabel}: ${expense.concept_detail}`
+            : conceptLabel;
+
+        return [
+          detail,
+          `$${Number(expense.amount).toFixed(2)}`,
+          METHOD_LABELS[expense.method] ?? expense.method,
+          expenseProfile?.full_name ?? "Sin usuario",
+          expense.notes ?? "—",
+          photoCell,
+          new Date(expense.recorded_at).toLocaleString("es-MX", { timeZone: "America/Mexico_City" }),
+        ];
+      }),
+    );
+
+    return (
+      <div className="space-y-4">
+        <ExpenseRegisterPanel
+          returnTo="/dashboard/expenses"
+          hasOpenShift={Boolean(openShift)}
+          shiftLabel={shiftLabel}
+          shiftExpenseTotal={openShift ? shiftExpenseTotal : undefined}
+          defaultOpen={Boolean(openShift)}
+        />
+        <Card>
+          <h3 className="text-base font-semibold text-text-main">
+            {openShift ? "Egresos del turno activo" : "Egresos del turno"}
+          </h3>
+          <p className="mt-0.5 text-sm text-text-muted">
+            {openShift
+              ? `${shiftLabel}. Total del turno: $${shiftExpenseTotal.toFixed(2)}`
+              : "No hay turno abierto. Inicia turno en Turnos para registrar y ver egresos por turno."}
+          </p>
+          <div className="mt-3">
+            <ResponsiveTable
+              headers={["Concepto", "Monto", "Método", "Responsable", "Notas", "Foto", "Registrado"]}
+              rows={rows}
+              serverPagination={{
+                page,
+                pageSize,
+                totalCount: count ?? 0,
+              }}
+            />
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   const expensePeriod = parseReservationPeriod(params.expensePeriod);
   const selectedMonth = parseFinanceMonthKey(params.financeMonth, today);
   const monthAnchor = financeMonthKeyToAnchorDate(selectedMonth);

@@ -33,14 +33,14 @@ export function ReservationConfirmation({ data, onNewReservation }: ReservationC
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-mkt-terracotta">Confirmación</p>
           <h3 className="mt-2 text-2xl font-semibold text-white">¡Reservación registrada!</h3>
           <p className="mt-2 text-sm leading-relaxed text-white/75">
-            Al llegar, pasa por caja: con tu nombre, celular o correo te ubicamos en el sistema. No necesitas
-            memorizar el folio.
+            Tu solicitud ya está en el sistema. Al llegar, pasa por recepción: te asignamos cama (y locker si
+            lo necesitas), registramos el pago y te enviamos la confirmación con los detalles.
           </p>
           <p className="mt-4 rounded-xl bg-white/10 px-4 py-2 font-mono text-lg font-semibold tracking-wide text-white">
             Folio {data.folio}
           </p>
           <p className="mt-2 max-w-sm text-xs text-white/60">
-            Si lo tienes a la mano, también puedes dar este folio en recepción para pagar y hacer check-in.
+            Guarda tu folio o identifícate con nombre, celular o correo en recepción.
           </p>
         </div>
 
@@ -66,11 +66,15 @@ export function ReservationConfirmation({ data, onNewReservation }: ReservationC
           </dl>
         </section>
 
-        {bedNumbers.length > 0 && (
+        {bedNumbers.length > 0 ? (
           <p className="mb-4 rounded-xl border border-emerald-200/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
             {bedNumbers.length === 1
               ? `Tu cama asignada: Cama ${bedNumbers[0]}.`
               : `Camas asignadas: ${bedNumbers.map((n) => `Cama ${n}`).join(", ")}.`}
+          </p>
+        ) : (
+          <p className="mb-4 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white/80">
+            Cama y locker se confirman en recepción al completar el pago.
           </p>
         )}
 

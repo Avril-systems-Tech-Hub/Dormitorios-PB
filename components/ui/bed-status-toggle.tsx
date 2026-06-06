@@ -1,6 +1,8 @@
 "use client";
 
 import { useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { updateBedStatusAction } from "@/actions/operations";
 import type { BedStatus } from "@/types/domain";
 import { cn } from "@/lib/utils";
@@ -19,16 +21,23 @@ export function BedStatusToggle({
   returnTo = "/dashboard/beds",
 }: BedStatusToggleProps) {
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
   const isBlocked = status === "blocked";
 
   const handleClick = () => {
     const nextStatus: BedStatus = isBlocked ? "available" : "blocked";
-    startTransition(() => {
+    startTransition(async () => {
       const fd = new FormData();
       fd.set("bed_id", bedId);
       fd.set("status", nextStatus);
       fd.set("return_to", returnTo);
-      updateBedStatusAction(fd);
+      const result = await updateBedStatusAction(fd);
+      if (result.status === "success") {
+        toast.success(result.message);
+        router.refresh();
+      } else {
+        toast.error(result.message);
+      }
     });
   };
 
