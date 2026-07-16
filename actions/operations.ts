@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { createHash } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type {
@@ -15,11 +16,14 @@ import type {
 import { EXPENSE_CONCEPTS } from "@/lib/expense-concepts";
 import { getMexicoCityDateString } from "@/lib/dates";
 import { parseTsvToRows } from "@/lib/imports/tsv";
-import { sendWhatsAppTemplateMessage, sendWhatsAppDocument, buildPaymentConfirmationMessage } from "@/lib/ycloud";
+import { sendWhatsAppTemplateMessage, buildPaymentConfirmationMessage } from "@/lib/ycloud";
 import { generatePaymentConfirmationPdf } from "@/lib/payment-pdf";
 import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
-import { normalizeMexicanPhone } from "@/lib/phone";
+import { isCompleteMexicanPhone, normalizeMexicanPhone } from "@/lib/phone";
 import { escapeIlike } from "@/lib/pagination";
+import {
+  reservationBlocksDate,
+} from "@/lib/bed-occupancy";
 import {
   mapReservationToReceptionSearch,
   normalizeRecentReservationLimit,
@@ -105,16 +109,31 @@ function dateDiffInNights(checkInDate: string, checkOutDate: string) {
   return Math.max(1, nights);
 }
 
-function buildRedirectPath(basePath: string, status: "success" | "error", message: string) {
+function buildRedirectPath(
+  basePath: string,
+  status: "success" | "error",
+  message: string,
+  extraParams: Record<string, string> = {},
+) {
   const safeBase = basePath.startsWith("/") ? basePath : "/";
   const [pathWithoutHash, hash = ""] = safeBase.split("#");
   const joiner = pathWithoutHash.includes("?") ? "&" : "?";
-  const queryPart = `${pathWithoutHash}${joiner}status=${status}&message=${encodeURIComponent(message)}`;
+  const encodedExtraParams = Object.entries(extraParams)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join("&");
+  const queryPart = `${pathWithoutHash}${joiner}status=${status}&message=${encodeURIComponent(message)}${
+    encodedExtraParams ? `&${encodedExtraParams}` : ""
+  }`;
   return hash ? `${queryPart}#${hash}` : queryPart;
 }
 
-function redirectWithResult(basePath: string, status: "success" | "error", message: string): never {
-  redirect(buildRedirectPath(basePath, status, message));
+function redirectWithResult(
+  basePath: string,
+  status: "success" | "error",
+  message: string,
+  extraParams?: Record<string, string>,
+): never {
+  redirect(buildRedirectPath(basePath, status, message, extraParams));
 }
 
 function isGuestAppReservation(formData: FormData) {
@@ -208,8 +227,9 @@ export async function pickAvailableBeds({
   // 3. Get ALL non-cancelled reservations that overlap with the requested dates
   const { data: overlappingReservations } = await supabase
     .from("reservations")
-    .select("id, check_in_date, check_out_date, status")
-    .neq("status", "cancelled");
+    .select("id, check_in_date, check_out_date, status, checked_out_at")
+    .not("status", "in", '("cancelled","checked_out")')
+    .is("checked_out_at", null);
 
   // Filter in JS for date overlap (more reliable than complex Supabase filters)
   const overlappingResMap = new Map<string, { check_in_date: string; check_out_date: string }>();
@@ -246,13 +266,15 @@ export async function pickAvailableBeds({
 export async function searchGuestByPhoneAction(phoneRaw: string) {
   const phone = normalizeMexicanPhone(phoneRaw);
 
-  if (!phone) return { success: false, guest: null };
+  if (!isCompleteMexicanPhone(phone)) return { success: false, guest: null };
 
   const supabase = createAdminClient();
   const { data: guest } = await supabase
     .from("guests")
-    .select("full_name, email, phone, sex")
+    .select("id, full_name, email, phone, sex")
     .eq("normalized_phone", phone)
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (guest) {
@@ -266,9 +288,13 @@ export async function createReservationAction(
   formData: FormData,
 ): Promise<CreateGuestReservationResult | void> {
   const supabase = createAdminClient();
-  const actorId = await getActorProfileId();
+  const actor = await getActorProfile();
+  const actorId = actor?.id ?? null;
   const returnTo = String(formData.get("return_to") ?? "/");
   const requestedSource = String(formData.get("reservation_source") ?? "").trim();
+  const isStaffFlow =
+    requestedSource === "cashier_counter" &&
+    Boolean(actor && ["admin", "reception"].includes(actor.role));
 
   const guestsJson = String(formData.get("guests_data") ?? "[]");
   let guests: {
@@ -276,13 +302,15 @@ export async function createReservationAction(
     phone: string;
     email: string;
     sex: string;
+    existing_guest_id?: string;
+    match_decision?: "reuse" | "create_new";
     add_locker?: string;
     locker_days?: number;
     locker_number?: string | number;
   }[] = [];
   try {
     guests = JSON.parse(guestsJson);
-  } catch (e) {}
+  } catch {}
 
   if (!guests.length) {
     return reservationFlowError(formData, returnTo, "Se requiere al menos un huésped para crear la reserva.");
@@ -299,48 +327,101 @@ export async function createReservationAction(
   const nights = dateDiffInNights(checkInDate, checkOutDate);
 
   const guestIds: string[] = [];
+  let reusedGuestsCount = 0;
+  const requestedReuseIds = new Set<string>();
+  const preparedGuests: Array<{
+    guest: (typeof guests)[number];
+    fullName: string;
+    phone: string;
+    email: string;
+    sex: string;
+  }> = [];
 
-  for (const guest of guests) {
-    const fullName = guest.full_name.trim();
-    const phone = normalizePhone(guest.phone);
-    const email = guest.email.trim().toLowerCase();
-    const sex = guest.sex || "unknown";
+  for (let guestIndex = 0; guestIndex < guests.length; guestIndex += 1) {
+    const guest = guests[guestIndex];
+    const fullName = String(guest?.full_name ?? "").trim();
+    const phoneRaw = String(guest?.phone ?? "");
+    const phone = normalizePhone(phoneRaw);
+    const email = String(guest?.email ?? "").trim().toLowerCase();
+    const sex = String(guest?.sex ?? "unknown");
 
-    if (!fullName || !phone || !email || sex === "unknown") {
+    if (!fullName || sex === "unknown") {
       return reservationFlowError(
         formData,
         returnTo,
-        `Datos incompletos para ${fullName || "huésped"}: nombre, teléfono, correo y sexo son obligatorios.`,
+        `Datos incompletos para ${fullName || `huésped ${guestIndex + 1}`}: nombre y sexo son obligatorios.`,
+      );
+    }
+    if (!isStaffFlow && (!isCompleteMexicanPhone(phoneRaw) || !email)) {
+      return reservationFlowError(
+        formData,
+        returnTo,
+        `Datos incompletos para ${fullName}: teléfono mexicano de 10 dígitos y correo son obligatorios.`,
+      );
+    }
+    if (phoneRaw.trim() && !isCompleteMexicanPhone(phoneRaw)) {
+      return reservationFlowError(
+        formData,
+        returnTo,
+        `El teléfono de ${fullName} debe tener 10 dígitos o quedar vacío.`,
+      );
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return reservationFlowError(formData, returnTo, `El correo de ${fullName} no es válido.`);
+    }
+
+    const { data: existingGuests } = phone
+      ? await supabase
+          .from("guests")
+          .select("id")
+          .eq("normalized_phone", phone)
+          .order("created_at", { ascending: false })
+          .limit(20)
+      : { data: [] as { id: string }[] };
+    const matchingGuestIds = new Set((existingGuests ?? []).map((row) => row.id));
+
+    if (guest.match_decision === "reuse") {
+      if (!guest.existing_guest_id || !matchingGuestIds.has(guest.existing_guest_id)) {
+        return reservationFlowError(
+          formData,
+          returnTo,
+          `La coincidencia de ${fullName} cambió. Vuelve a buscar el teléfono y confirma la reutilización.`,
+        );
+      }
+      if (requestedReuseIds.has(guest.existing_guest_id)) {
+        return reservationFlowError(
+          formData,
+          returnTo,
+          `El perfil de ${fullName} ya fue asignado a otra persona en esta reservación.`,
+        );
+      }
+      requestedReuseIds.add(guest.existing_guest_id);
+    } else if (isStaffFlow && matchingGuestIds.size > 0 && guest.match_decision !== "create_new") {
+      return reservationFlowError(
+        formData,
+        returnTo,
+        `Ya existe un huésped con el teléfono de ${fullName}. Confirma si deseas reutilizarlo o crear un registro nuevo.`,
       );
     }
 
-    const { data: existingGuest } = await supabase
-      .from("guests")
-      .select("id")
-      .eq("normalized_phone", phone)
-      .maybeSingle();
+    preparedGuests.push({ guest, fullName, phone, email, sex });
+  }
 
-    if (existingGuest) {
-      guestIds.push(existingGuest.id);
-      await supabase
-        .from("guests")
-        .update({
-          full_name: fullName,
-          email,
-          sex,
-          normalized_name: normalizeName(fullName),
-        })
-        .eq("id", existingGuest.id);
+  for (const prepared of preparedGuests) {
+    const { guest, fullName, phone, email, sex } = prepared;
+    if (guest.match_decision === "reuse" && guest.existing_guest_id) {
+      guestIds.push(guest.existing_guest_id);
+      reusedGuestsCount += 1;
     } else {
       const { data: newGuest, error: guestError } = await supabase
         .from("guests")
         .insert({
           full_name: fullName,
-          phone,
-          email,
+          phone: phone || null,
+          email: email || null,
           sex,
           normalized_name: normalizeName(fullName),
-          normalized_phone: phone,
+          normalized_phone: phone || null,
         })
         .select("id")
         .single();
@@ -365,9 +446,7 @@ export async function createReservationAction(
   const finalRate = nightlyRate - discountAmountPerNight;
 
   const reservationSource =
-    requestedSource === "cashier_counter" || (actorId && requestedSource !== "guest_app")
-      ? "cashier_counter"
-      : "guest_app";
+    isStaffFlow ? "cashier_counter" : "guest_app";
 
   const lockerByGuest = guests.slice(0, guestIds.length).map((guest) => {
     const wantsLocker = guest.add_locker === "yes";
@@ -500,6 +579,9 @@ export async function createReservationAction(
       metadata: {
         folio_code: folioCode,
         guests_count: guestIds.length,
+        guests_reused: reusedGuestsCount,
+        guests_created: guestIds.length - reusedGuestsCount,
+        guest_reuse_policy: "explicit_match_no_profile_update",
         auto_assign: false,
         nights,
         total_amount: totalAmount,
@@ -550,11 +632,16 @@ export async function createReservationAction(
     return { ok: true, confirmation: confirmationPayload };
   }
 
-  return redirectWithResult(returnTo, "success", `Reserva registrada. Folio ${folioCode}.`);
+  return redirectWithResult(
+    returnTo,
+    "success",
+    `Reserva registrada. Folio ${folioCode}.`,
+    { checkin_reservation: reservation.id },
+  );
 }
 
 const RECEPTION_RESERVATION_SELECT =
-  "id, status, created_at, check_in_date, check_out_date, nights, folio_id, folios!inner(id, folio_code, payment_status, balance_due, total_amount, paid_amount), reservation_guests(guest_id, bed_id, locker_number, locker_days, guests(full_name, phone, email), beds(bed_number))";
+  "id, status, checked_out_at, created_at, check_in_date, check_out_date, nights, notes, folio_id, folios!inner(id, folio_code, payment_status, balance_due, total_amount, paid_amount), reservation_guests(id, guest_id, bed_id, locker_number, locker_days, guests(full_name, phone, email), beds(bed_number))";
 
 const RECENT_RECEPTION_RESERVATIONS_LIMIT = 20;
 
@@ -565,7 +652,8 @@ async function fetchRecentReceptionReservations(
   const { data } = await supabase
     .from("reservations")
     .select(RECEPTION_RESERVATION_SELECT)
-    .neq("status", "cancelled")
+    .not("status", "in", '("cancelled","checked_out")')
+    .is("checked_out_at", null)
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -577,6 +665,8 @@ async function fetchRecentReceptionReservations(
 export async function getRecentReceptionReservations(
   limit = RECENT_RECEPTION_RESERVATIONS_LIMIT,
 ): Promise<ReceptionSearchResult[]> {
+  const actor = await getActorProfile();
+  if (!actor || !["admin", "reception"].includes(actor.role)) return [];
   const supabase = createAdminClient();
   return fetchRecentReceptionReservations(supabase, limit);
 }
@@ -585,6 +675,7 @@ type PaymentCoreInput = {
   folioId: string;
   amount: number;
   method: PaymentMethod;
+  effectiveDate: string;
   notes: string;
   isOverride?: boolean;
   overrideReason?: string;
@@ -604,12 +695,29 @@ type PaymentCoreFailure = { ok: false; message: string };
 
 async function registerPaymentCore(input: PaymentCoreInput): Promise<PaymentCoreSuccess | PaymentCoreFailure> {
   const supabase = createAdminClient();
+  const userSupabase = await createClient();
   const actor = await getActorProfile();
-  const actorId = actor?.id ?? null;
-  const { folioId, amount, method, notes, isOverride = false, overrideReason = "" } = input;
+  const {
+    folioId,
+    amount,
+    method,
+    effectiveDate,
+    notes,
+    isOverride = false,
+    overrideReason = "",
+  } = input;
 
-  if (!folioId || amount <= 0) {
-    return { ok: false, message: "Folio y monto son obligatorios." };
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return { ok: false, message: "No tienes permiso para registrar cobros." };
+  }
+  if (!folioId || amount <= 0 || !effectiveDate) {
+    return { ok: false, message: "Folio, monto y fecha efectiva son obligatorios." };
+  }
+  if (!["cash", "transfer", "card"].includes(method)) {
+    return { ok: false, message: "Método de pago inválido." };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate) || effectiveDate > getMexicoCityDateString()) {
+    return { ok: false, message: "La fecha efectiva no puede estar en el futuro." };
   }
 
   const { data: folio } = await supabase
@@ -625,7 +733,7 @@ async function registerPaymentCore(input: PaymentCoreInput): Promise<PaymentCore
   const { data: reservationForPayment } = await supabase
     .from("reservations")
     .select(
-      "id, check_in_date, check_out_date, nights, discount_percent, reservation_guests(bed_id, locker_number, locker_days, guests(id, full_name, phone), beds(bed_number))",
+      "id, status, checked_out_at, is_historical, check_in_date, check_out_date, nights, discount_percent, reservation_guests(bed_id, locker_number, locker_days, guests(id, full_name, phone), beds(bed_number))",
     )
     .eq("folio_id", folioId)
     .limit(1)
@@ -637,73 +745,41 @@ async function registerPaymentCore(input: PaymentCoreInput): Promise<PaymentCore
   const { assignments: paymentAssignments, allBedsAssigned } =
     parseReservationGuestAssignments(guestRowsForPayment);
 
-  if (!allBedsAssigned) {
+  const isNonOperationalStay =
+    reservationForPayment?.is_historical ||
+    reservationForPayment?.status === "checked_out" ||
+    Boolean(reservationForPayment?.checked_out_at);
+  if (!allBedsAssigned && !isNonOperationalStay) {
     return {
       ok: false,
       message: "Asigna todas las camas en recepción antes de registrar el pago.",
     };
   }
 
-  const expectedTotal = await getFolioExpectedTotal(supabase, folioId);
-  const nextPaid = Number(folio.paid_amount) + amount;
-  const paymentDifference = Number((nextPaid - expectedTotal).toFixed(2));
-  // Solo rechazar si el usuario intenta pagar MÁS del total esperado (sobrepago)
-  // Pagos parciales (diferencia negativa) son permitidos
-  if (paymentDifference > 0) {
-    const isAdmin = actor?.role === "admin";
-    if (!isAdmin || !isOverride || !overrideReason) {
-      return {
-        ok: false,
-        message: `El monto excede el total de la reservación por $${paymentDifference.toFixed(2)}. Monto máximo: $${(expectedTotal - Number(folio.paid_amount)).toFixed(2)}.`,
-      };
-    }
-  }
-
-  const newPaidAmount = Number(folio.paid_amount) + amount;
-  const newBalance = Math.max(0, expectedTotal - newPaidAmount);
-  const newStatus = newBalance === 0 ? "liquidated" : "partial";
-
-  const paymentType = newStatus === "liquidated" ? "settlement" : "advance";
-  await supabase.from("payments").insert({
-    folio_id: folioId,
-    amount,
-    method,
-    payment_type: paymentType,
-    received_by: actorId,
-    notes,
-  });
-
-  await supabase
-    .from("folios")
-    .update({
-      total_amount: expectedTotal,
-      paid_amount: newPaidAmount,
-      balance_due: newBalance,
-      payment_status: newStatus,
-    })
-    .eq("id", folioId);
-
-  if (newStatus === "liquidated") {
-    await supabase.from("reservations").update({ status: "confirmed" }).eq("folio_id", folioId);
-  }
-
-  await supabase.from("audit_logs").insert({
-    actor_user_id: actorId,
-    action: "payment_registered",
-    entity_type: "folio",
-    entity_id: folioId,
-    metadata: {
-      folio_code: folio.folio_code,
-      amount,
-      method,
-      paid_amount: newPaidAmount,
-      balance_due: newBalance,
-      expected_total: expectedTotal,
-      payment_difference: paymentDifference,
-      admin_override: isOverride,
-      override_reason: overrideReason || null,
+  const { data: paymentRows, error: paymentError } = await userSupabase.rpc(
+    "register_folio_payment",
+    {
+      p_folio_id: folioId,
+      p_amount: amount,
+      p_method: method,
+      p_effective_date: effectiveDate,
+      p_notes: notes || null,
+      p_admin_override: isOverride,
+      p_override_reason: overrideReason || null,
     },
-  });
+  );
+  if (paymentError) {
+    console.error("[registerPaymentCore] RPC failed:", paymentError);
+    return { ok: false, message: paymentError.message };
+  }
+  const paymentResult = Array.isArray(paymentRows) ? paymentRows[0] : paymentRows;
+  if (!paymentResult) {
+    return { ok: false, message: "No se pudo confirmar el abono." };
+  }
+
+  const expectedTotal = Number(paymentResult.expected_total);
+  const newBalance = Number(paymentResult.balance_due);
+  const newStatus = String(paymentResult.payment_status) as "liquidated" | "partial";
 
   // --- Generar PDF y enviar WhatsApp automático al huésped (solo al liquidar) ---
   let whatsappSent = false;
@@ -826,11 +902,11 @@ async function registerPaymentCore(input: PaymentCoreInput): Promise<PaymentCore
   };
 }
 
-export async function registerPaymentAction(formData: FormData): Promise<void> {
-  const returnTo = String(formData.get("return_to") ?? "/dashboard/payments");
+export async function registerPaymentResultAction(formData: FormData): Promise<OperationResult> {
   const folioId = String(formData.get("folio_id") ?? "");
   const amount = Number(formData.get("amount") ?? 0);
   const method = String(formData.get("method") ?? "cash") as PaymentMethod;
+  const effectiveDate = String(formData.get("effective_date") ?? getMexicoCityDateString());
   const notes = String(formData.get("notes") ?? "");
   const isOverride = String(formData.get("admin_override") ?? "") === "on";
   const overrideReason = String(formData.get("override_reason") ?? "").trim();
@@ -839,13 +915,14 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
     folioId,
     amount,
     method,
+    effectiveDate,
     notes,
     isOverride,
     overrideReason,
   });
 
   if (!result.ok) {
-    return redirectWithResult(returnTo, "error", result.message);
+    return actionResult("error", result.message);
   }
 
   revalidatePath("/dashboard/payments");
@@ -853,7 +930,64 @@ export async function registerPaymentAction(formData: FormData): Promise<void> {
   revalidatePath("/dashboard/reservations");
   revalidatePath("/dashboard");
 
+  return actionResult("success", result.message);
+}
+
+export async function registerPaymentAction(formData: FormData): Promise<void> {
+  const returnTo = String(formData.get("return_to") ?? "/dashboard/payments");
+  const result = await registerPaymentResultAction(formData);
+  if (result.status === "error") {
+    return redirectWithResult(returnTo, "error", result.message);
+  }
   return redirectWithResult(returnTo, "success", result.message);
+}
+
+export async function reversePaymentAction(formData: FormData): Promise<OperationResult> {
+  const actor = await getActorProfile();
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return actionResult("error", "No tienes permiso para corregir pagos.");
+  }
+
+  const paymentId = String(formData.get("payment_id") ?? "").trim();
+  const amount = Number(formData.get("amount") ?? 0);
+  const reason = String(formData.get("reason") ?? "").trim();
+  const submissionId = String(formData.get("submission_id") ?? "").trim();
+
+  if (!paymentId || amount <= 0 || reason.length < 5) {
+    return actionResult("error", "Indica un monto válido y un motivo de al menos 5 caracteres.");
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(submissionId)) {
+    return actionResult("error", "Identificador de corrección inválido. Recarga e intenta nuevamente.");
+  }
+
+  const userSupabase = await createClient();
+  const { data, error } = await userSupabase.rpc("reverse_folio_payment", {
+    p_payment_id: paymentId,
+    p_amount: amount,
+    p_reason: reason,
+    p_submission_id: submissionId,
+  });
+
+  if (error) {
+    console.error("[reversePaymentAction] RPC failed:", error);
+    return actionResult("error", error.message);
+  }
+
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result) {
+    return actionResult("error", "No se pudo confirmar la corrección.");
+  }
+
+  revalidatePath("/dashboard/payments");
+  revalidatePath("/dashboard/folios");
+  revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/cash-cuts");
+  revalidatePath("/dashboard");
+
+  return actionResult(
+    "success",
+    `Corrección de $${Number(result.corrected_amount).toFixed(2)} aplicada al folio ${result.folio_code}.`,
+  );
 }
 
 export async function receptionReservationPaymentAction(formData: FormData): Promise<void> {
@@ -900,6 +1034,10 @@ export async function receptionReservationPaymentAction(formData: FormData): Pro
   paymentFormData.set("folio_id", folioId);
   paymentFormData.set("amount", String(amount));
   paymentFormData.set("method", method);
+  paymentFormData.set(
+    "effective_date",
+    String(formData.get("effective_date") ?? getMexicoCityDateString()),
+  );
   paymentFormData.set(
     "notes",
     notes || `Pago registrado desde dashboard ${actor.role === "admin" ? "admin" : "recepción"}.`,
@@ -962,11 +1100,12 @@ export async function openShiftAction(formData: FormData): Promise<void> {
     .from("shifts")
     .select("id")
     .eq("status", "open")
+    .eq("opened_by", actor.id)
     .limit(1)
     .maybeSingle();
 
   if (existing) {
-    return redirectWithResult(returnTo, "error", "Ya hay un turno abierto.");
+    return redirectWithResult(returnTo, "error", "Ya tienes un turno abierto.");
   }
 
   const { data: shift, error } = await adminSupabase
@@ -1004,6 +1143,7 @@ export async function closeShiftAction(formData: FormData): Promise<void> {
     .from("shifts")
     .select("id")
     .eq("status", "open")
+    .eq("opened_by", actor.id)
     .order("opened_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -1037,34 +1177,71 @@ export async function closeShiftAction(formData: FormData): Promise<void> {
   return redirectWithResult(returnTo, "success", "Turno finalizado.");
 }
 
-export async function createExpenseAction(formData: FormData): Promise<void> {
+const MAX_EXPENSE_RECEIPT_BYTES = 9 * 1024 * 1024;
+const EXPENSE_RECEIPT_MIME_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/heic": "heic",
+  "image/heif": "heif",
+};
+
+export type CreateExpenseResult = {
+  status: "success" | "partial" | "error";
+  message: string;
+  movementId?: string;
+  amount?: number;
+  expenseConcept?: ExpenseConcept;
+  evidence?: "saved" | "not_provided" | "failed";
+};
+
+function expenseError(message: string): CreateExpenseResult {
+  return { status: "error", message };
+}
+
+export async function createExpenseResultAction(formData: FormData): Promise<CreateExpenseResult> {
   const adminSupabase = createAdminClient();
   const actor = await getActorProfile();
   const actorId = actor?.id ?? null;
 
   if (!actor || !["admin", "reception"].includes(actor.role)) {
-    return redirectWithResult("/dashboard", "error", "No tienes permiso para registrar gastos.");
+    return expenseError("No tienes permiso para registrar gastos.");
   }
 
-  const returnTo = String(formData.get("return_to") ?? "/dashboard");
   const expenseConcept = String(formData.get("expense_concept") ?? "");
   const conceptDetail = String(formData.get("concept_detail") ?? "").trim();
   const amount = Number(formData.get("amount") ?? 0);
   const method = String(formData.get("method") ?? "cash") as PaymentMethod;
   const notes = String(formData.get("notes") ?? "").trim();
   const receiptFile = formData.get("receipt_image");
+  let receiptBuffer: Buffer | null = null;
+  const requestedMovementId = String(formData.get("expense_submission_id") ?? "").trim();
+  const movementId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    requestedMovementId,
+  )
+    ? requestedMovementId
+    : crypto.randomUUID();
 
   if (!isExpenseConcept(expenseConcept)) {
-    return redirectWithResult(returnTo, "error", "Selecciona un concepto de gasto válido.");
+    return expenseError("Selecciona un concepto de gasto válido.");
   }
   if (amount <= 0 || Number.isNaN(amount)) {
-    return redirectWithResult(returnTo, "error", "El monto debe ser mayor a cero.");
+    return expenseError("El monto debe ser mayor a cero.");
   }
   if (expenseConcept === "extras" && conceptDetail.length < 3) {
-    return redirectWithResult(returnTo, "error", "Para extras, describe el gasto (mínimo 3 caracteres).");
+    return expenseError("Para extras, describe el gasto (mínimo 3 caracteres).");
   }
   if (!["cash", "transfer", "card"].includes(method)) {
-    return redirectWithResult(returnTo, "error", "Método de pago no válido.");
+    return expenseError("Método de pago no válido.");
+  }
+  if (receiptFile instanceof File && receiptFile.size > 0) {
+    if (receiptFile.size > MAX_EXPENSE_RECEIPT_BYTES) {
+      return expenseError("La evidencia supera el máximo permitido de 9 MB.");
+    }
+    if (!EXPENSE_RECEIPT_MIME_EXTENSIONS[receiptFile.type]) {
+      return expenseError("La evidencia debe ser una imagen JPG, PNG, WebP, HEIC o HEIF.");
+    }
+    receiptBuffer = Buffer.from(await receiptFile.arrayBuffer());
   }
 
   const movementDate = getMexicoCityDateString();
@@ -1073,15 +1250,42 @@ export async function createExpenseAction(formData: FormData): Promise<void> {
     .from("shifts")
     .select("id")
     .eq("status", "open")
+    .eq("opened_by", actor.id)
     .order("opened_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  if (actor.role === "reception" && !openShift) {
-    return redirectWithResult(returnTo, "error", "Inicia turno antes de registrar egresos.");
+  if (!openShift) {
+    return expenseError("Inicia tu propio turno antes de registrar egresos.");
   }
 
-  const movementId = crypto.randomUUID();
+  const receiptHash = receiptBuffer
+    ? createHash("sha256").update(receiptBuffer).digest("hex")
+    : null;
+  const idempotencyPayloadHash = createHash("sha256")
+    .update(
+      JSON.stringify({
+        movementDate,
+        responsibleProfileId: actorId,
+        direction: "expense",
+        category: "gasto_operativo",
+        expenseConcept,
+        conceptDetail: expenseConcept === "extras" ? conceptDetail : null,
+        amount,
+        method,
+        notes: notes || null,
+        shiftId: openShift?.id ?? null,
+        receipt: receiptBuffer
+          ? {
+              sha256: receiptHash,
+              type: receiptFile instanceof File ? receiptFile.type : null,
+              size: receiptBuffer.byteLength,
+            }
+          : null,
+      }),
+    )
+    .digest("hex");
+
   const { error: insertError } = await adminSupabase.from("cash_movements").insert({
     id: movementId,
     movement_date: movementDate,
@@ -1094,71 +1298,312 @@ export async function createExpenseAction(formData: FormData): Promise<void> {
     method,
     notes: notes || null,
     shift_id: openShift?.id ?? null,
+    idempotency_payload_hash: idempotencyPayloadHash,
   });
 
   if (insertError) {
-    console.error("[createExpenseAction] insert failed:", insertError.message, insertError);
-    return redirectWithResult(
-      returnTo,
-      "error",
-      `No se pudo registrar el gasto: ${insertError.message}`,
-    );
+    if (insertError.code !== "23505") {
+      console.error("[createExpenseResultAction] insert failed:", insertError.message, insertError);
+      return expenseError(`No se pudo registrar el gasto: ${insertError.message}`);
+    }
+
+    const { data: existingMovement } = await adminSupabase
+      .from("cash_movements")
+      .select(
+        "id, movement_date, responsible_profile_id, direction, category, expense_concept, concept_detail, amount, method, notes, shift_id, receipt_image_path, idempotency_payload_hash",
+      )
+      .eq("id", movementId)
+      .eq("direction", "expense")
+      .maybeSingle();
+    if (
+      !existingMovement ||
+      existingMovement.movement_date !== movementDate ||
+      existingMovement.responsible_profile_id !== actorId ||
+      existingMovement.direction !== "expense" ||
+      existingMovement.category !== "gasto_operativo" ||
+      Number(existingMovement.amount) !== amount ||
+      existingMovement.expense_concept !== expenseConcept ||
+      (existingMovement.concept_detail ?? null) !==
+        (expenseConcept === "extras" ? conceptDetail : null) ||
+      existingMovement.method !== method ||
+      (existingMovement.notes ?? null) !== (notes || null) ||
+      (existingMovement.shift_id ?? null) !== (openShift?.id ?? null) ||
+      existingMovement.idempotency_payload_hash !== idempotencyPayloadHash
+    ) {
+      return expenseError("Este envío ya fue procesado con datos diferentes. Inicia un registro nuevo.");
+    }
+    if (existingMovement.receipt_image_path) {
+      return {
+        status: "success",
+        message: "El gasto y su evidencia ya estaban guardados.",
+        movementId,
+        amount,
+        expenseConcept,
+        evidence: "saved",
+      };
+    }
   }
+
+  if (!insertError) {
+    await adminSupabase.from("audit_logs").insert({
+      actor_user_id: actorId,
+      action: "expense_created",
+      entity_type: "cash_movement",
+      entity_id: movementId,
+      metadata: {
+        expense_concept: expenseConcept,
+        concept_detail: expenseConcept === "extras" ? conceptDetail : null,
+        amount,
+        method,
+        movement_date: movementDate,
+        shift_id: openShift?.id ?? null,
+      },
+    });
+  }
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/cash-cuts");
+  revalidatePath("/dashboard/expenses");
 
   const movement = { id: movementId };
 
   if (receiptFile instanceof File && receiptFile.size > 0) {
-    await adminSupabase.storage.createBucket(EXPENSE_RECEIPTS_BUCKET, { public: false }).catch(() => {});
-    const extension = receiptFile.name.split(".").pop()?.toLowerCase() || "jpg";
+    const { error: bucketError } = await adminSupabase.storage.createBucket(EXPENSE_RECEIPTS_BUCKET, {
+      public: false,
+    });
+    if (bucketError && !/(already exists|duplicate)/i.test(bucketError.message)) {
+      console.error("[createExpenseResultAction] bucket failed:", bucketError.message, bucketError);
+      return {
+        status: "partial",
+        message: "El gasto se guardó, pero no se pudo preparar el almacenamiento de la evidencia.",
+        movementId,
+        amount,
+        expenseConcept,
+        evidence: "failed",
+      };
+    }
+    const extension = EXPENSE_RECEIPT_MIME_EXTENSIONS[receiptFile.type];
     const objectPath = `${movementDate}/${movement.id}.${extension}`;
-    const fileBuffer = Buffer.from(await receiptFile.arrayBuffer());
-    const contentType = receiptFile.type || "image/jpeg";
+    const fileBuffer = receiptBuffer;
+    if (!fileBuffer) {
+      return expenseError("No se pudo leer la evidencia.");
+    }
 
     const { error: uploadError } = await adminSupabase.storage
       .from(EXPENSE_RECEIPTS_BUCKET)
-      .upload(objectPath, fileBuffer, { contentType, upsert: true });
+      .upload(objectPath, fileBuffer, { contentType: receiptFile.type, upsert: true });
 
-    if (!uploadError) {
-      await adminSupabase.from("cash_movements").update({ receipt_image_path: objectPath }).eq("id", movement.id);
+    if (uploadError) {
+      console.error("[createExpenseResultAction] upload failed:", uploadError.message, uploadError);
+      return {
+        status: "partial",
+        message: "El gasto se guardó, pero la evidencia no pudo subirse. Puedes reintentar.",
+        movementId,
+        amount,
+        expenseConcept,
+        evidence: "failed",
+      };
+    }
+
+    const { data: updatedMovement, error: updateError } = await adminSupabase
+      .from("cash_movements")
+      .update({ receipt_image_path: objectPath })
+      .eq("id", movement.id)
+      .select("id")
+      .maybeSingle();
+    if (updateError || !updatedMovement) {
+      console.error(
+        "[createExpenseResultAction] receipt update failed:",
+        updateError?.message ?? "movement not updated",
+        updateError,
+      );
+      const { error: cleanupError } = await adminSupabase.storage
+        .from(EXPENSE_RECEIPTS_BUCKET)
+        .remove([objectPath]);
+      if (cleanupError) {
+        console.error("[createExpenseResultAction] receipt cleanup failed:", cleanupError.message, cleanupError);
+      }
+      return {
+        status: "partial",
+        message: "El gasto se guardó, pero no se pudo vincular la evidencia. Puedes reintentar.",
+        movementId,
+        amount,
+        expenseConcept,
+        evidence: "failed",
+      };
     }
   }
 
-  await adminSupabase.from("audit_logs").insert({
-    actor_user_id: actorId,
-    action: "expense_created",
-    entity_type: "cash_movement",
-    entity_id: movement.id,
-    metadata: {
-      expense_concept: expenseConcept,
-      concept_detail: expenseConcept === "extras" ? conceptDetail : null,
-      amount,
-      method,
-      movement_date: movementDate,
-      shift_id: openShift?.id ?? null,
-    },
+  return {
+    status: "success",
+    message:
+      receiptFile instanceof File && receiptFile.size > 0
+        ? "Gasto y evidencia guardados correctamente."
+        : "Gasto guardado correctamente sin evidencia.",
+    movementId,
+    amount,
+    expenseConcept,
+    evidence: receiptFile instanceof File && receiptFile.size > 0 ? "saved" : "not_provided",
+  };
+}
+
+export async function retryExpenseReceiptAction(formData: FormData): Promise<CreateExpenseResult> {
+  const adminSupabase = createAdminClient();
+  const actor = await getActorProfile();
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return expenseError("No tienes permiso para adjuntar esta evidencia.");
+  }
+
+  const movementId = String(formData.get("movement_id") ?? "").trim();
+  const receiptFile = formData.get("receipt_image");
+  if (!movementId || !(receiptFile instanceof File) || receiptFile.size <= 0) {
+    return expenseError("Selecciona la evidencia que deseas reintentar.");
+  }
+  if (receiptFile.size > MAX_EXPENSE_RECEIPT_BYTES) {
+    return expenseError("La evidencia supera el máximo permitido de 9 MB.");
+  }
+  const extension = EXPENSE_RECEIPT_MIME_EXTENSIONS[receiptFile.type];
+  if (!extension) {
+    return expenseError("La evidencia debe ser una imagen JPG, PNG, WebP, HEIC o HEIF.");
+  }
+
+  const { data: movement } = await adminSupabase
+    .from("cash_movements")
+    .select("id,movement_date,direction,responsible_profile_id,receipt_image_path,amount,expense_concept")
+    .eq("id", movementId)
+    .eq("direction", "expense")
+    .maybeSingle();
+  if (!movement || movement.responsible_profile_id !== actor.id) {
+    return expenseError("No se encontró un egreso propio pendiente de evidencia.");
+  }
+  if (movement.receipt_image_path) {
+    return {
+      status: "success",
+      message: "La evidencia ya estaba guardada.",
+      movementId,
+      amount: Number(movement.amount),
+      expenseConcept: movement.expense_concept as ExpenseConcept,
+      evidence: "saved",
+    };
+  }
+
+  const { error: bucketError } = await adminSupabase.storage.createBucket(EXPENSE_RECEIPTS_BUCKET, {
+    public: false,
   });
+  if (bucketError && !/(already exists|duplicate)/i.test(bucketError.message)) {
+    return {
+      status: "partial",
+      message: "El egreso sigue guardado, pero no se pudo preparar el almacenamiento.",
+      movementId,
+      amount: Number(movement.amount),
+      expenseConcept: movement.expense_concept as ExpenseConcept,
+      evidence: "failed",
+    };
+  }
+
+  const objectPath = `${movement.movement_date}/${movement.id}.${extension}`;
+  const fileBuffer = Buffer.from(await receiptFile.arrayBuffer());
+  const { error: uploadError } = await adminSupabase.storage
+    .from(EXPENSE_RECEIPTS_BUCKET)
+    .upload(objectPath, fileBuffer, { contentType: receiptFile.type, upsert: true });
+  if (uploadError) {
+    return {
+      status: "partial",
+      message: "El reintento falló. El egreso sigue guardado.",
+      movementId,
+      amount: Number(movement.amount),
+      expenseConcept: movement.expense_concept as ExpenseConcept,
+      evidence: "failed",
+    };
+  }
+
+  const { data: updated } = await adminSupabase
+    .from("cash_movements")
+    .update({ receipt_image_path: objectPath })
+    .eq("id", movement.id)
+    .eq("responsible_profile_id", actor.id)
+    .is("receipt_image_path", null)
+    .select("id")
+    .maybeSingle();
+  if (!updated) {
+    await adminSupabase.storage.from(EXPENSE_RECEIPTS_BUCKET).remove([objectPath]);
+    return {
+      status: "partial",
+      message: "La foto subió, pero no pudo vincularse. Intenta nuevamente.",
+      movementId,
+      amount: Number(movement.amount),
+      expenseConcept: movement.expense_concept as ExpenseConcept,
+      evidence: "failed",
+    };
+  }
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/cash-cuts");
   revalidatePath("/dashboard/expenses");
-  return redirectWithResult(returnTo, "success", "Gasto registrado correctamente.");
+  return {
+    status: "success",
+    message: "Evidencia guardada correctamente.",
+    movementId,
+    amount: Number(movement.amount),
+    expenseConcept: movement.expense_concept as ExpenseConcept,
+    evidence: "saved",
+  };
+}
+
+export async function createExpenseAction(formData: FormData): Promise<void> {
+  const returnTo = String(formData.get("return_to") ?? "/dashboard");
+  const result = await createExpenseResultAction(formData);
+  return redirectWithResult(
+    returnTo,
+    result.status === "error" ? "error" : "success",
+    result.message,
+  );
 }
 
 export async function createDailyCashCutAction(): Promise<void> {
   const supabase = createAdminClient();
-  const actorId = await getActorProfileId();
-  const today = new Date().toISOString().slice(0, 10);
+  const actor = await getActorProfile();
+  const today = getMexicoCityDateString();
+
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return redirectWithResult("/dashboard/cash-cuts", "error", "No tienes permiso para generar cortes.");
+  }
+
+  const { data: currentShift } = await supabase
+    .from("shifts")
+    .select("id")
+    .eq("status", "open")
+    .eq("opened_by", actor.id)
+    .order("opened_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!currentShift) {
+    return redirectWithResult(
+      "/dashboard/cash-cuts",
+      "error",
+      "Inicia tu propio turno antes de generar el corte.",
+    );
+  }
+
+  const { data: existingCut } = await supabase
+    .from("cash_cuts")
+    .select("id")
+    .eq("shift_id", currentShift.id)
+    .limit(1)
+    .maybeSingle();
+  if (existingCut) {
+    return redirectWithResult("/dashboard/cash-cuts", "error", "Este turno ya tiene un corte.");
+  }
 
   const { data: payments } = await supabase
     .from("payments")
     .select("amount, method")
-    .gte("received_at", `${today}T00:00:00`)
-    .lte("received_at", `${today}T23:59:59`);
+    .eq("shift_id", currentShift.id);
 
   const { data: movements } = await supabase
     .from("cash_movements")
     .select("amount, direction")
-    .eq("movement_date", today);
+    .eq("shift_id", currentShift.id);
 
   const totalCash = (payments ?? [])
     .filter((p) => p.method === "cash")
@@ -1181,43 +1626,14 @@ export async function createDailyCashCutAction(): Promise<void> {
   const netResult = Number((totalGuestIncome + movementIncome - totalExpenses).toFixed(2));
   const totalIncome = netResult;
 
-  const { data: liquidatedFolios } = await supabase
-    .from("folios")
-    .select("id,reservations!inner(id,reservation_source)")
-    .eq("payment_status", "liquidated")
-    .gte("created_at", `${today}T00:00:00`)
-    .lte("created_at", `${today}T23:59:59`);
-
-  let expectedIncome = 0;
-  for (const folio of liquidatedFolios ?? []) {
-    expectedIncome += await getFolioExpectedTotal(supabase, folio.id);
-  }
-  const cashierCreatedCount = (liquidatedFolios ?? []).filter((folio) => {
-    const reservation = Array.isArray(folio.reservations) ? folio.reservations[0] : folio.reservations;
-    return reservation?.reservation_source === "cashier_counter";
-  }).length;
-  const appCreatedCount = Math.max(0, (liquidatedFolios ?? []).length - cashierCreatedCount);
+  const expectedIncome = netResult;
   const actualCashCounted = totalIncome;
   const difference = Number((expectedIncome - actualCashCounted).toFixed(2));
   const leakageFlag = Math.abs(difference) > 0.009;
 
-  let { data: currentShift } = await supabase.from("shifts").select("id").eq("status", "open").order("opened_at").limit(1).maybeSingle();
-  if (!currentShift) {
-    const { data: createdShift } = await supabase
-      .from("shifts")
-      .insert({ opened_by: actorId, status: "open" })
-      .select("id")
-      .single();
-    currentShift = createdShift ?? null;
-  }
-
-  if (!currentShift) {
-    return redirectWithResult("/dashboard/cash-cuts", "error", "No se pudo abrir un turno para generar el corte.");
-  }
-
-  await supabase.from("cash_cuts").insert({
+  const { data: cashCut, error: cutError } = await supabase.from("cash_cuts").insert({
     shift_id: currentShift.id,
-    generated_by: actorId,
+    generated_by: actor.id,
     total_cash: totalCash,
     total_transfer: totalTransfer,
     total_card: totalCard,
@@ -1229,18 +1645,33 @@ export async function createDailyCashCutAction(): Promise<void> {
     actual_cash_counted: actualCashCounted,
     difference,
     leakage_flag: leakageFlag,
-    notes: `Corte diario automático ${today}`,
-  });
+    notes: `Corte del turno ${currentShift.id} · ${today}`,
+  }).select("id").single();
+  if (cutError || !cashCut) {
+    return redirectWithResult(
+      "/dashboard/cash-cuts",
+      "error",
+      cutError?.code === "23505" ? "Este turno ya tiene un corte." : "No se pudo guardar el corte.",
+    );
+  }
 
-  await supabase
+  const { error: closeError } = await supabase
     .from("shifts")
-    .update({ status: "closed", closed_by: actorId, closed_at: new Date().toISOString() })
+    .update({ status: "closed", closed_by: actor.id, closed_at: new Date().toISOString() })
     .eq("id", currentShift.id);
+  if (closeError) {
+    return redirectWithResult(
+      "/dashboard/cash-cuts",
+      "error",
+      "El corte se guardó, pero no se pudo cerrar el turno. Contacta a administración.",
+    );
+  }
 
   await supabase.from("audit_logs").insert({
-    actor_user_id: actorId,
+    actor_user_id: actor.id,
     action: "daily_cash_cut_generated",
     entity_type: "cash_cut",
+    entity_id: cashCut.id,
     metadata: {
       date: today,
       total_income: totalIncome,
@@ -1250,8 +1681,7 @@ export async function createDailyCashCutAction(): Promise<void> {
       expected_income: expectedIncome,
       difference,
       leakage_flag: leakageFlag,
-      cashier_created_count: cashierCreatedCount,
-      app_created_count: appCreatedCount,
+      shift_id: currentShift.id,
     },
   });
 
@@ -1327,6 +1757,93 @@ export async function sendWhatsAppTicketAction(formData: FormData): Promise<void
     returnTo,
     "success",
     `Ticket registrado como enviado a WhatsApp para folio ${folio.folio_code}.`,
+  );
+}
+
+export async function createHistoricalStayAction(formData: FormData): Promise<void> {
+  const returnTo = String(formData.get("return_to") ?? "/dashboard/imported-records");
+  const actor = await getActorProfile();
+  if (!actor || actor.role !== "admin") {
+    return redirectWithResult(returnTo, "error", "Solo administración puede capturar estancias históricas.");
+  }
+
+  const folioCode = String(formData.get("folio_code") ?? "").trim().toUpperCase();
+  const checkInDate = String(formData.get("check_in_date") ?? "");
+  const checkOutDate = String(formData.get("check_out_date") ?? "");
+  const totalAmount = Number(formData.get("total_amount") ?? 0);
+  const initialPayment = Number(formData.get("initial_payment") ?? 0);
+  const paymentMethod = String(formData.get("payment_method") ?? "cash") as PaymentMethod;
+  const effectiveDate = String(formData.get("effective_date") ?? "");
+  const notes = String(formData.get("notes") ?? "").trim();
+  const paymentNotes = String(formData.get("payment_notes") ?? "").trim();
+  const confirmed = String(formData.get("historical_confirmation") ?? "") === "on";
+
+  let guests: Array<{
+    full_name: string;
+    phone?: string;
+    email?: string;
+    sex?: string;
+    guest_id?: string;
+    match_decision?: "reuse" | "create_new";
+  }> = [];
+  try {
+    guests = JSON.parse(String(formData.get("guests_data") ?? "[]"));
+  } catch {
+    return redirectWithResult(returnTo, "error", "La lista de huéspedes no es válida.");
+  }
+
+  const today = getMexicoCityDateString();
+  if (!confirmed) {
+    return redirectWithResult(returnTo, "error", "Confirma que es una estancia histórica sin inventario.");
+  }
+  if (!folioCode || !checkInDate || !checkOutDate || checkOutDate <= checkInDate || checkOutDate > today) {
+    return redirectWithResult(returnTo, "error", "Revisa folio y fechas históricas; la salida debe haber ocurrido.");
+  }
+  if (!guests.length || guests.some((guest) => !String(guest.full_name ?? "").trim())) {
+    return redirectWithResult(returnTo, "error", "Captura al menos un huésped con nombre.");
+  }
+  if (guests.some((guest) => guest.phone?.trim() && !isCompleteMexicanPhone(guest.phone))) {
+    return redirectWithResult(returnTo, "error", "Los teléfonos históricos deben tener 10 dígitos.");
+  }
+  if (!Number.isFinite(totalAmount) || totalAmount < 0 || initialPayment < 0 || initialPayment > totalAmount) {
+    return redirectWithResult(returnTo, "error", "Los montos de la estancia no son válidos.");
+  }
+  if (initialPayment > 0 && (!effectiveDate || effectiveDate > today)) {
+    return redirectWithResult(returnTo, "error", "Indica una fecha efectiva válida para el pago.");
+  }
+
+  const userSupabase = await createClient();
+  const normalizedGuests = guests.map((guest) => ({
+    ...guest,
+    phone: guest.phone?.trim() ? normalizeMexicanPhone(guest.phone) : "",
+  }));
+  const { error } = await userSupabase.rpc("create_historical_stay", {
+    p_folio_code: folioCode,
+    p_check_in_date: checkInDate,
+    p_check_out_date: checkOutDate,
+    p_total_amount: totalAmount,
+    p_guests: normalizedGuests,
+    p_notes: notes || null,
+    p_initial_payment: initialPayment,
+    p_payment_method: paymentMethod,
+    p_effective_date: initialPayment > 0 ? effectiveDate : null,
+    p_payment_notes: paymentNotes || null,
+  });
+
+  if (error) {
+    console.error("[createHistoricalStayAction] RPC failed:", error);
+    const message = error.code === "23505" ? "Ese folio ya existe." : error.message;
+    return redirectWithResult(returnTo, "error", message);
+  }
+
+  revalidatePath("/dashboard/imported-records");
+  revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/payments");
+  revalidatePath("/dashboard/guests");
+  return redirectWithResult(
+    returnTo,
+    "success",
+    `Estancia histórica ${folioCode} guardada sin asignar cama ni bloquear inventario.`,
   );
 }
 
@@ -1619,9 +2136,10 @@ export async function getBedReservations(bedId: string) {
 
   const { data: rgRows } = await supabase
     .from("reservation_guests")
-    .select("reservation_id, reservations!inner(check_in_date, check_out_date, status, reservation_guests(guests(full_name)))")
+    .select("reservation_id, reservations!inner(check_in_date, check_out_date, status, checked_out_at, reservation_guests(guests(full_name)))")
     .eq("bed_id", bedId)
-    .neq("reservations.status", "cancelled");
+    .not("reservations.status", "in", '("cancelled","checked_out")')
+    .is("reservations.checked_out_at", null);
 
   if (!rgRows?.length) return [];
 
@@ -1654,6 +2172,7 @@ export async function getBedReservations(bedId: string) {
 
 export async function getBedsMapForChange() {
   const supabase = createAdminClient();
+  const today = getMexicoCityDateString();
 
   const { data: beds } = await supabase
     .from("beds")
@@ -1662,13 +2181,28 @@ export async function getBedsMapForChange() {
 
   const { data: rgRows } = await supabase
     .from("reservation_guests")
-    .select("bed_id, reservation_id, guests(full_name)")
+    .select(
+      "bed_id, reservation_id, guests(full_name), reservations!inner(status, checked_out_at, check_in_date, check_out_date)",
+    )
     .not("bed_id", "is", null);
 
   const bedGuestMap = new Map<string, string>();
   for (const rg of rgRows ?? []) {
-    if (rg.bed_id && !bedGuestMap.has(rg.bed_id)) {
-      const guest = rg.guests as { full_name?: string } | undefined;
+    const reservation = unwrapAssignmentRelation(rg.reservations) as
+      | {
+          status?: string;
+          checked_out_at?: string | null;
+          check_in_date?: string;
+          check_out_date?: string;
+        }
+      | undefined;
+    if (
+      rg.bed_id &&
+      reservation &&
+      reservationBlocksDate(reservation, today) &&
+      !bedGuestMap.has(rg.bed_id)
+    ) {
+      const guest = unwrapAssignmentRelation(rg.guests);
       bedGuestMap.set(rg.bed_id, guest?.full_name ?? "Ocupada");
     }
   }
@@ -1683,7 +2217,12 @@ export async function getBedsMapForChange() {
 
 export async function reassignBedAction(formData: FormData): Promise<OperationResult> {
   const supabase = createAdminClient();
-  const actorId = await getActorProfileId();
+  const actor = await getActorProfile();
+  const actorId = actor?.id ?? null;
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return actionResult("error", "No tienes permiso para asignar camas.");
+  }
+
   const reservationId = String(formData.get("reservation_id") ?? "");
   const guestId = String(formData.get("guest_id") ?? "");
   const newBedId = String(formData.get("new_bed_id") ?? "");
@@ -1692,55 +2231,24 @@ export async function reassignBedAction(formData: FormData): Promise<OperationRe
     return actionResult("error", "Faltan datos para reasignar la cama.");
   }
 
-  // Verify the bed is not blocked
-  const { data: bed } = await supabase.from("beds").select("id, status, bed_number").eq("id", newBedId).single();
-  if (!bed || bed.status === "blocked") {
-    return actionResult("error", "La cama seleccionada no está disponible.");
+  const userSupabase = await createClient();
+  const { data: assignmentRows, error: assignmentError } = await userSupabase.rpc(
+    "reassign_reservation_guest_bed",
+    {
+      p_reservation_id: reservationId,
+      p_guest_id: guestId,
+      p_bed_id: newBedId,
+    },
+  );
+  if (assignmentError) {
+    return actionResult("error", assignmentError.message);
   }
-
-  // Verify no overlapping reservation occupies this bed
-  const { data: reservation } = await supabase
-    .from("reservations")
-    .select("check_in_date, check_out_date")
-    .eq("id", reservationId)
-    .single();
-  if (!reservation) {
-    return actionResult("error", "Reservación no encontrada.");
-  }
-
-  const { data: overlappingRg } = await supabase
-    .from("reservation_guests")
-    .select("reservation_id, reservations!inner(check_in_date, check_out_date)")
-    .eq("bed_id", newBedId)
-    .neq("reservation_id", reservationId);
-
-  for (const rg of overlappingRg ?? []) {
-    const overlap = rg.reservations as unknown as { check_in_date: string; check_out_date: string };
-    if (overlap.check_in_date < reservation.check_out_date && overlap.check_out_date > reservation.check_in_date) {
-      return actionResult("error", `Cama ${bed.bed_number} está ocupada en esas fechas.`);
-    }
-  }
-
-  // Get old bed for audit
-  const { data: currentRg } = await supabase
-    .from("reservation_guests")
-    .select("bed_id, beds(bed_number)")
-    .eq("reservation_id", reservationId)
-    .eq("guest_id", guestId)
-    .single();
-
-  const oldBedNumber = (currentRg?.beds as { bed_number?: number } | undefined)?.bed_number;
-
-  // Update the assignment
-  const { error: updateError } = await supabase
-    .from("reservation_guests")
-    .update({ bed_id: newBedId })
-    .eq("reservation_id", reservationId)
-    .eq("guest_id", guestId);
-
-  if (updateError) {
+  const assignmentResult = Array.isArray(assignmentRows) ? assignmentRows[0] : assignmentRows;
+  if (!assignmentResult) {
     return actionResult("error", "No se pudo actualizar la asignación de cama.");
   }
+  const oldBedNumber = assignmentResult.old_bed_number;
+  const newBedNumber = assignmentResult.new_bed_number;
 
   await supabase.from("audit_logs").insert({
     actor_user_id: actorId,
@@ -1750,7 +2258,7 @@ export async function reassignBedAction(formData: FormData): Promise<OperationRe
     metadata: {
       guest_id: guestId,
       old_bed: oldBedNumber ?? "Sin cama",
-      new_bed: bed.bed_number,
+      new_bed: newBedNumber,
     },
   });
 
@@ -1759,7 +2267,82 @@ export async function reassignBedAction(formData: FormData): Promise<OperationRe
   revalidatePath("/dashboard/beds");
   revalidatePath("/dashboard/folios");
 
-  return actionResult("success", `Cama cambiada a ${bed.bed_number}.`);
+  return actionResult("success", `Cama cambiada a ${newBedNumber}.`);
+}
+
+export async function registerCheckoutAction(formData: FormData): Promise<OperationResult> {
+  const actor = await getActorProfile();
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return actionResult("error", "No tienes permiso para registrar salidas.");
+  }
+
+  const reservationId = String(formData.get("reservation_id") ?? "").trim();
+  if (!reservationId) {
+    return actionResult("error", "Reservación no indicada.");
+  }
+
+  const supabase = createAdminClient();
+  const { data: reservation } = await supabase
+    .from("reservations")
+    .select("id, status, checked_out_at, check_out_date, folio_id, folios(folio_code, balance_due)")
+    .eq("id", reservationId)
+    .maybeSingle();
+
+  if (!reservation) {
+    return actionResult("error", "Reservación no encontrada.");
+  }
+  if (reservation.status === "cancelled") {
+    return actionResult("error", "Una reservación cancelada no puede registrar salida.");
+  }
+  if (reservation.checked_out_at || reservation.status === "checked_out") {
+    return actionResult("success", "La salida ya estaba registrada.");
+  }
+
+  const checkedOutAt = new Date().toISOString();
+  const { error } = await supabase
+    .from("reservations")
+    .update({
+      status: "checked_out",
+      checked_out_at: checkedOutAt,
+      checked_out_by: actor.id,
+    })
+    .eq("id", reservationId)
+    .is("checked_out_at", null);
+
+  if (error) {
+    return actionResult("error", "No se pudo registrar la salida.");
+  }
+
+  const folio = unwrapAssignmentRelation(reservation.folios) as
+    | { folio_code?: string; balance_due?: number }
+    | undefined;
+  await supabase.from("audit_logs").insert({
+    actor_user_id: actor.id,
+    action: "reservation_checked_out",
+    entity_type: "reservation",
+    entity_id: reservationId,
+    metadata: {
+      scheduled_check_out_date: reservation.check_out_date,
+      checked_out_at: checkedOutAt,
+      folio_id: reservation.folio_id,
+      folio_code: folio?.folio_code ?? null,
+      balance_due: Number(folio?.balance_due ?? 0),
+    },
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/guests");
+  revalidatePath("/dashboard/beds");
+  revalidatePath("/dashboard/folios");
+
+  const balanceDue = Number(folio?.balance_due ?? 0);
+  return actionResult(
+    "success",
+    balanceDue > 0
+      ? `Salida registrada y cama liberada. El saldo de $${balanceDue.toFixed(2)} permanece en el folio.`
+      : "Salida registrada y cama liberada.",
+  );
 }
 
 export async function updateBedStatusAction(formData: FormData): Promise<OperationResult> {
@@ -1829,13 +2412,15 @@ export async function updateBedStatusAction(formData: FormData): Promise<Operati
 
 async function syncFolioTotals(supabase: ReturnType<typeof createAdminClient>, folioId: string) {
   const expectedTotal = await getFolioExpectedTotal(supabase, folioId);
-  const { data: folio } = await supabase
-    .from("folios")
-    .select("paid_amount")
-    .eq("id", folioId)
-    .single();
+  const { data: payments } = await supabase
+    .from("payments")
+    .select("amount")
+    .eq("folio_id", folioId);
 
-  const paidAmount = Number(folio?.paid_amount ?? 0);
+  const paidAmount = Math.max(
+    0,
+    Number((payments ?? []).reduce((sum, payment) => sum + Number(payment.amount), 0).toFixed(2)),
+  );
   const balanceDue = Math.max(0, Number((expectedTotal - paidAmount).toFixed(2)));
   const paymentStatus =
     balanceDue === 0 && paidAmount > 0 ? "liquidated" : paidAmount > 0 ? "partial" : "pending";
@@ -1844,6 +2429,7 @@ async function syncFolioTotals(supabase: ReturnType<typeof createAdminClient>, f
     .from("folios")
     .update({
       total_amount: expectedTotal,
+      paid_amount: paidAmount,
       balance_due: balanceDue,
       payment_status: paymentStatus,
     })
@@ -1871,12 +2457,15 @@ export async function assignLockerAction(formData: FormData): Promise<OperationR
 
   const { data: reservation } = await supabase
     .from("reservations")
-    .select("id, folio_id, nights, discount_percent, check_in_date, check_out_date")
+    .select("id, folio_id, nights, discount_percent, check_in_date, check_out_date, status, checked_out_at")
     .eq("id", reservationId)
     .single();
 
   if (!reservation?.folio_id) {
     return actionResult("error", "Reservación no encontrada.");
+  }
+  if (reservation.checked_out_at || ["cancelled", "checked_out"].includes(reservation.status)) {
+    return actionResult("error", "La estancia ya está cerrada y solo se conserva como historial.");
   }
 
   const { data: currentRg } = await supabase
@@ -1913,7 +2502,9 @@ export async function assignLockerAction(formData: FormData): Promise<OperationR
     if (locker_number != null) {
       const { data: conflicting } = await supabase
         .from("reservation_guests")
-        .select("reservation_id, reservations!inner(check_in_date, check_out_date, status)")
+        .select(
+          "reservation_id, reservations!inner(check_in_date, check_out_date, status, checked_out_at)",
+        )
         .eq("locker_number", locker_number)
         .neq("reservation_id", reservationId);
 
@@ -1922,8 +2513,12 @@ export async function assignLockerAction(formData: FormData): Promise<OperationR
           check_in_date: string;
           check_out_date: string;
           status: string;
+          checked_out_at: string | null;
         };
-        if (overlap.status === "cancelled") continue;
+        if (
+          overlap.checked_out_at ||
+          ["cancelled", "checked_out"].includes(overlap.status)
+        ) continue;
         if (
           overlap.check_in_date < reservation.check_out_date &&
           overlap.check_out_date > reservation.check_in_date
@@ -2237,7 +2832,8 @@ async function fetchReceptionReservationsByIds(
     .from("reservations")
     .select(RECEPTION_RESERVATION_SELECT)
     .in("id", reservationIds)
-    .neq("status", "cancelled")
+    .not("status", "in", '("cancelled","checked_out")')
+    .is("checked_out_at", null)
     .order("created_at", { ascending: false })
     .limit(10);
 
@@ -2268,7 +2864,8 @@ export async function searchReservationsForReceptionAction(query: string): Promi
   const { data: byFolio } = await supabase
     .from("reservations")
     .select(RECEPTION_RESERVATION_SELECT)
-    .neq("status", "cancelled")
+    .not("status", "in", '("cancelled","checked_out")')
+    .is("checked_out_at", null)
     .ilike("folios.folio_code", `%${safe}%`)
     .limit(10);
 
@@ -2290,7 +2887,7 @@ export async function searchReservationsForReceptionAction(query: string): Promi
       .from("reservation_guests")
       .select("reservation_id, reservations!inner(status)")
       .in("guest_id", guestIds)
-      .neq("reservations.status", "cancelled")
+      .not("reservations.status", "in", '("cancelled","checked_out")')
       .limit(20);
 
     for (const row of guestReservations ?? []) {
@@ -2365,7 +2962,8 @@ export async function completeReceptionCheckInAction(formData: FormData): Promis
     .from("reservations")
     .select(RECEPTION_RESERVATION_SELECT)
     .eq("folio_id", folioId)
-    .neq("status", "cancelled")
+    .not("status", "in", '("cancelled","checked_out")')
+    .is("checked_out_at", null)
     .maybeSingle();
 
   const mapped = reservation ? mapReservationToReceptionSearch(reservation) : null;
@@ -2405,6 +3003,7 @@ export async function completeReceptionCheckInAction(formData: FormData): Promis
     folioId,
     amount,
     method,
+    effectiveDate: String(formData.get("effective_date") ?? getMexicoCityDateString()),
     notes,
   });
 

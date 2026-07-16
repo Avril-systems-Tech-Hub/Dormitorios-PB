@@ -34,7 +34,7 @@ export default async function BedsPage({
       `bed_id, reservation_id, guest_id, locker_number, locker_days,
       guests(full_name, phone, email),
       reservations!inner(
-        id, status, reservation_source, check_in_date, check_out_date, nights, notes, created_at,
+        id, status, checked_out_at, reservation_source, check_in_date, check_out_date, nights, notes, created_at,
         folios(folio_code, payment_status, total_amount, balance_due)
       )`,
     )
@@ -53,7 +53,7 @@ export default async function BedsPage({
       <Card>
         <h2 className="text-lg font-semibold text-text-main">Mapa de 60 camas</h2>
         <p className="mt-1 text-sm text-text-muted">
-          Misma asignación que en Reservas (folio, huésped, locker). Ocupada = en casa hoy; Asignada = reserva activa en sistema.
+          Ocupada = estancia vigente hoy con pago parcial o liquidado; al llegar la fecha de checkout, la cama vuelve a mostrarse libre automáticamente.
           {canManageBedStatus ? " Puedes bloquear o desbloquear camas en cada tarjeta." : null}
         </p>
         <div className="mt-3">
@@ -74,7 +74,6 @@ export default async function BedsPage({
           const isBlocked = bed.status === "blocked";
           const detail = bedDetailMap.get(bed.id) ?? null;
           const isOccupied = detail?.in_house_today ?? false;
-          const hasAssignment = !!detail;
           const lockerLabel = detail ? formatLockerLabel(detail.locker_number, detail.locker_days) : null;
 
           return (
@@ -104,8 +103,6 @@ export default async function BedsPage({
                 <Badge variant="danger" className="mt-2">Bloqueada</Badge>
               ) : isOccupied ? (
                 <Badge variant="warning" className="mt-2">Ocupada</Badge>
-              ) : hasAssignment ? (
-                <Badge variant="warning" className="mt-2 opacity-80">Asignada</Badge>
               ) : (
                 <Badge variant="success" className="mt-2">Libre</Badge>
               )}

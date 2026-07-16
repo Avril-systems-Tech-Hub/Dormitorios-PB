@@ -49,8 +49,12 @@ export const PAYMENTS_TABLE_COLUMNS: TableColumnConfig[] = [
   { key: "monto", label: "Monto", sortable: true },
   { key: "metodo", label: "Método", sortable: true },
   { key: "tipo", label: "Tipo", sortable: true },
-  { key: "fecha", label: "Fecha", sortable: true },
+  { key: "fecha", label: "Fecha efectiva", sortable: true },
+  { key: "captura", label: "Capturado", sortable: true },
+  { key: "receptor", label: "Recibió", sortable: true },
+  { key: "saldo", label: "Saldo posterior", sortable: true },
   { key: "estatus", label: "Estatus folio", sortable: true },
+  { key: "correccion", label: "Corrección" },
 ];
 
 export const PAYMENTS_TABLE_SORT_KEYS = PAYMENTS_TABLE_COLUMNS.filter((column) => column.sortable).map(
@@ -137,7 +141,13 @@ export type PaymentTransactionRow = {
   amount: number | string;
   method: string;
   payment_type: string;
-  received_at: string;
+  effective_date: string;
+  captured_at: string;
+  balance_after?: number | string | null;
+  is_reversal?: boolean;
+  reversal_of_payment_id?: string | null;
+  reversal_reason?: string | null;
+  receiver?: { full_name?: string } | { full_name?: string }[] | null;
   folios?:
     | { folio_code?: string; payment_status?: string }
     | { folio_code?: string; payment_status?: string }[]
@@ -212,7 +222,16 @@ export function sortPaymentTransactions(
       case "tipo":
         return mult * a.payment_type.localeCompare(b.payment_type, "es");
       case "fecha":
-        return mult * a.received_at.localeCompare(b.received_at);
+        return mult * a.effective_date.localeCompare(b.effective_date);
+      case "captura":
+        return mult * a.captured_at.localeCompare(b.captured_at);
+      case "receptor":
+        return mult * (unwrap(a.receiver)?.full_name ?? "").localeCompare(
+          unwrap(b.receiver)?.full_name ?? "",
+          "es",
+        );
+      case "saldo":
+        return mult * (Number(a.balance_after ?? 0) - Number(b.balance_after ?? 0));
       case "estatus":
         return mult * (folioA?.payment_status ?? "").localeCompare(folioB?.payment_status ?? "", "es");
       default:

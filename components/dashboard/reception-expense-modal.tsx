@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { createExpenseAction } from "@/actions/operations";
+import { createExpenseResultAction } from "@/actions/operations";
 import { ExpenseCaptureForm } from "@/components/forms/expense-capture-form";
 import { Button } from "@/components/ui/button";
 
@@ -18,8 +17,6 @@ export function ReceptionExpenseModal({
   shiftLabel,
   shiftExpenseTotal,
 }: ReceptionExpenseModalProps) {
-  const [submitted, setSubmitted] = useState(false);
-
   if (!open) return null;
 
   return (
@@ -46,18 +43,11 @@ export function ReceptionExpenseModal({
         </div>
         <div className="mt-4">
           <ExpenseCaptureForm
-            action={async (formData) => {
-              formData.set("return_to", "/dashboard");
-              await createExpenseAction(formData);
-              setSubmitted(true);
-              onOpenChange(false);
-            }}
+            action={createExpenseResultAction}
             returnTo="/dashboard"
+            onClose={() => onOpenChange(false)}
           />
         </div>
-        {submitted ? (
-          <p className="mt-2 text-sm text-green-700">Egreso registrado.</p>
-        ) : null}
       </div>
     </div>
   );

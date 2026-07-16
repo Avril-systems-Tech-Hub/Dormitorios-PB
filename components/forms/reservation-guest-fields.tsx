@@ -13,6 +13,10 @@ type ReservationGuestFieldsProps = {
   showLockerNumberField?: boolean;
   /** When false, only locker controls are shown (e.g. recurring guest already identified). */
   showIdentityFields?: boolean;
+  contactRequired?: boolean;
+  enablePhoneMatching?: boolean;
+  onLookupPhone?: () => void;
+  onMatchDecision?: (decision: "reuse" | "create_new") => void;
   onChange: (field: keyof GuestFormRow, value: string | number) => void;
 };
 
@@ -25,6 +29,10 @@ export function ReservationGuestFields({
   showLockerFields = false,
   showLockerNumberField = false,
   showIdentityFields = true,
+  contactRequired = true,
+  enablePhoneMatching = false,
+  onLookupPhone,
+  onMatchDecision,
   onChange,
 }: ReservationGuestFieldsProps) {
   const isDashboard = variant === "dashboard";
@@ -54,18 +62,72 @@ export function ReservationGuestFields({
           <input
             type="tel"
             className={inputClass}
-            placeholder="Teléfono *"
+            placeholder={`Teléfono${contactRequired ? " *" : " (opcional)"}`}
             value={guest.phone}
-            required
+            required={contactRequired}
             autoComplete={isPrincipal ? "tel" : "off"}
             onChange={(e) => onChange("phone", e.target.value)}
           />
+          {enablePhoneMatching && guest.phone.trim() ? (
+            <div className="rounded-lg border border-border-soft bg-surface-soft p-3">
+              <button
+                type="button"
+                disabled={guest.phone_lookup_status === "searching"}
+                onClick={onLookupPhone}
+                className="rounded-lg border border-border-soft bg-white px-3 py-1.5 text-xs font-semibold text-text-main disabled:opacity-50"
+              >
+                {guest.phone_lookup_status === "searching" ? "Buscando…" : "Buscar coincidencia"}
+              </button>
+              {guest.phone_lookup_status === "none" ? (
+                <p className="mt-2 text-xs text-text-muted">No hay coincidencias; se creará un registro nuevo.</p>
+              ) : null}
+              {guest.phone_lookup_status === "error" ? (
+                <p className="mt-2 text-xs text-red-700">Ingresa un teléfono mexicano válido de 10 dígitos.</p>
+              ) : null}
+              {guest.matched_guest ? (
+                <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">
+                  <p className="font-semibold">Coincidencia: {guest.matched_guest.full_name}</p>
+                  <p className="mt-1">
+                    {guest.matched_guest.phone}
+                    {guest.matched_guest.email ? ` · ${guest.matched_guest.email}` : ""}
+                  </p>
+                  <p className="mt-2">
+                    Reutilizar conserva el perfil tal como está; no sobrescribe nombre, correo ni sexo.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onMatchDecision?.("reuse")}
+                      className={`rounded-full px-3 py-1.5 font-semibold ${
+                        guest.match_decision === "reuse"
+                          ? "bg-emerald-700 text-white"
+                          : "border border-emerald-700 bg-white text-emerald-800"
+                      }`}
+                    >
+                      Reutilizar este huésped
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onMatchDecision?.("create_new")}
+                      className={`rounded-full px-3 py-1.5 font-semibold ${
+                        guest.match_decision === "create_new"
+                          ? "bg-slate-800 text-white"
+                          : "border border-slate-500 bg-white text-slate-800"
+                      }`}
+                    >
+                      Crear registro nuevo
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <input
             type="email"
             className={inputClass}
-            placeholder="Correo electrónico *"
+            placeholder={`Correo electrónico${contactRequired ? " *" : " (opcional)"}`}
             value={guest.email}
-            required
+            required={contactRequired}
             autoComplete={isPrincipal ? "email" : "off"}
             onChange={(e) => onChange("email", e.target.value)}
           />

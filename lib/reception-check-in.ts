@@ -1,4 +1,5 @@
 export type ReceptionSearchGuest = {
+  reservationGuestId: string;
   guestId: string;
   fullName: string;
   phone: string | null;
@@ -16,6 +17,7 @@ export type ReceptionSearchResult = {
   checkOutDate: string;
   nights: number;
   status: string;
+  notes: string | null;
   createdAt: string | null;
   totalAmount: number;
   paidAmount: number;
@@ -60,6 +62,7 @@ export function normalizeRecentReservationLimit(value: number): RecentReservatio
 }
 
 type RawGuestRow = {
+  id?: string;
   guest_id?: string;
   bed_id?: string | null;
   locker_number?: number | null;
@@ -91,6 +94,7 @@ export function mapReservationToReceptionSearch(row: {
   check_in_date: string;
   check_out_date: string;
   nights: number;
+  notes?: string | null;
   created_at?: string | null;
   folio_id?: string | null;
   folios?: RawFolio | RawFolio[] | null;
@@ -107,6 +111,7 @@ export function mapReservationToReceptionSearch(row: {
     const lockerNumber =
       g.locker_number != null && Number(g.locker_number) > 0 ? Number(g.locker_number) : null;
     return {
+      reservationGuestId: g.id ?? "",
       guestId: g.guest_id ?? "",
       fullName: guest?.full_name ?? "Huésped",
       phone: guest?.phone ?? null,
@@ -130,6 +135,7 @@ export function mapReservationToReceptionSearch(row: {
     checkOutDate: row.check_out_date,
     nights: row.nights,
     status: row.status,
+    notes: row.notes?.trim() || null,
     createdAt: row.created_at ?? null,
     totalAmount: Number(folio.total_amount ?? 0),
     paidAmount: Number(folio.paid_amount ?? 0),

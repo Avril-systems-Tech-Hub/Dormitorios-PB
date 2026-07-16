@@ -9,8 +9,10 @@ import {
   type GuestStaySummary,
 } from "@/components/dashboard/guest-history-detail";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getSessionProfile, requireModulePermission } from "@/lib/auth/guards";
+import { requireModulePermission } from "@/lib/auth/guards";
 import { ReceptionGuestRosterPage } from "@/components/dashboard/reception-guest-roster-page";
+import { HistoricalStayCapture } from "@/components/dashboard/historical-stay-capture";
+import { createHistoricalStayAction } from "@/actions/operations";
 import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 
 type ReservationInfo = {
@@ -19,6 +21,7 @@ type ReservationInfo = {
   nights?: number;
   status?: string;
   reservation_source?: string;
+  notes?: string | null;
   folios?:
     | {
         folio_code?: string;
@@ -47,7 +50,7 @@ type ReservationGuestRow = {
 type GuestRecord = {
   id: string;
   full_name: string;
-  phone: string;
+  phone: string | null;
   email: string | null;
   created_at: string;
   reservation_guests?: ReservationGuestRow[] | null;
@@ -70,6 +73,7 @@ function getStays(guest: GuestRecord): GuestStaySummary[] {
       checkOut: reservation.check_out_date ?? "—",
       nights: reservation.nights ?? 0,
       source: reservation.reservation_source ?? "guest_app",
+      reservationNotes: reservation.notes?.trim() || null,
     };
     if (bed?.bed_number != null) stay.bedNumber = bed.bed_number;
     if (row.locker_number !== undefined) stay.lockerNumber = row.locker_number;
@@ -89,8 +93,7 @@ export default async function GuestsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireModulePermission("guests");
-  const profile = await getSessionProfile();
+  const profile = await requireModulePermission("guests");
 
   if (profile.role === "reception") {
     return <ReceptionGuestRosterPage searchParams={searchParams} />;
@@ -105,7 +108,7 @@ export default async function GuestsPage({
   let query = supabase
     .from("guests")
     .select(
-      "id,full_name,phone,email,created_at,reservation_guests!inner(beds(bed_number),locker_number,locker_days,reservations(check_in_date,check_out_date,nights,status,reservation_source,folios(folio_code,payment_status,total_amount,paid_amount,balance_due)))",
+      "id,full_name,phone,email,created_at,reservation_guests!inner(beds(bed_number),locker_number,locker_days,reservations(check_in_date,check_out_date,nights,status,reservation_source,notes,folios(folio_code,payment_status,total_amount,paid_amount,balance_due)))",
       { count: "exact" },
     );
 
@@ -150,7 +153,10 @@ export default async function GuestsPage({
           {guest.email ? <p className="mt-0.5 truncate text-xs text-text-muted">{guest.email}</p> : null}
         </div>,
       ),
-      ft(guest.phone, <span className="whitespace-nowrap tabular-nums">{guest.phone}</span>),
+      ft(
+        guest.phone ?? "",
+        <span className="whitespace-nowrap tabular-nums">{guest.phone ?? "—"}</span>,
+      ),
       ft(
         latest.folioCode ?? "",
         <GuestFolioCell key={`folio-${guest.id}`} folioCode={latest.folioCode} />,
@@ -185,6 +191,12 @@ export default async function GuestsPage({
 
   return (
     <div className="space-y-4">
+      <HistoricalStayCapture
+        action={createHistoricalStayAction}
+        returnTo="/dashboard/guests"
+        defaultExpanded={false}
+      />
+
       <Card>
         <h2 className="text-lg font-semibold text-text-main">Huéspedes</h2>
         <p className="mt-1 text-sm text-text-muted">

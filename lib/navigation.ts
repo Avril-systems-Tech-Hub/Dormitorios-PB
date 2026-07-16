@@ -63,11 +63,11 @@ export const NAV_GROUP_DEFS: { label: string; keys: string[] }[] = [
   },
 ];
 
-/** Recepción: operación + listado de huéspedes. */
+/** Recepción: operación, mapa de camas y listado de huéspedes. */
 export const RECEPTION_NAV_GROUP_DEFS: { label: string; keys: string[] }[] = [
   {
     label: "Operación",
-    keys: ["dashboard", "guests"],
+    keys: ["dashboard", "beds", "guests"],
   },
 ];
 
@@ -207,7 +207,9 @@ export function groupModules(modules: SystemModule[], role?: UserRole): NavGroup
   const groupDefs = role === "reception" ? RECEPTION_NAV_GROUP_DEFS : NAV_GROUP_DEFS;
   let items = modulesToNavItems(modules);
   if (role === "reception") {
-    items = items.filter((item) => item.key === "dashboard" || item.key === "guests");
+    items = items.filter(
+      (item) => item.key === "dashboard" || item.key === "beds" || item.key === "guests",
+    );
   }
   return groupNavItems(items, groupDefs);
 }
@@ -216,7 +218,9 @@ export function groupDashboardLinks(role: UserRole): NavGroup[] {
   const groupDefs = role === "reception" ? RECEPTION_NAV_GROUP_DEFS : NAV_GROUP_DEFS;
   let items = linksToNavItems(getDashboardLinks(role));
   if (role === "reception") {
-    items = items.filter((item) => item.key === "dashboard" || item.key === "guests");
+    items = items.filter(
+      (item) => item.key === "dashboard" || item.key === "beds" || item.key === "guests",
+    );
   }
   return groupNavItems(items, groupDefs);
 }

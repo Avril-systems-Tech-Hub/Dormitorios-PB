@@ -3,12 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireRole } from "@/lib/auth/guards";
 
 // ============================================================
 // CRUD Usuarios del sistema (solo admin)
 // ============================================================
 
 export async function createSystemUserAction(formData: FormData) {
+  const actor = await requireRole(["admin"]);
   const adminSupabase = createAdminClient();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
@@ -24,7 +26,6 @@ export async function createSystemUserAction(formData: FormData) {
     return redirectWithResult(returnTo, "error", "La contraseña debe tener al menos 6 caracteres.");
   }
 
-  // Verificar que el rol no sea admin (solo 1 admin permitido)
   const { data: role } = await adminSupabase
     .from("system_roles")
     .select("id, name")
@@ -34,9 +35,12 @@ export async function createSystemUserAction(formData: FormData) {
   if (!role) {
     return redirectWithResult(returnTo, "error", "Rol no válido.");
   }
-
-  if (role.name === "admin") {
-    return redirectWithResult(returnTo, "error", "No se puede crear otro usuario administrador.");
+  if (role.name === "admin" && formData.get("admin_confirmation") !== "on") {
+    return redirectWithResult(
+      returnTo,
+      "error",
+      "Confirma explícitamente el acceso total antes de crear otro administrador.",
+    );
   }
 
   // Crear usuario en auth.users
@@ -64,7 +68,17 @@ export async function createSystemUserAction(formData: FormData) {
     return redirectWithResult(returnTo, "error", `Error creando perfil: ${profileError.message}`);
   }
 
+  await adminSupabase.from("audit_logs").insert({
+    actor_user_id: actor.id,
+    actor_role: "admin",
+    action: "system_user_created",
+    entity_type: "profile",
+    entity_id: authUser.user.id,
+    metadata: { full_name: fullName, email, role: role.name },
+  });
+
   revalidatePath("/dashboard/users");
+  revalidatePath("/dashboard/settings");
   return redirectWithResult(returnTo, "success", `Usuario ${fullName} creado exitosamente.`);
 }
 

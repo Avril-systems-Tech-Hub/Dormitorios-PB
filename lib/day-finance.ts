@@ -1,10 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   getFinanceDayOptions,
-  getMexicoCityDayBounds,
   getMexicoCityMonthBounds,
   getMexicoCityWeekBounds,
-  paymentReceivedAtToMexicoDate,
 } from "@/lib/dates";
 
 export type DayFinanceSummary = {
@@ -33,10 +31,6 @@ function unwrap<T>(value: T | T[] | null | undefined): T | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function paymentLocalDate(receivedAt: string) {
-  return paymentReceivedAtToMexicoDate(receivedAt);
-}
-
 function sumFinance(
   payments: { amount: number | string }[] | null,
   expenses: { amount: number | string }[] | null,
@@ -52,13 +46,10 @@ export async function getDayFinanceSummary(
   supabase: SupabaseClient,
   dateString: string,
 ): Promise<DayFinanceSummary> {
-  const { startAt, endAt } = getMexicoCityDayBounds(dateString);
-
   const { data: payments } = await supabase
     .from("payments")
     .select("amount")
-    .gte("received_at", startAt)
-    .lte("received_at", endAt);
+    .eq("effective_date", dateString);
 
   const { data: expenses } = await supabase
     .from("cash_movements")
@@ -73,13 +64,13 @@ export async function getWeekFinanceSummary(
   supabase: SupabaseClient,
   dateString: string,
 ): Promise<DayFinanceSummary> {
-  const { start, end, startAt, endAt } = getMexicoCityWeekBounds(dateString);
+  const { start, end } = getMexicoCityWeekBounds(dateString);
 
   const { data: payments } = await supabase
     .from("payments")
     .select("amount")
-    .gte("received_at", startAt)
-    .lte("received_at", endAt);
+    .gte("effective_date", start)
+    .lte("effective_date", end);
 
   const { data: expenses } = await supabase
     .from("cash_movements")
@@ -95,13 +86,13 @@ export async function getMonthFinanceSummary(
   supabase: SupabaseClient,
   dateString: string,
 ): Promise<DayFinanceSummary> {
-  const { start, end, startAt, endAt } = getMexicoCityMonthBounds(dateString);
+  const { start, end } = getMexicoCityMonthBounds(dateString);
 
   const { data: payments } = await supabase
     .from("payments")
     .select("amount")
-    .gte("received_at", startAt)
-    .lte("received_at", endAt);
+    .gte("effective_date", start)
+    .lte("effective_date", end);
 
   const { data: expenses } = await supabase
     .from("cash_movements")
@@ -126,14 +117,11 @@ export async function getDailyFinanceSummariesInRange(
   startDate: string,
   endDate: string,
 ): Promise<DailyFinanceEntry[]> {
-  const startBounds = getMexicoCityDayBounds(startDate);
-  const endBounds = getMexicoCityDayBounds(endDate);
-
   const { data: payments } = await supabase
     .from("payments")
-    .select("amount, received_at")
-    .gte("received_at", startBounds.startAt)
-    .lte("received_at", endBounds.endAt);
+    .select("amount, effective_date")
+    .gte("effective_date", startDate)
+    .lte("effective_date", endDate);
 
   const { data: expenses } = await supabase
     .from("cash_movements")
@@ -145,7 +133,7 @@ export async function getDailyFinanceSummariesInRange(
   const totals = new Map<string, { income: number; expenses: number }>();
 
   for (const payment of payments ?? []) {
-    const date = paymentLocalDate(String(payment.received_at));
+    const date = String(payment.effective_date);
     if (date < startDate || date > endDate) continue;
     const row = totals.get(date) ?? { income: 0, expenses: 0 };
     row.income += Number(payment.amount);
@@ -180,7 +168,7 @@ type ReservationGuestPaymentRow = {
 
 type PaymentGuestRow = {
   amount: number | string;
-  received_at: string;
+  effective_date: string;
   folios?: {
     folio_code?: string;
     reservations?: ReservationGuestPaymentRow | ReservationGuestPaymentRow[] | null;
@@ -203,13 +191,10 @@ export async function getDailyFinanceGuestDetailsInRange(
   startDate: string,
   endDate: string,
 ): Promise<DailyFinanceGuestDetailsByDate> {
-  const startBounds = getMexicoCityDayBounds(startDate);
-  const endBounds = getMexicoCityDayBounds(endDate);
-
   const { data: payments } = await supabase
     .from("payments")
     .select(
-      `amount, received_at,
+      `amount, effective_date,
       folios!inner(
         folio_code,
         reservations(
@@ -218,13 +203,13 @@ export async function getDailyFinanceGuestDetailsInRange(
         )
       )`,
     )
-    .gte("received_at", startBounds.startAt)
-    .lte("received_at", endBounds.endAt);
+    .gte("effective_date", startDate)
+    .lte("effective_date", endDate);
 
   const byDate = new Map<string, Map<string, DayFinanceGuestLine>>();
 
   for (const payment of (payments ?? []) as PaymentGuestRow[]) {
-    const date = paymentLocalDate(payment.received_at);
+    const date = payment.effective_date;
     if (date < startDate || date > endDate) continue;
 
     const folio = unwrap(payment.folios);

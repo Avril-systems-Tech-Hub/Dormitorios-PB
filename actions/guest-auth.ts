@@ -19,7 +19,7 @@ export type GuestAuthResult =
   | { ok: true; guestId: ""; step: "reservation-link"; loginEmail: string | null }
   | { ok: false; error: string };
 
-type GuestRow = { id: string; email: string | null; phone: string; updated_at: string };
+type GuestRow = { id: string; email: string | null; phone: string | null; updated_at: string };
 
 async function findGuestByWallet(address: string) {
   const supabase = createAdminClient();
@@ -266,7 +266,6 @@ export async function linkGuestReservationWithPhoneAction(
     return { ok: false, error: "Ingresa el correo que usaste al reservar." };
   }
 
-  const supabase = createAdminClient();
   const guest = await resolveGuestByEmail(normalizedReservationEmail, address);
   if (!guest) {
     return {

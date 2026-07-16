@@ -40,6 +40,7 @@ export async function ReceptionOperationsSummary() {
 
   const [
     { count: activeReservations },
+    { count: pendingCheckouts },
     { count: unpaidFolios },
     { count: guestsWithoutBed },
     { count: pendingLockerGuests },
@@ -49,7 +50,14 @@ export async function ReceptionOperationsSummary() {
     supabase
       .from("reservations")
       .select("id", { count: "exact", head: true })
-      .neq("status", "cancelled"),
+      .not("status", "in", '("cancelled","checked_out")')
+      .is("checked_out_at", null),
+    supabase
+      .from("reservations")
+      .select("id", { count: "exact", head: true })
+      .not("status", "in", '("cancelled","checked_out")')
+      .is("checked_out_at", null)
+      .lte("check_out_date", today),
     supabase
       .from("folios")
       .select("id", { count: "exact", head: true })
@@ -58,19 +66,24 @@ export async function ReceptionOperationsSummary() {
       .from("reservation_guests")
       .select("id, reservations!inner(status)", { count: "exact", head: true })
       .is("bed_id", null)
-      .neq("reservations.status", "cancelled"),
+      .not("reservations.status", "in", '("cancelled","checked_out")')
+      .is("reservations.checked_out_at", null),
     supabase
       .from("reservation_guests")
       .select("id, reservations!inner(status)", { count: "exact", head: true })
       .gt("locker_days", 0)
       .is("locker_number", null)
-      .neq("reservations.status", "cancelled"),
+      .not("reservations.status", "in", '("cancelled","checked_out")')
+      .is("reservations.checked_out_at", null),
     supabase.from("beds").select("id, status"),
     supabase
       .from("reservation_guests")
       .select(
         `bed_id, reservation_id, guest_id, locker_number, locker_days,
-        reservations!inner(id, status, check_in_date, check_out_date)`,
+        reservations!inner(
+          id, status, checked_out_at, check_in_date, check_out_date,
+          folios(payment_status)
+        )`,
       )
       .not("bed_id", "is", null),
   ]);
@@ -80,7 +93,18 @@ export async function ReceptionOperationsSummary() {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <StatCard
+          label="Salidas pendientes"
+          value={pendingCheckouts ?? 0}
+          hint="Vencidas por confirmar"
+          badge={
+            (pendingCheckouts ?? 0) > 0
+              ? { text: "Registrar salida", variant: "warning" }
+              : undefined
+          }
+          href="/dashboard/beds"
+        />
         <StatCard
           label="Reservas activas"
           value={activeReservations ?? 0}

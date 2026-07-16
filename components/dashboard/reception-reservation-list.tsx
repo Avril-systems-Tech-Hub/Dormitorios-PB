@@ -98,6 +98,11 @@ export function ReceptionReservationListItem({
             <p className="text-xs text-text-muted">
               {result.checkInDate} → {result.checkOutDate} · {result.nights} noche(s)
             </p>
+            {result.notes ? (
+              <p className="mt-1 line-clamp-2 text-xs text-text-main">
+                <span className="font-semibold">Nota de reservación:</span> {result.notes}
+              </p>
+            ) : null}
             {createdLabel ? (
               <p className="mt-0.5 text-xs text-text-muted">Registrada {createdLabel}</p>
             ) : null}

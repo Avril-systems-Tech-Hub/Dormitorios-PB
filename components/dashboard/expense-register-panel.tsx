@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { createExpenseAction } from "@/actions/operations";
+import { createExpenseResultAction } from "@/actions/operations";
 import { ExpenseCaptureForm } from "@/components/forms/expense-capture-form";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -71,7 +71,11 @@ export function ExpenseRegisterPanel({
               </Link>
             </div>
           ) : (
-            <ExpenseCaptureForm action={createExpenseAction} returnTo={returnTo} />
+            <ExpenseCaptureForm
+              action={createExpenseResultAction}
+              returnTo={returnTo}
+              onClose={() => setOpen(false)}
+            />
           )}
         </div>
       ) : null}

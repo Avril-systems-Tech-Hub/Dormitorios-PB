@@ -52,12 +52,11 @@ export default async function ExpensesPage({
   const adminSupabase = createAdminClient();
   const today = getMexicoCityDateString();
   const isReception = profile.role === "reception";
+  const openShift = await getOpenShift(profile.id);
+  const shiftLabel = openShift ? formatOpenShiftLabel(openShift) : undefined;
+  const shiftExpenseTotal = openShift ? await getShiftExpenseTotal(openShift.id) : 0;
 
   if (isReception) {
-    const openShift = await getOpenShift();
-    const shiftLabel = openShift ? formatOpenShiftLabel(openShift) : undefined;
-    const shiftExpenseTotal = openShift ? await getShiftExpenseTotal(openShift.id) : 0;
-
     const { data: expenses, count } = openShift
       ? await adminSupabase
           .from("cash_movements")
@@ -172,8 +171,8 @@ export default async function ExpensesPage({
     adminSupabase
       .from("payments")
       .select("id", { count: "exact", head: true })
-      .gte("received_at", periodBounds.startAt)
-      .lte("received_at", periodBounds.endAt),
+      .gte("effective_date", periodBounds.start)
+      .lte("effective_date", periodBounds.end),
     adminSupabase
       .from("cash_movements")
       .select("id", { count: "exact", head: true })
@@ -295,7 +294,13 @@ export default async function ExpensesPage({
         </div>
       </Card>
 
-      <ExpenseRegisterPanel returnTo="/dashboard/expenses" />
+      <ExpenseRegisterPanel
+        returnTo="/dashboard/expenses"
+        hasOpenShift={Boolean(openShift)}
+        shiftLabel={shiftLabel}
+        shiftExpenseTotal={openShift ? shiftExpenseTotal : undefined}
+        defaultOpen={Boolean(openShift)}
+      />
     </div>
   );
 }

@@ -24,7 +24,7 @@ export const AUDIT_CATEGORY_FILTERS: {
   {
     value: "payments",
     toggleLabel: "Pagos",
-    actions: ["payment_registered", "payment_receipt_resent", "folio_extra_service_added"],
+    actions: ["payment_registered", "payment_reversed", "payment_receipt_resent", "folio_extra_service_added"],
   },
   {
     value: "cash",
@@ -56,6 +56,7 @@ export const AUDIT_CATEGORY_FILTERS: {
 const ACTION_LABELS: Record<string, string> = {
   reservation_created: "Nueva reservación",
   payment_registered: "Pago registrado",
+  payment_reversed: "Pago corregido",
   cash_movement_created: "Movimiento de caja",
   expense_created: "Gasto operativo",
   daily_cash_cut_generated: "Corte de caja",
@@ -155,6 +156,12 @@ export function formatAuditSummary(action: string, metadata: Record<string, unkn
       const balance = money(meta.balance_due);
       const parts = [folio, amount && method ? `${amount} (${method})` : amount, balance && `Saldo ${balance}`];
       return parts.filter(Boolean).join(" · ") || "Cobro registrado";
+    }
+    case "payment_reversed": {
+      const folio = meta.folio_code ? `Folio ${meta.folio_code}` : null;
+      const amount = money(meta.corrected_amount);
+      const reason = meta.reason ? String(meta.reason) : null;
+      return [folio, amount && `Corrección ${amount}`, reason].filter(Boolean).join(" · ");
     }
     case "expense_created": {
       const concept = getExpenseConceptLabel(String(meta.expense_concept ?? ""));
@@ -275,6 +282,14 @@ export function formatAuditDetailLines(
       push("Monto", money(meta.amount));
       push("Método", methodLabel(meta.method));
       push("Pagado acumulado", money(meta.paid_amount));
+      push("Saldo", money(meta.balance_due));
+      break;
+    case "payment_reversed":
+      push("Folio", meta.folio_code);
+      push("Monto corregido", money(meta.corrected_amount));
+      push("Motivo", meta.reason);
+      push("Pago original", meta.original_payment_id);
+      push("Pagado neto", money(meta.paid_amount));
       push("Saldo", money(meta.balance_due));
       break;
     case "daily_cash_cut_generated":

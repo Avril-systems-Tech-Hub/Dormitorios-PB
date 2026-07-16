@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { RegisterCheckoutButton } from "@/components/ui/register-checkout-button";
 
 type ReservationDetail = {
+  reservation_id?: string;
   guest_name?: string;
   guest_phone?: string;
   guest_email?: string;
@@ -19,6 +21,8 @@ type ReservationDetail = {
   notes?: string;
   locker_number?: number | null;
   locker_days?: number;
+  in_house_today?: boolean;
+  pending_checkout?: boolean;
 };
 
 export function BedCardAccordion({ detail }: { detail: ReservationDetail | null }) {
@@ -78,6 +82,11 @@ export function BedCardAccordion({ detail }: { detail: ReservationDetail | null 
             <span className="text-text-muted">Check-out</span>
             <span className="text-text-main">{detail.check_out ?? "—"}</span>
           </div>
+          {detail.pending_checkout ? (
+            <div className="rounded-md bg-amber-100 px-2 py-1.5 font-semibold text-amber-900">
+              Salida pendiente de confirmar
+            </div>
+          ) : null}
           <div className="flex justify-between">
             <span className="text-text-muted">Noches</span>
             <span className="text-text-main">
@@ -134,6 +143,12 @@ export function BedCardAccordion({ detail }: { detail: ReservationDetail | null 
               </div>
             </>
           )}
+          {detail.reservation_id && (detail.in_house_today || detail.pending_checkout) ? (
+            <RegisterCheckoutButton
+              reservationId={detail.reservation_id}
+              balanceDue={Number(detail.balance_due ?? 0)}
+            />
+          ) : null}
         </div>
       )}
     </div>

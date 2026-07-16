@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   assignLockerAction,
   completeReceptionCheckInAction,
@@ -44,23 +45,40 @@ function formatMoney(value: number) {
 
 type ReceptionCheckInWizardProps = {
   initialRecentReservations?: ReceptionSearchResult[];
+  initialReservation?: ReceptionSearchResult;
+  initialReservationError?: string;
+  consumeInitialReservationParam?: boolean;
 };
 
 export function ReceptionCheckInWizard({
   initialRecentReservations = [],
+  initialReservation,
+  initialReservationError,
+  consumeInitialReservationParam = false,
 }: ReceptionCheckInWizardProps) {
-  const [stepIndex, setStepIndex] = useState(0);
-  const [stepError, setStepError] = useState<string | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [stepIndex, setStepIndex] = useState(initialReservation ? 1 : 0);
+  const [stepError, setStepError] = useState<string | null>(initialReservationError ?? null);
   const [searchMode, setSearchMode] = useState<ReceptionSearchMode>("search");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<ReceptionSearchResult[]>([]);
   const [recentReservations, setRecentReservations] = useState(initialRecentReservations);
   const [recentLimit, setRecentLimit] = useState<RecentReservationLimit>(DEFAULT_RECENT_RESERVATION_LIMIT);
-  const [selected, setSelected] = useState<ReceptionSearchResult | null>(null);
-  const [cashReceived, setCashReceived] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState("");
+  const [selected, setSelected] = useState<ReceptionSearchResult | null>(initialReservation ?? null);
+  const [cashReceived, setCashReceived] = useState(
+    initialReservation ? initialReservation.balanceDue <= 0 : false,
+  );
+  const [paymentAmount, setPaymentAmount] = useState(
+    initialReservation && initialReservation.balanceDue > 0
+      ? String(initialReservation.balanceDue)
+      : "",
+  );
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
-  const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, GuestAssignmentDraft>>({});
+  const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, GuestAssignmentDraft>>(
+    initialReservation ? buildGuestAssignmentDrafts(initialReservation.guests) : {},
+  );
   const [successState, setSuccessState] = useState<{
     message: string;
     whatsappSent: boolean;
@@ -69,9 +87,42 @@ export function ReceptionCheckInWizard({
     skippedPayment: boolean;
   } | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [appliedInitialReservationId, setAppliedInitialReservationId] = useState(
+    initialReservation?.reservationId ?? null,
+  );
+  const [appliedInitialReservationError, setAppliedInitialReservationError] = useState(
+    initialReservationError ?? null,
+  );
+
+  if (initialReservation && initialReservation.reservationId !== appliedInitialReservationId) {
+    setAppliedInitialReservationId(initialReservation.reservationId);
+    setSelected(initialReservation);
+    setPaymentAmount(
+      initialReservation.balanceDue > 0 ? String(initialReservation.balanceDue) : "",
+    );
+    setCashReceived(initialReservation.balanceDue <= 0);
+    setAssignmentDrafts(buildGuestAssignmentDrafts(initialReservation.guests));
+    setSuccessState(null);
+    setStepError(null);
+    setStepIndex(1);
+  }
+
+  if (initialReservationError && initialReservationError !== appliedInitialReservationError) {
+    setAppliedInitialReservationError(initialReservationError);
+    setStepError(initialReservationError);
+  }
 
   const currentStep: WizardStepId = successState ? "success" : STEP_ORDER[stepIndex] ?? "search";
   const progressStep = successState ? STEP_ORDER.length : stepIndex + 1;
+
+  useEffect(() => {
+    if (!consumeInitialReservationParam || !searchParams.has("checkin_reservation")) return;
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete("checkin_reservation");
+    const nextQuery = nextParams.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  }, [consumeInitialReservationParam, pathname, router, searchParams]);
 
   async function refreshRecentReservations(limit = recentLimit) {
     const response = await listRecentReservationsForReceptionAction(limit);
@@ -436,6 +487,14 @@ export function ReceptionCheckInWizard({
               {selected.checkInDate} → {selected.checkOutDate} · {selected.nights} noche(s) ·{" "}
               {selected.guests.length} huésped(es)
             </p>
+            <div className="space-y-3 rounded-xl border border-border-soft bg-surface-soft/30 p-3">
+              <div>
+                <h3 className="text-sm font-semibold text-text-main">Nota general de reservación</h3>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-text-muted">
+                  {selected.notes ?? "Sin nota general."}
+                </p>
+              </div>
+            </div>
             {selected.balanceDue > 0 ? (
               <>
                 <label className="flex items-center gap-2 text-sm text-text-main">

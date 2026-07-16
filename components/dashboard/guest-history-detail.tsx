@@ -16,6 +16,7 @@ export type GuestStaySummary = {
   paidAmount?: number;
   balanceDue?: number;
   source?: string;
+  reservationNotes?: string | null;
 };
 
 function formatShortDate(isoDate: string) {
@@ -55,6 +56,13 @@ export function GuestHistoryDetail({
         {latest.bedNumber != null ? ` · Cama ${latest.bedNumber}` : ""}
         {latest.lockerNumber ? ` · Locker ${latest.lockerNumber}` : ""}
       </p>
+      {latest.reservationNotes ? (
+        <p className="mt-1 whitespace-pre-wrap text-xs text-text-main">
+          <span className="font-semibold">Nota de reservación:</span> {latest.reservationNotes}
+        </p>
+      ) : (
+        <p className="mt-1 text-xs italic text-text-muted">Sin nota general de reservación.</p>
+      )}
 
       {history.length > 0 ? (
         <>
@@ -91,6 +99,12 @@ export function GuestHistoryDetail({
                         <span className="ml-1">${stay.paidAmount.toFixed(2)}</span>
                       ) : null}
                     </span>
+                    <div className="col-span-4 border-b border-border-soft pb-2">
+                      <p className="mb-1 whitespace-pre-wrap text-text-muted">
+                        <span className="font-medium text-text-main">Nota de reservación:</span>{" "}
+                        {stay.reservationNotes || "Sin nota general."}
+                      </p>
+                    </div>
                   </Fragment>
                 ))}
               </div>

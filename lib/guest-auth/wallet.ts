@@ -10,8 +10,8 @@ export function normalizeWalletAddress(address: string) {
   return trimmed.toLowerCase();
 }
 
-export function normalizeGuestPhone(value: string) {
-  return normalizeMexicanPhone(value);
+export function normalizeGuestPhone(value: string | null | undefined) {
+  return normalizeMexicanPhone(value ?? "");
 }
 
 const LOGIN_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

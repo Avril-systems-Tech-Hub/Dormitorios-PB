@@ -11,6 +11,7 @@ import {
   sumLockerDays,
 } from "@/components/ui/reservation-nights-cell";
 import { ReservationPaymentInline } from "@/components/ui/reservation-payment-inline";
+import { RegisterCheckoutButton } from "@/components/ui/register-checkout-button";
 import { ReservationsPeriodFilter } from "@/components/dashboard/reservations-period-filter";
 import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 import {
@@ -21,12 +22,14 @@ import {
   parseFinanceMonthKey,
   parseReservationPeriod,
 } from "@/lib/dates";
+import { requireModulePermission } from "@/lib/auth/guards";
 
 export default async function ReservationsPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireModulePermission("reservations");
   const params = await searchParams;
   const { page, pageSize, q } = parsePagination(params);
   const [from, to] = getRange(page, pageSize);
@@ -43,7 +46,7 @@ export default async function ReservationsPage({
   let query = supabase
     .from("reservations")
     .select(
-      "id,created_at,status,reservation_source,check_in_date,check_out_date,nights,notes,profiles(full_name),folios!inner(id,folio_code,payment_status,balance_due,total_amount),reservation_guests(guest_id,locker_number,locker_days,guests(full_name,phone,email),beds(bed_number))",
+      "id,created_at,status,checked_out_at,is_historical,reservation_source,check_in_date,check_out_date,nights,notes,profiles(full_name),folios!inner(id,folio_code,payment_status,balance_due,total_amount),reservation_guests(id,guest_id,locker_number,locker_days,guests(full_name,phone,email),beds(bed_number))",
       { count: "exact" },
     )
     .gte("created_at", periodBounds.startAt)
@@ -75,6 +78,15 @@ export default async function ReservationsPage({
       const nightsLabel = `${reservation.nights} noche(s)`;
       const nightsFilterText =
         lockerDays > 0 ? `${nightsLabel} Locker ${lockerDays} día(s)` : nightsLabel;
+      const isCheckedOut = Boolean(reservation.checked_out_at) || reservation.status === "checked_out";
+      const pendingCheckout =
+        !isCheckedOut &&
+        reservation.status !== "cancelled" &&
+        reservation.check_out_date <= today;
+      const canCheckout =
+        !isCheckedOut &&
+        reservation.status !== "cancelled" &&
+        reservation.check_in_date <= today;
 
       return [
         ft(
@@ -86,6 +98,7 @@ export default async function ReservationsPage({
               reservationId={reservation.id}
               nights={reservation.nights}
               returnTo="/dashboard/reservations"
+              readOnly={isCheckedOut || reservation.status === "cancelled"}
             />
           </div>,
         ),
@@ -102,9 +115,30 @@ export default async function ReservationsPage({
             reservationId={reservation.id}
             nights={reservation.nights}
             returnTo="/dashboard/reservations"
+            readOnly={isCheckedOut || reservation.status === "cancelled"}
           />,
         ),
         `${reservation.check_in_date} -> ${reservation.check_out_date}`,
+        ft(
+          reservation.notes ?? "Sin nota",
+          <div key={`notes-${reservation.id}`} className="max-w-64">
+            <p className="whitespace-pre-wrap text-sm text-text-main">
+              {reservation.notes?.trim() || "Sin nota general."}
+            </p>
+          </div>,
+        ),
+        ft(
+          `${reservation.status} ${pendingCheckout ? "salida pendiente" : ""}`,
+          isCheckedOut ? (
+            <Badge key={`${reservation.id}-stay`} variant="success">Salida registrada</Badge>
+          ) : pendingCheckout ? (
+            <Badge key={`${reservation.id}-stay`} variant="warning">Salida pendiente</Badge>
+          ) : reservation.status === "cancelled" ? (
+            <Badge key={`${reservation.id}-stay`} variant="danger">Cancelada</Badge>
+          ) : (
+            <Badge key={`${reservation.id}-stay`}>Vigente</Badge>
+          ),
+        ),
         ft(
           nightsFilterText,
           <ReservationNightsCell
@@ -124,8 +158,16 @@ export default async function ReservationsPage({
             })
           : "—",
         ft(
-          reservation.reservation_source === "cashier_counter" ? "Caja" : "App cliente",
-          reservation.reservation_source === "cashier_counter" ? (
+          reservation.is_historical
+            ? "Histórica sin inventario"
+            : reservation.reservation_source === "cashier_counter"
+              ? "Caja"
+              : "App cliente",
+          reservation.is_historical ? (
+            <Badge key={`${reservation.id}-src`} variant="warning">
+              Histórica · sin cama
+            </Badge>
+          ) : reservation.reservation_source === "cashier_counter" ? (
             <Badge key={`${reservation.id}-src`} variant="warning">
               Caja ({profile?.full_name ?? "sin usuario"})
             </Badge>
@@ -159,13 +201,23 @@ export default async function ReservationsPage({
         ) : (
           <span className="text-xs text-gray-400">—</span>
         ),
+        canCheckout ? (
+          <RegisterCheckoutButton
+            key={`checkout-${reservation.id}`}
+            reservationId={reservation.id}
+            balanceDue={Number(folio?.balance_due ?? 0)}
+            compact
+          />
+        ) : (
+          <span className="text-xs text-text-muted">—</span>
+        ),
       ];
     }) ?? [];
 
   return (
     <div className="min-w-0 space-y-4">
       <Card>
-        <h2 className="text-lg font-semibold text-text-main">Reservaciones activas</h2>
+        <h2 className="text-lg font-semibold text-text-main">Reservaciones y estancias</h2>
         <p className="mt-1 text-sm text-text-muted">
           Control de check-in, cama asignada y estado de pago por folio.
         </p>
@@ -187,6 +239,8 @@ export default async function ReservationsPage({
           "Teléfono",
           "Cama / Locker",
           "Fechas",
+          "Nota de reservación",
+          "Estancia",
           "Noches",
           "Creada",
           "Origen",
@@ -194,6 +248,7 @@ export default async function ReservationsPage({
           "Total",
           "Saldo",
           "Cobrar",
+          "Salida",
         ]}
         rows={rows}
         filterMode="global"

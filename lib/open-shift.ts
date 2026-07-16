@@ -7,12 +7,13 @@ export type OpenShiftInfo = {
   opened_by_name: string | null;
 };
 
-export async function getOpenShift(): Promise<OpenShiftInfo | null> {
+export async function getOpenShift(profileId: string): Promise<OpenShiftInfo | null> {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("shifts")
     .select("id, opened_at, opened_by, open_by:opened_by(full_name)")
     .eq("status", "open")
+    .eq("opened_by", profileId)
     .order("opened_at", { ascending: false })
     .limit(1)
     .maybeSingle();

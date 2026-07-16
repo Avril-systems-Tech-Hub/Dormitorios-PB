@@ -111,8 +111,8 @@ export default async function CashCutsPage({
     supabase
       .from("payments")
       .select("id", { count: "exact", head: true })
-      .gte("received_at", periodBounds.startAt)
-      .lte("received_at", periodBounds.endAt),
+      .gte("effective_date", periodBounds.start)
+      .lte("effective_date", periodBounds.end),
     supabase
       .from("cash_movements")
       .select("id", { count: "exact", head: true })

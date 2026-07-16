@@ -6,11 +6,14 @@ import { createClient } from "@/lib/supabase/server";
 import {
   addImportedRecordExtraServiceAction,
   commitImportedBatchAction,
+  createHistoricalStayAction,
   previewImportedRecordsAction,
   recalculateImportedRecordAction,
   updateImportedRecordAction,
 } from "@/actions/operations";
 import { parsePagination, getRange } from "@/lib/pagination";
+import { getSessionProfile } from "@/lib/auth/guards";
+import { HistoricalStayCapture } from "@/components/dashboard/historical-stay-capture";
 
 export default async function ImportedRecordsPage({
   searchParams,
@@ -18,6 +21,7 @@ export default async function ImportedRecordsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
+  const profile = await getSessionProfile();
   const supabase = await createClient();
 
   const selectedBatchId = String(params.batch_id ?? "");
@@ -145,6 +149,7 @@ export default async function ImportedRecordsPage({
 
   return (
     <div className="space-y-4">
+      {profile.role === "admin" ? <HistoricalStayCapture action={createHistoricalStayAction} /> : null}
       <Card>
         <h2 className="text-lg font-semibold text-text-main">Imported Records / Archive</h2>
         <p className="mt-1 text-sm text-text-muted">

@@ -53,6 +53,7 @@ export default async function UsersPage({
 
   const roles = await getAllRoles();
   const allModules = await getAllModules();
+  const createRoleOptions = roles.map((r) => ({ id: r.id, name: r.name, label: r.label }));
   const nonAdminRoles = roles.filter((r) => r.name !== "admin");
   const roleOptions = nonAdminRoles.map((r) => ({ id: r.id, label: r.label }));
 
@@ -111,7 +112,7 @@ export default async function UsersPage({
         </p>
       </Card>
 
-      <CreateUserPanel roles={roleOptions} />
+      <CreateUserPanel roles={createRoleOptions} />
 
       <Card>
         <h3 className="text-base font-semibold text-text-main">Usuarios del sistema</h3>

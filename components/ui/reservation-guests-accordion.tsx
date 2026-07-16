@@ -12,11 +12,13 @@ export function ReservationGuestsAccordion({
   reservationId,
   nights = 1,
   returnTo = "/dashboard/reservations",
+  readOnly = false,
 }: {
   guests: GuestAssignmentGuestRow[];
   reservationId: string;
   nights?: number;
   returnTo?: string;
+  readOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -70,6 +72,7 @@ export function ReservationGuestsAccordion({
                         lockerDays={parsed.lockerDays}
                         nights={nights}
                         returnTo={returnTo}
+                        readOnly={readOnly}
                       />
                     </span>
                   </div>
@@ -110,6 +113,7 @@ export function ReservationGuestsAccordion({
                           lockerDays={parsed.lockerDays}
                           nights={nights}
                           returnTo={returnTo}
+                          readOnly={readOnly}
                         />
                       </td>
                     </tr>

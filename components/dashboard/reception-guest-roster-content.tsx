@@ -20,6 +20,8 @@ import {
   type ReservationPeriod,
 } from "@/lib/dates";
 import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
+import { RegisterCheckoutButton } from "@/components/ui/register-checkout-button";
+import { Badge } from "@/components/ui/badge";
 
 type ReservationGuestRow = {
   id: string;
@@ -36,9 +38,11 @@ type ReservationGuestRow = {
         check_out_date?: string;
         nights?: number;
         status?: string;
+        checked_out_at?: string | null;
+        notes?: string | null;
         folios?:
-          | { folio_code?: string; total_amount?: number }
-          | { folio_code?: string; total_amount?: number }[]
+          | { folio_code?: string; total_amount?: number; balance_due?: number }
+          | { folio_code?: string; total_amount?: number; balance_due?: number }[]
           | null;
       }
     | {
@@ -48,9 +52,11 @@ type ReservationGuestRow = {
         check_out_date?: string;
         nights?: number;
         status?: string;
+        checked_out_at?: string | null;
+        notes?: string | null;
         folios?:
-          | { folio_code?: string; total_amount?: number }
-          | { folio_code?: string; total_amount?: number }[]
+          | { folio_code?: string; total_amount?: number; balance_due?: number }
+          | { folio_code?: string; total_amount?: number; balance_due?: number }[]
           | null;
       }[]
     | null;
@@ -130,7 +136,7 @@ export async function ReceptionGuestRosterContent({
       `id, locker_number, final_rate, locker_amount,
       guests!inner(full_name, sex),
       beds(bed_number),
-      reservations!inner(id, created_at, check_in_date, check_out_date, nights, status, folios!inner(folio_code, total_amount))`,
+      reservations!inner(id, created_at, check_in_date, check_out_date, nights, status, checked_out_at, notes, folios!inner(folio_code, total_amount, balance_due))`,
       { count: "exact" },
     )
     .neq("reservations.status", "cancelled")
@@ -174,6 +180,16 @@ export async function ReceptionGuestRosterContent({
     const checkOutLabel = checkOut ? formatRosterDate(checkOut) : "—";
     const timeLabel = createdAt ? formatRosterTime(createdAt) : "—";
     const totalLabel = `$${lineTotal.toFixed(2)}`;
+    const reservationNotes = reservation?.notes?.trim() || null;
+    const isCheckedOut = Boolean(reservation?.checked_out_at) || reservation?.status === "checked_out";
+    const pendingCheckout =
+      !isCheckedOut &&
+      reservation?.status !== "cancelled" &&
+      Boolean(checkOut && checkOut <= today);
+    const canCheckout =
+      !isCheckedOut &&
+      reservation?.status !== "cancelled" &&
+      Boolean(checkIn && checkIn <= today && reservation?.id);
 
     const filterText = [
       dayLabel,
@@ -187,6 +203,7 @@ export async function ReceptionGuestRosterContent({
       checkOutLabel,
       String(nights),
       totalLabel,
+      reservationNotes ?? "",
     ].join(" ");
 
     return [
@@ -201,6 +218,31 @@ export async function ReceptionGuestRosterContent({
       ft(checkOutLabel, <span className="whitespace-nowrap tabular-nums">{checkOutLabel}</span>),
       ft(String(nights), <span className="tabular-nums">{nights}</span>),
       ft(totalLabel, <span className="whitespace-nowrap font-medium tabular-nums">{totalLabel}</span>),
+      ft(
+        reservationNotes ?? "Sin nota",
+        <span className="block max-w-64 whitespace-pre-wrap text-text-main">
+          {reservationNotes ?? "Sin nota general."}
+        </span>,
+      ),
+      ft(
+        `${isCheckedOut ? "salida registrada" : pendingCheckout ? "salida pendiente" : "vigente"}`,
+        <span className="inline-flex flex-col items-start gap-1.5">
+          {isCheckedOut ? (
+            <Badge variant="success">Salida registrada</Badge>
+          ) : pendingCheckout ? (
+            <Badge variant="warning">Salida pendiente</Badge>
+          ) : (
+            <Badge>Vigente</Badge>
+          )}
+          {canCheckout && reservation?.id ? (
+            <RegisterCheckoutButton
+              reservationId={reservation.id}
+              balanceDue={Number(folio?.balance_due ?? 0)}
+              compact
+            />
+          ) : null}
+        </span>,
+      ),
     ];
   });
 
@@ -245,6 +287,8 @@ export async function ReceptionGuestRosterContent({
           "Fecha salida",
           "Noches",
           "Total",
+          "Nota de reservación",
+          "Estado / salida",
         ]}
         rows={rows}
         filterMode="global"

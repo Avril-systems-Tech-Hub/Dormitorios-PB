@@ -1,8 +1,9 @@
 "use client";
 
 import { useTransition, useState } from "react";
-import { registerPaymentAction } from "@/actions/operations";
+import { registerPaymentResultAction } from "@/actions/operations";
 import { ResendReceiptButton } from "@/components/ui/resend-receipt-button";
+import { getMexicoCityDateString } from "@/lib/dates";
 
 type PaymentMethod = "cash" | "transfer" | "card";
 
@@ -29,6 +30,8 @@ export function ReservationPaymentInline({
 }: ReservationPaymentInlineProps) {
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("cash");
+  const [effectiveDate, setEffectiveDate] = useState(getMexicoCityDateString());
+  const [notes, setNotes] = useState("");
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -58,20 +61,17 @@ export function ReservationPaymentInline({
     formData.set("folio_id", folioId);
     formData.set("amount", String(numAmount));
     formData.set("method", method);
-    formData.set("notes", `Cobro desde dashboard - Folio ${folioCode}`);
-    formData.set("return_to", "/dashboard");
+    formData.set("effective_date", effectiveDate);
+    formData.set("notes", notes || `Cobro desde reservaciones - Folio ${folioCode}`);
+    formData.set("return_to", returnTo ?? "/dashboard/reservations");
 
     startTransition(async () => {
       try {
-        await registerPaymentAction(formData);
-        setMessage({ type: "success", text: "Pago registrado" });
-        setAmount("");
+        const result = await registerPaymentResultAction(formData);
+        setMessage({ type: result.status, text: result.message });
+        if (result.status === "success") setAmount("");
       } catch (err) {
-        if (err instanceof Error && (err.message.includes("NEXT_REDIRECT") || err.message === "NEXT_REDIRECT")) {
-          setMessage({ type: "success", text: "Pago registrado" });
-          setAmount("");
-          return;
-        }
+        console.error("[ReservationPaymentInline] payment failed:", err);
         setMessage({ type: "error", text: "Error al registrar pago" });
       }
     });
@@ -115,10 +115,26 @@ export function ReservationPaymentInline({
         <option value="card">Tarjeta</option>
       </select>
 
+      <input
+        type="date"
+        value={effectiveDate}
+        max={getMexicoCityDateString()}
+        onChange={(e) => setEffectiveDate(e.target.value)}
+        aria-label="Fecha efectiva del pago"
+        className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900"
+      />
+      <input
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        placeholder="Notas (opcional)"
+        aria-label="Notas del pago"
+        className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900"
+      />
+
       {/* Botón Pagado */}
       <button
         type="submit"
-        disabled={isPending || !numAmount || numAmount <= 0 || exceedsMax}
+        disabled={isPending || !numAmount || numAmount <= 0 || exceedsMax || !effectiveDate}
         className="w-full rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
       >
         {isPending ? "Registrando..." : "Pagado"}

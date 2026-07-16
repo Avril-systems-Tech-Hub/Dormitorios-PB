@@ -3,6 +3,7 @@ import { registerPaymentAction } from "@/actions/operations";
 import { PaymentRegisterPanel } from "@/components/dashboard/payment-register-panel";
 import { PaymentsOverview } from "@/components/dashboard/payments-overview";
 import { Badge } from "@/components/ui/badge";
+import { PaymentCorrectionButton } from "@/components/ui/payment-correction-button";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModulePermission } from "@/lib/auth/guards";
@@ -40,6 +41,7 @@ import { parseTableSort } from "@/lib/table-controls";
 import { parsePagination } from "@/lib/pagination";
 import type { FolioPaymentStatus, PaymentMethod } from "@/types/domain";
 import type { TableColumnConfig } from "@/lib/table-controls";
+import type { ReactNode } from "react";
 
 export default async function PaymentsPage({
   searchParams,
@@ -73,6 +75,7 @@ export default async function PaymentsPage({
     { data: openFolios },
     { count: paidFolioCount },
     { data: paymentsRaw },
+    { data: paymentCorrections },
     { data: pendingFoliosRaw },
   ] = await Promise.all([
     supabase
@@ -84,8 +87,8 @@ export default async function PaymentsPage({
     supabase
       .from("payments")
       .select("amount, method")
-      .gte("received_at", periodBounds.startAt)
-      .lte("received_at", periodBounds.endAt),
+      .gte("effective_date", periodBounds.start)
+      .lte("effective_date", periodBounds.end),
     supabase
       .from("folios")
       .select("balance_due")
@@ -96,10 +99,15 @@ export default async function PaymentsPage({
       .eq("payment_status", "liquidated"),
     supabase
       .from("payments")
-      .select("id,amount,method,payment_type,received_at,folios!inner(folio_code,payment_status)")
-      .gte("received_at", periodBounds.startAt)
-      .lte("received_at", periodBounds.endAt)
-      .order("received_at", { ascending: false }),
+      .select("id,amount,method,payment_type,effective_date,captured_at,balance_after,is_reversal,reversal_of_payment_id,reversal_reason,receiver:profiles!payments_received_by_fkey(full_name),folios!inner(folio_code,payment_status)")
+      .gte("effective_date", periodBounds.start)
+      .lte("effective_date", periodBounds.end)
+      .order("effective_date", { ascending: false })
+      .order("captured_at", { ascending: false }),
+    supabase
+      .from("payments")
+      .select("reversal_of_payment_id,amount")
+      .eq("is_reversal", true),
     supabase
       .from("folios")
       .select("id,folio_code,total_amount,paid_amount,balance_due,payment_status")
@@ -111,7 +119,7 @@ export default async function PaymentsPage({
   const openFolioStats = sumOpenFolioBalances(openFolios);
 
   let tableColumns: TableColumnConfig[];
-  let tableRows: (string | ReturnType<typeof Badge>)[][];
+  let tableRows: ReactNode[][];
   let totalCount: number;
   let sortColumn: string;
   let sortDirection: "asc" | "desc";
@@ -192,25 +200,60 @@ export default async function PaymentsPage({
       pageSize,
     );
 
+    const reversedByPayment = new Map<string, number>();
+    for (const correction of paymentCorrections ?? []) {
+      if (!correction.reversal_of_payment_id) continue;
+      reversedByPayment.set(
+        correction.reversal_of_payment_id,
+        (reversedByPayment.get(correction.reversal_of_payment_id) ?? 0) +
+          Math.abs(Number(correction.amount)),
+      );
+    }
+
     tableRows = paged.rows.map((payment) => {
       const folio = payment.folios as
         | { folio_code?: string; payment_status?: string }
         | undefined;
       const method = payment.method as PaymentMethod;
       const status = (folio?.payment_status ?? "pending") as FolioPaymentStatus;
+      const receiver = Array.isArray(payment.receiver) ? payment.receiver[0] : payment.receiver;
+      const isReversal = Boolean(payment.is_reversal);
+      const availableAmount = Math.max(
+        0,
+        Number(payment.amount) - (reversedByPayment.get(payment.id) ?? 0),
+      );
       return [
         folio?.folio_code ?? "Sin folio",
-        `$${Number(payment.amount).toFixed(2)}`,
+        <span key={`${payment.id}-amount`} className={isReversal ? "font-semibold text-red-700" : undefined}>
+          {isReversal ? "−" : ""}${Math.abs(Number(payment.amount)).toFixed(2)}
+        </span>,
         PAYMENT_METHOD_LABELS[method] ?? payment.method,
         PAYMENT_TYPE_LABELS[payment.payment_type as keyof typeof PAYMENT_TYPE_LABELS] ??
           payment.payment_type,
-        new Date(payment.received_at).toLocaleString("es-MX"),
+        payment.effective_date,
+        new Date(payment.captured_at).toLocaleString("es-MX", {
+          timeZone: "America/Mexico_City",
+        }),
+        receiver?.full_name ?? "Sin receptor",
+        payment.balance_after == null ? "—" : `$${Number(payment.balance_after).toFixed(2)}`,
         <Badge
           key={`${payment.id}-status`}
           variant={status === "liquidated" ? "success" : "warning"}
         >
           {FOLIO_STATUS_LABELS[status] ?? status}
         </Badge>,
+        isReversal ? (
+          <span key={`${payment.id}-reversal`} className="text-xs text-red-700">
+            Compensación
+            {payment.reversal_reason ? `: ${payment.reversal_reason}` : ""}
+          </span>
+        ) : (
+          <PaymentCorrectionButton
+            key={`${payment.id}-correct`}
+            paymentId={payment.id}
+            availableAmount={availableAmount}
+          />
+        ),
       ];
     });
     totalCount = paged.totalCount;

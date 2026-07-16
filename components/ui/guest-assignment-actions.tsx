@@ -4,6 +4,7 @@ import { BedChangeButton } from "@/components/ui/bed-change-button";
 import { LockerAssignButton } from "@/components/ui/locker-assign-button";
 
 export type GuestAssignmentGuestRow = {
+  id?: string;
   guest_id?: string;
   locker_number?: number | null;
   locker_days?: number | null;
@@ -39,6 +40,7 @@ export function GuestAssignmentActions({
   lockerDays,
   nights,
   returnTo,
+  readOnly = false,
 }: {
   reservationId: string;
   guestId: string;
@@ -47,8 +49,20 @@ export function GuestAssignmentActions({
   lockerDays: number;
   nights: number;
   returnTo: string;
+  readOnly?: boolean;
 }) {
   const requiresLocker = lockerDays > 0;
+
+  if (readOnly) {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5 text-xs text-text-muted">
+        <span>{bedNumber ? `Cama ${bedNumber}` : "Sin cama"}</span>
+        {requiresLocker ? (
+          <span>{lockerNumber ? `· Locker ${lockerNumber}` : "· Locker sin número"}</span>
+        ) : null}
+      </span>
+    );
+  }
 
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
@@ -88,11 +102,13 @@ export function GuestAssignmentCell({
   reservationId,
   nights = 1,
   returnTo = "/dashboard/reservations",
+  readOnly = false,
 }: {
   guests: GuestAssignmentGuestRow[];
   reservationId: string;
   nights?: number;
   returnTo?: string;
+  readOnly?: boolean;
 }) {
   if (!guests.length) {
     return <span className="text-xs text-text-muted">—</span>;
@@ -109,6 +125,7 @@ export function GuestAssignmentCell({
         lockerDays={parsed.lockerDays}
         nights={nights}
         returnTo={returnTo}
+        readOnly={readOnly}
       />
     );
   }
@@ -132,6 +149,7 @@ export function GuestAssignmentCell({
               lockerDays={parsed.lockerDays}
               nights={nights}
               returnTo={returnTo}
+              readOnly={readOnly}
             />
           </div>
         );

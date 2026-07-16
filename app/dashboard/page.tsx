@@ -52,7 +52,7 @@ export default async function DashboardPage({
   const monthOptions = getFinanceMonthOptions(24, today);
 
   if (profile.role !== "admin") {
-    const openShift = await getOpenShift();
+    const openShift = await getOpenShift(profile.id);
     if (!openShift) {
       return (
         <div className="min-w-0 space-y-4">
@@ -104,7 +104,7 @@ export default async function DashboardPage({
         `bed_id, reservation_id, guest_id, locker_number, locker_days,
         guests(full_name, phone, email),
         reservations!inner(
-          id, status, reservation_source, check_in_date, check_out_date, nights, notes, created_at,
+          id, status, checked_out_at, reservation_source, check_in_date, check_out_date, nights, notes, created_at,
           folios(folio_code, payment_status, total_amount, balance_due)
         )`,
       )

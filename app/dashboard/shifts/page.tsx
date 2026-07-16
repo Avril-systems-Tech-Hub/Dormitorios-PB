@@ -20,10 +20,10 @@ export default async function ShiftsPage({
   const [from, to] = getRange(page, pageSize);
 
   const supabase = createAdminClient();
-  const openShift = await getOpenShift();
+  const openShift = await getOpenShift(profile.id);
   const shiftLabel = openShift ? formatOpenShiftLabel(openShift) : undefined;
   const shiftExpenseTotal =
-    openShift && profile.role === "reception" ? await getShiftExpenseTotal(openShift.id) : undefined;
+    openShift ? await getShiftExpenseTotal(openShift.id) : undefined;
 
   const { data: shifts, count } = await supabase
     .from("shifts")

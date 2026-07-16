@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { closeShiftAction } from "@/actions/operations";
 import { ReceptionExpenseModal } from "@/components/dashboard/reception-expense-modal";
 import { Badge } from "@/components/ui/badge";
@@ -30,11 +31,17 @@ export function ReceptionShiftHeader({ shiftLabel, shiftExpenseTotal }: Receptio
               Egresos del turno: ${shiftExpenseTotal.toFixed(2)}
             </p>
           </div>
-          <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto md:min-w-[12rem] md:flex-col lg:min-w-[14rem] lg:flex-row">
+          <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto md:min-w-[12rem] md:flex-col xl:min-w-[22rem] xl:flex-row">
+            <Link
+              href="/dashboard/beds"
+              className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-border-soft bg-white px-4 py-2 text-sm font-medium text-text-main transition-colors hover:bg-surface-soft sm:flex-1 md:w-full xl:flex-initial"
+            >
+              Mapa de camas
+            </Link>
             <Button
               type="button"
               variant="outline"
-              className="w-full sm:flex-1 md:w-full lg:flex-initial"
+              className="w-full sm:flex-1 md:w-full xl:flex-initial"
               onClick={() => setExpenseOpen(true)}
             >
               Registrar egreso
@@ -43,13 +50,13 @@ export function ReceptionShiftHeader({ shiftLabel, shiftExpenseTotal }: Receptio
               <Button
                 type="button"
                 variant="primary"
-                className="w-full sm:flex-1 md:w-full lg:flex-initial"
+                className="w-full sm:flex-1 md:w-full xl:flex-initial"
                 onClick={() => setConfirmClose(true)}
               >
                 Terminar turno
               </Button>
             ) : (
-              <form action={closeShiftAction} className="flex w-full flex-col gap-2 sm:flex-row md:flex-col lg:flex-row">
+              <form action={closeShiftAction} className="flex w-full flex-col gap-2 sm:flex-row md:flex-col xl:flex-row">
                 <input type="hidden" name="return_to" value="/dashboard" />
                 <Button type="submit" variant="primary" className="w-full sm:flex-1">
                   Confirmar cierre

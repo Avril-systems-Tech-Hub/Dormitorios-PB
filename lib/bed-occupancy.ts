@@ -34,6 +34,7 @@ type ReservationGuestRow = {
 type ReservationRow = {
   id: string;
   status?: string;
+  checked_out_at?: string | null;
   reservation_source?: string;
   check_in_date?: string;
   check_out_date?: string;
@@ -53,30 +54,50 @@ function unwrap<T>(value: T | T[] | null | undefined): T | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-/** Guest occupies the bed on calendar day `today` (check-out day inclusive). */
+const NON_BLOCKING_STATUSES = new Set(["cancelled", "checked_out"]);
+const PAID_FOLIO_STATUSES = new Set(["partial", "liquidated"]);
+
+/** Guest occupies the bed on calendar day `today` using [check-in, check-out). */
 export function reservationInHouseOnDate(
   checkIn: string,
   checkOut: string,
   today = getMexicoCityDateString(),
 ) {
-  return checkIn <= today && checkOut >= today;
+  return checkIn <= today && today < checkOut;
+}
+
+export function reservationBlocksDate(
+  reservation: Pick<ReservationRow, "status" | "checked_out_at" | "check_in_date" | "check_out_date">,
+  date = getMexicoCityDateString(),
+) {
+  if (reservation.checked_out_at || NON_BLOCKING_STATUSES.has(reservation.status ?? "")) return false;
+  const checkIn = reservation.check_in_date ?? "";
+  const checkOut = reservation.check_out_date ?? "";
+  return Boolean(checkIn && checkOut && reservationInHouseOnDate(checkIn, checkOut, date));
+}
+
+export function reservationHasPendingCheckout(
+  reservation: Pick<ReservationRow, "status" | "checked_out_at" | "check_out_date">,
+  today = getMexicoCityDateString(),
+) {
+  if (reservation.checked_out_at || NON_BLOCKING_STATUSES.has(reservation.status ?? "")) return false;
+  return Boolean(reservation.check_out_date && reservation.check_out_date <= today);
 }
 
 function assignmentRank(reservation: ReservationRow, today: string) {
-  if (reservation.status === "cancelled") return -1;
+  if (reservation.checked_out_at || NON_BLOCKING_STATUSES.has(reservation.status ?? "")) return -1;
+
+  const folio = unwrap(reservation.folios);
+  if (!PAID_FOLIO_STATUSES.has(folio?.payment_status ?? "")) return -1;
 
   const checkIn = reservation.check_in_date ?? "";
   const checkOut = reservation.check_out_date ?? "";
   if (!checkIn || !checkOut) return -1;
 
   const statusBoost = STATUS_PRIORITY[reservation.status ?? ""] ?? 5;
-  const inHouse = reservationInHouseOnDate(checkIn, checkOut, today);
-  const upcoming = checkIn > today;
+  const inHouse = reservationBlocksDate(reservation, today);
 
-  // Same rows as Reservas: active stays visible on the map even if dates passed but status still active
   if (inHouse) return 1000 + statusBoost;
-  if (upcoming) return 500 + statusBoost;
-  if (reservation.status === "active") return 100 + statusBoost;
 
   return -1;
 }
@@ -109,7 +130,7 @@ function rowToDetail(row: ReservationGuestRow, today: string): BedOccupancyDetai
     notes: reservation.notes ?? undefined,
     locker_number: row.locker_number != null ? Number(row.locker_number) : null,
     locker_days: Number(row.locker_days ?? 0),
-    in_house_today: checkIn && checkOut ? reservationInHouseOnDate(checkIn, checkOut, today) : false,
+    in_house_today: reservationBlocksDate(reservation, today),
   };
 }
 
@@ -126,7 +147,8 @@ function isBetterCandidate(
 
 /**
  * One assignment per bed from reservation_guests (same source as Reservas).
- * Prefers in-house today, then upcoming, then status=active (matches operational list).
+ * Includes only guests in-house today whose folio is partially or fully paid.
+ * Unpaid, future, expired, checked-out, cancelled and historical rows are excluded.
  */
 export function buildBedOccupancyMap(
   rows: ReservationGuestRow[],

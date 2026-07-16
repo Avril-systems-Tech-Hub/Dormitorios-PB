@@ -90,6 +90,10 @@ export function ReceptionReservationPanel() {
           </div>
 
           <div className="space-y-3">
+            <p className="text-xs text-white/75">
+              Teléfono y correo son opcionales en recepción. Si capturas un teléfono, busca coincidencias y
+              elige explícitamente si reutilizas el perfil o creas uno nuevo.
+            </p>
             {form.guests.map((guest, index) => (
               <div
                 key={index}
@@ -102,6 +106,10 @@ export function ReceptionReservationPanel() {
                   stayNights={form.stayNights}
                   isPrincipal={index === 0}
                   variant="dashboard"
+                  contactRequired={false}
+                  enablePhoneMatching
+                  onLookupPhone={() => void form.lookupGuestForRow(index)}
+                  onMatchDecision={(decision) => form.decideGuestMatch(index, decision)}
                   onChange={(field, value) => form.updateGuest(index, field, value)}
                 />
               </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { getMexicoCityDateString } from "@/lib/dates";
 
 type ReceptionPaymentToggleFormProps = {
   action: (formData: FormData) => Promise<void>;
@@ -24,10 +25,28 @@ export function ReceptionPaymentToggleForm({ action, folioId }: ReceptionPayment
           <option value="card">Tarjeta</option>
         </select>
       </label>
+      <label className="flex min-w-[142px] flex-col gap-1 text-xs text-text-muted">
+        Fecha efectiva
+        <input
+          name="effective_date"
+          type="date"
+          required
+          max={getMexicoCityDateString()}
+          defaultValue={getMexicoCityDateString()}
+          className="h-9 rounded-lg border border-border-soft bg-white px-2 text-sm text-text-main"
+        />
+      </label>
+      <label className="flex min-w-[180px] flex-1 flex-col gap-1 text-xs text-text-muted">
+        Notas
+        <input
+          name="notes"
+          placeholder="Opcional"
+          className="h-9 rounded-lg border border-border-soft bg-white px-2 text-sm text-text-main"
+        />
+      </label>
       <Button type="submit" className="h-9 self-end">
         Pagado
       </Button>
-      <input type="hidden" name="notes" value="Pago registrado desde dashboard recepción." />
     </form>
   );
 }
