@@ -13,8 +13,8 @@ export async function POST(request: Request) {
   if (error) {
     loginUrl.searchParams.set("staff", "1");
     loginUrl.searchParams.set("error", "Credenciales inválidas");
-    return NextResponse.redirect(loginUrl);
+    return NextResponse.redirect(loginUrl, { status: 303 });
   }
 
-  return NextResponse.redirect(new URL("/dashboard", request.url));
+  return NextResponse.redirect(new URL("/dashboard", request.url), { status: 303 });
 }
