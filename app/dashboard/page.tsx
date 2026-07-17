@@ -11,7 +11,7 @@ import { FinanceResultCard } from "@/components/dashboard/finance-result-card";
 import { ReservationsFinanceChart } from "@/components/dashboard/reservations-finance-chart";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   getAuthTraceId,
   logAuthDiagnostic,
@@ -73,7 +73,6 @@ export default async function DashboardPage({
   const authStartedAt = performance.now();
   const profile = await getSessionProfile("dashboard-page");
   const authMs = Number((performance.now() - authStartedAt).toFixed(1));
-  const supabase = await createClient();
   const params = await searchParams;
   const today = getMexicoCityDateString();
   const selectedMonth = parseFinanceMonthKey(params.financeMonth, today);
@@ -103,6 +102,9 @@ export default async function DashboardPage({
     );
   }
 
+  // The profile gate above authorizes this server-only admin render. Using the
+  // service client avoids serial session-lock/RLS work across the large query burst.
+  const supabase = createAdminClient();
   const selectedDay = parseFinanceDayKey(params.financeDay, selectedMonth, today);
   const selectedWeek = parseFinanceWeekAnchor(params.financeWeek, selectedMonth, today);
   const dayOptions = getFinanceDayOptions(selectedMonth);
