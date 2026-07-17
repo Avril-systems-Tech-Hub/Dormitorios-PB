@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import crypto from "crypto";
 import QRCode from "qrcode";
 import fs from "fs";
@@ -357,6 +358,10 @@ export async function POST(req: Request) {
       }
     }
 
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/reservations");
+    revalidatePath("/dashboard/folios");
+    revalidatePath("/dashboard/guests");
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     console.error("Error procesando el webhook:", error);

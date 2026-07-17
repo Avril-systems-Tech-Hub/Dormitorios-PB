@@ -597,6 +597,7 @@ export async function createReservationAction(
   revalidatePath("/dashboard/reservations");
   revalidatePath("/dashboard/folios");
   revalidatePath("/dashboard/beds");
+  revalidatePath("/dashboard/guests");
   if (reservationSource !== "guest_app") {
     revalidatePath("/");
   }
@@ -928,6 +929,7 @@ export async function registerPaymentResultAction(formData: FormData): Promise<O
   revalidatePath("/dashboard/payments");
   revalidatePath("/dashboard/folios");
   revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/guests");
   revalidatePath("/dashboard");
 
   return actionResult("success", result.message);
@@ -981,6 +983,7 @@ export async function reversePaymentAction(formData: FormData): Promise<Operatio
   revalidatePath("/dashboard/payments");
   revalidatePath("/dashboard/folios");
   revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/guests");
   revalidatePath("/dashboard/cash-cuts");
   revalidatePath("/dashboard");
 
@@ -2266,6 +2269,7 @@ export async function reassignBedAction(formData: FormData): Promise<OperationRe
   revalidatePath("/dashboard/reservations");
   revalidatePath("/dashboard/beds");
   revalidatePath("/dashboard/folios");
+  revalidatePath("/dashboard/guests");
 
   return actionResult("success", `Cama cambiada a ${newBedNumber}.`);
 }
@@ -2568,6 +2572,9 @@ export async function assignLockerAction(formData: FormData): Promise<OperationR
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/reservations");
   revalidatePath("/dashboard/beds");
+  revalidatePath("/dashboard/folios");
+  revalidatePath("/dashboard/payments");
+  revalidatePath("/dashboard/guests");
 
   const successMessage = wantsLocker
     ? locker_number
