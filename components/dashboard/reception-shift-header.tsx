@@ -50,10 +50,22 @@ export function ReceptionShiftHeader({
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto md:min-w-[12rem] md:flex-col xl:min-w-[22rem] xl:flex-row">
             <Link
+              href="/dashboard"
+              className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-border-soft bg-white px-4 py-2 text-sm font-medium text-text-main transition-colors hover:bg-surface-soft sm:flex-1 md:w-full xl:flex-initial"
+            >
+              Inicio
+            </Link>
+            <Link
               href="/dashboard/beds"
               className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-border-soft bg-white px-4 py-2 text-sm font-medium text-text-main transition-colors hover:bg-surface-soft sm:flex-1 md:w-full xl:flex-initial"
             >
-              Mapa de camas
+              Camas
+            </Link>
+            <Link
+              href="/dashboard/expenses"
+              className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-border-soft bg-white px-4 py-2 text-sm font-medium text-text-main transition-colors hover:bg-surface-soft sm:flex-1 md:w-full xl:flex-initial"
+            >
+              Egresos
             </Link>
             <Button
               type="button"

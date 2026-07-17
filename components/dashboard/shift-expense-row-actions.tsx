@@ -63,12 +63,22 @@ export function ShiftExpenseRowActions({ expense }: ShiftExpenseRowActionsProps)
   );
 }
 
-function ExpenseEditModal({
+export type ExpenseEditSavedValues = {
+  amount: number;
+  expenseConcept: ExpenseConcept;
+  conceptDetail: string | null;
+  method: string;
+  notes: string | null;
+};
+
+export function ExpenseEditModal({
   expense,
   onClose,
+  onSaved,
 }: {
   expense: EditableShiftExpense;
   onClose: () => void;
+  onSaved?: (values: ExpenseEditSavedValues) => void;
 }) {
   const initialConcept = (EXPENSE_CONCEPTS as readonly string[]).includes(
     String(expense.expenseConcept ?? ""),
@@ -112,12 +122,21 @@ function ExpenseEditModal({
         return;
       }
       setMessage(result.message);
+      if (concept) {
+        onSaved?.({
+          amount: Number(amount),
+          expenseConcept: concept,
+          conceptDetail: concept === "extras" ? conceptDetail.trim() : null,
+          method,
+          notes: notes.trim() || null,
+        });
+      }
       window.setTimeout(() => onClose(), 700);
     });
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-3 sm:items-center">
       <div
         className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-border-soft bg-white p-4 shadow-xl sm:p-6"
         role="dialog"

@@ -39,7 +39,7 @@ export const HIDDEN_NAV_MODULE_KEYS = new Set(["folios", "users"]);
 
 /** Frontend display labels (RBAC module keys stay unchanged). */
 const NAV_LABEL_OVERRIDES: Record<string, string> = {
-  dashboard: "Recepción",
+  dashboard: "Inicio",
   payments: "Ingresos",
   expenses: "Egresos",
 };
@@ -72,7 +72,7 @@ export const RECEPTION_NAV_GROUP_DEFS: { label: string; keys: string[] }[] = [
 ];
 
 export const PAGE_TITLES: Record<string, string> = {
-  "/dashboard": "Recepción",
+  "/dashboard": "Inicio",
   "/dashboard/reservations": "Reservas",
   "/dashboard/folios": "Folios",
   "/dashboard/beds": "Camas",

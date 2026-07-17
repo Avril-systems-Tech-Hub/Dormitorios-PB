@@ -31,6 +31,10 @@ import {
   resolveExpenseReceiptMime,
   withResolvedReceiptFile,
 } from "@/lib/expense-receipt";
+import {
+  ExpenseEditModal,
+  type EditableShiftExpense,
+} from "@/components/dashboard/shift-expense-row-actions";
 import type { ExpenseConcept } from "@/types/domain";
 
 type ExpenseCaptureFormProps = {
@@ -80,6 +84,7 @@ export function ExpenseCaptureForm({
   const [draftStorageWarning, setDraftStorageWarning] = useState("");
   const [draftReady, setDraftReady] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [editing, setEditing] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const submittingRef = useRef(false);
@@ -267,6 +272,7 @@ export function ExpenseCaptureForm({
     clearReceipt();
     setSubmitAttempted(false);
     setResult(null);
+    setEditing(false);
     setPendingMovementId("");
     setSubmissionId(crypto.randomUUID());
     window.localStorage.removeItem(draftKey);
@@ -280,6 +286,20 @@ export function ExpenseCaptureForm({
         : result.evidence === "failed"
           ? "No guardada"
           : "No adjuntada";
+    const displayAmount = Number(result.amount ?? amount);
+    const displayConcept = result.expenseConcept ?? concept;
+    const editableExpense: EditableShiftExpense | null = result.movementId
+      ? {
+          id: result.movementId,
+          expenseConcept: displayConcept || null,
+          conceptDetail: displayConcept === "extras" ? conceptDetail : null,
+          amount: displayAmount,
+          method,
+          notes: notes || null,
+          canEdit: true,
+        }
+      : null;
+
     return (
       <div className="space-y-4 rounded-xl border border-border-soft bg-white p-4" role="status">
         <div>
@@ -293,11 +313,11 @@ export function ExpenseCaptureForm({
         <dl className="grid grid-cols-2 gap-3 rounded-lg bg-surface-soft p-3 text-sm">
           <div>
             <dt className="text-text-muted">Monto</dt>
-            <dd className="font-semibold text-text-main">${Number(result.amount ?? amount).toFixed(2)} MXN</dd>
+            <dd className="font-semibold text-text-main">${displayAmount.toFixed(2)} MXN</dd>
           </div>
           <div>
             <dt className="text-text-muted">Concepto</dt>
-            <dd className="font-semibold text-text-main">{getExpenseConceptLabel(result.expenseConcept ?? concept)}</dd>
+            <dd className="font-semibold text-text-main">{getExpenseConceptLabel(displayConcept)}</dd>
           </div>
           <div className="col-span-2">
             <dt className="text-text-muted">Evidencia</dt>
@@ -310,6 +330,11 @@ export function ExpenseCaptureForm({
               {isPending ? "Reintentando…" : "Reintentar evidencia"}
             </Button>
           ) : null}
+          {editableExpense ? (
+            <Button type="button" variant="outline" disabled={isPending} onClick={() => setEditing(true)}>
+              Editar
+            </Button>
+          ) : null}
           <Button type="button" variant="outline" disabled={isPending} onClick={startNew}>
             Registrar otro
           </Button>
@@ -319,6 +344,30 @@ export function ExpenseCaptureForm({
             </Button>
           ) : null}
         </div>
+        {editing && editableExpense ? (
+          <ExpenseEditModal
+            expense={editableExpense}
+            onClose={() => setEditing(false)}
+            onSaved={(values) => {
+              setAmount(String(values.amount));
+              setConcept(values.expenseConcept);
+              setConceptDetail(values.conceptDetail ?? "");
+              setMethod(values.method);
+              setNotes(values.notes ?? "");
+              setResult((current) =>
+                current
+                  ? {
+                      ...current,
+                      status: current.status === "partial" ? "partial" : "success",
+                      message: "Egreso actualizado correctamente.",
+                      amount: values.amount,
+                      expenseConcept: values.expenseConcept,
+                    }
+                  : current,
+              );
+            }}
+          />
+        ) : null}
       </div>
     );
   }
