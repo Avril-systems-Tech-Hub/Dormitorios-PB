@@ -19,12 +19,14 @@ const UUID_PATTERN =
 type ReceptionHomeProps = {
   openShift: OpenShiftInfo;
   shiftExpenseTotal: number;
+  shiftExpenseCount?: number;
   searchParams: Record<string, string | string[] | undefined>;
 };
 
 export async function ReceptionHome({
   openShift,
   shiftExpenseTotal,
+  shiftExpenseCount = 0,
   searchParams,
 }: ReceptionHomeProps) {
   const shiftLabel = formatOpenShiftLabel(openShift);
@@ -49,7 +51,11 @@ export async function ReceptionHome({
 
   return (
     <div className="space-y-4 sm:space-y-5">
-      <ReceptionShiftHeader shiftLabel={shiftLabel} shiftExpenseTotal={shiftExpenseTotal} />
+      <ReceptionShiftHeader
+        shiftLabel={shiftLabel}
+        shiftExpenseTotal={shiftExpenseTotal}
+        shiftExpenseCount={shiftExpenseCount}
+      />
       <ReceptionCheckInWizard
         initialRecentReservations={recentReservations}
         initialReservation={initialReservation}

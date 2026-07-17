@@ -63,11 +63,11 @@ export const NAV_GROUP_DEFS: { label: string; keys: string[] }[] = [
   },
 ];
 
-/** Recepción: operación, mapa de camas y listado de huéspedes. */
+/** Recepción: operación, mapa de camas, huéspedes y egresos del turno. */
 export const RECEPTION_NAV_GROUP_DEFS: { label: string; keys: string[] }[] = [
   {
     label: "Operación",
-    keys: ["dashboard", "beds", "guests"],
+    keys: ["dashboard", "beds", "guests", "expenses"],
   },
 ];
 
@@ -208,7 +208,11 @@ export function groupModules(modules: SystemModule[], role?: UserRole): NavGroup
   let items = modulesToNavItems(modules);
   if (role === "reception") {
     items = items.filter(
-      (item) => item.key === "dashboard" || item.key === "beds" || item.key === "guests",
+      (item) =>
+        item.key === "dashboard" ||
+        item.key === "beds" ||
+        item.key === "guests" ||
+        item.key === "expenses",
     );
   }
   return groupNavItems(items, groupDefs);
@@ -219,7 +223,11 @@ export function groupDashboardLinks(role: UserRole): NavGroup[] {
   let items = linksToNavItems(getDashboardLinks(role));
   if (role === "reception") {
     items = items.filter(
-      (item) => item.key === "dashboard" || item.key === "beds" || item.key === "guests",
+      (item) =>
+        item.key === "dashboard" ||
+        item.key === "beds" ||
+        item.key === "guests" ||
+        item.key === "expenses",
     );
   }
   return groupNavItems(items, groupDefs);

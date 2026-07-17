@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { ExpenseRegisterPanel } from "@/components/dashboard/expense-register-panel";
+import { ShiftExpenseRowActions } from "@/components/dashboard/shift-expense-row-actions";
 import { PaymentsExpensesComparison } from "@/components/dashboard/payments-expenses-comparison";
 import { Card } from "@/components/ui/card";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
@@ -28,6 +29,7 @@ import { getPayPeriodAnchor, getPayPeriodBounds } from "@/lib/payment-insights";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
+import type { ExpenseConcept } from "@/types/domain";
 import type { ReactNode } from "react";
 
 const EXPENSE_RECEIPTS_BUCKET = "expense-receipts";
@@ -57,6 +59,16 @@ export default async function ExpensesPage({
   const shiftExpenseTotal = openShift ? await getShiftExpenseTotal(openShift.id) : 0;
 
   if (isReception) {
+    const { data: shiftCut } = openShift
+      ? await adminSupabase
+          .from("cash_cuts")
+          .select("id")
+          .eq("shift_id", openShift.id)
+          .limit(1)
+          .maybeSingle()
+      : { data: null };
+    const canEditShiftExpenses = Boolean(openShift && !shiftCut);
+
     const { data: expenses, count } = openShift
       ? await adminSupabase
           .from("cash_movements")
@@ -108,6 +120,18 @@ export default async function ExpensesPage({
           expense.notes ?? "—",
           photoCell,
           new Date(expense.recorded_at).toLocaleString("es-MX", { timeZone: "America/Mexico_City" }),
+          <ShiftExpenseRowActions
+            key={`actions-${expense.id}`}
+            expense={{
+              id: expense.id,
+              expenseConcept: expense.expense_concept as ExpenseConcept | null,
+              conceptDetail: expense.concept_detail,
+              amount: Number(expense.amount),
+              method: expense.method,
+              notes: expense.notes,
+              canEdit: canEditShiftExpenses,
+            }}
+          />,
         ];
       }),
     );
@@ -119,7 +143,7 @@ export default async function ExpensesPage({
           hasOpenShift={Boolean(openShift)}
           shiftLabel={shiftLabel}
           shiftExpenseTotal={openShift ? shiftExpenseTotal : undefined}
-          defaultOpen={Boolean(openShift)}
+          defaultOpen={!openShift || (count ?? 0) === 0}
         />
         <Card>
           <h3 className="text-base font-semibold text-text-main">
@@ -127,12 +151,25 @@ export default async function ExpensesPage({
           </h3>
           <p className="mt-0.5 text-sm text-text-muted">
             {openShift
-              ? `${shiftLabel}. Total del turno: $${shiftExpenseTotal.toFixed(2)}`
+              ? `${shiftLabel}. Total del turno: $${shiftExpenseTotal.toFixed(2)}${
+                  canEditShiftExpenses
+                    ? " Puedes editar un registro si te equivocaste; el cambio queda en el historial."
+                    : " Este turno ya tiene corte; solo puedes consultar."
+                }`
               : "No hay turno abierto. Inicia turno en Turnos para registrar y ver egresos por turno."}
           </p>
           <div className="mt-3">
             <ResponsiveTable
-              headers={["Concepto", "Monto", "Método", "Responsable", "Notas", "Foto", "Registrado"]}
+              headers={[
+                "Concepto",
+                "Monto",
+                "Método",
+                "Responsable",
+                "Notas",
+                "Foto",
+                "Registrado",
+                "Acciones",
+              ]}
               rows={rows}
               serverPagination={{
                 page,

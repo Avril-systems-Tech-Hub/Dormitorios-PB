@@ -11,9 +11,14 @@ import { Card } from "@/components/ui/card";
 type ReceptionShiftHeaderProps = {
   shiftLabel: string;
   shiftExpenseTotal: number;
+  shiftExpenseCount?: number;
 };
 
-export function ReceptionShiftHeader({ shiftLabel, shiftExpenseTotal }: ReceptionShiftHeaderProps) {
+export function ReceptionShiftHeader({
+  shiftLabel,
+  shiftExpenseTotal,
+  shiftExpenseCount = 0,
+}: ReceptionShiftHeaderProps) {
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
 
@@ -29,7 +34,19 @@ export function ReceptionShiftHeader({ shiftLabel, shiftExpenseTotal }: Receptio
             <p className="mt-1.5 text-sm leading-relaxed text-text-muted">{shiftLabel}</p>
             <p className="mt-1 text-sm font-medium tabular-nums text-text-main">
               Egresos del turno: ${shiftExpenseTotal.toFixed(2)}
+              {shiftExpenseCount > 0 ? (
+                <span className="font-normal text-text-muted">
+                  {" "}
+                  · {shiftExpenseCount} registro{shiftExpenseCount === 1 ? "" : "s"}
+                </span>
+              ) : null}
             </p>
+            <Link
+              href="/dashboard/expenses"
+              className="mt-1.5 inline-flex text-sm font-medium text-brand-primary underline-offset-2 hover:underline"
+            >
+              Ver y editar egresos del turno
+            </Link>
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto md:min-w-[12rem] md:flex-col xl:min-w-[22rem] xl:flex-row">
             <Link

@@ -13,13 +13,14 @@ import type {
   ExpenseConcept,
   PaymentMethod,
 } from "@/types/domain";
-import { EXPENSE_CONCEPTS } from "@/lib/expense-concepts";
+import { EXPENSE_CONCEPTS, getExpenseConceptLabel } from "@/lib/expense-concepts";
 import {
   expenseReceiptExtension,
   MAX_EXPENSE_RECEIPT_BYTES,
   resolveExpenseReceiptMime,
 } from "@/lib/expense-receipt";
 import { getMexicoCityDateString } from "@/lib/dates";
+import { getOpenShift } from "@/lib/open-shift";
 import { parseTsvToRows } from "@/lib/imports/tsv";
 import { sendWhatsAppTemplateMessage, buildPaymentConfirmationMessage } from "@/lib/ycloud";
 import { generatePaymentConfirmationPdf } from "@/lib/payment-pdf";
@@ -1569,6 +1570,293 @@ export async function createExpenseAction(formData: FormData): Promise<void> {
     result.status === "error" ? "error" : "success",
     result.message,
   );
+}
+
+export type ExpenseHistoryEntry = {
+  id: string;
+  action: string;
+  createdAt: string;
+  actorName: string | null;
+  summary: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+};
+
+export type ExpenseHistoryResult = {
+  status: "success" | "error";
+  message?: string;
+  entries?: ExpenseHistoryEntry[];
+};
+
+export type UpdateExpenseResult = {
+  status: "success" | "error";
+  message: string;
+};
+
+function snapshotExpenseFields(row: {
+  expense_concept: string | null;
+  concept_detail: string | null;
+  amount: number | string | null;
+  method: string | null;
+  notes: string | null;
+  receipt_image_path?: string | null;
+}) {
+  return {
+    expense_concept: row.expense_concept,
+    concept_detail: row.concept_detail,
+    amount: Number(row.amount ?? 0),
+    method: row.method,
+    notes: row.notes,
+    receipt_image_path: row.receipt_image_path ?? null,
+  };
+}
+
+async function assertEditableShiftExpense(
+  adminSupabase: ReturnType<typeof createAdminClient>,
+  actor: { id: string; role: string },
+  movementId: string,
+) {
+  const { data: movement } = await adminSupabase
+    .from("cash_movements")
+    .select(
+      "id,movement_date,direction,category,expense_concept,concept_detail,amount,method,notes,receipt_image_path,shift_id,responsible_profile_id",
+    )
+    .eq("id", movementId)
+    .eq("direction", "expense")
+    .maybeSingle();
+
+  if (!movement) {
+    return { error: "No se encontró el egreso." as const, movement: null };
+  }
+
+  if (actor.role === "reception") {
+    if (movement.responsible_profile_id !== actor.id) {
+      return { error: "Solo puedes editar egresos de tu propio turno." as const, movement: null };
+    }
+    const openShift = await getOpenShift(actor.id);
+    if (!openShift || movement.shift_id !== openShift.id) {
+      return {
+        error: "Solo puedes editar egresos del turno activo." as const,
+        movement: null,
+      };
+    }
+    const { data: cut } = await adminSupabase
+      .from("cash_cuts")
+      .select("id")
+      .eq("shift_id", openShift.id)
+      .limit(1)
+      .maybeSingle();
+    if (cut) {
+      return {
+        error: "Este turno ya tiene corte; no se pueden editar egresos." as const,
+        movement: null,
+      };
+    }
+  } else if (actor.role !== "admin") {
+    return { error: "No tienes permiso para editar egresos." as const, movement: null };
+  }
+
+  return { error: null, movement };
+}
+
+export async function updateExpenseResultAction(formData: FormData): Promise<UpdateExpenseResult> {
+  const adminSupabase = createAdminClient();
+  const actor = await getActorProfile();
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return { status: "error", message: "No tienes permiso para editar egresos." };
+  }
+
+  const movementId = String(formData.get("movement_id") ?? "").trim();
+  const expenseConcept = String(formData.get("expense_concept") ?? "");
+  const conceptDetail = String(formData.get("concept_detail") ?? "").trim();
+  const amount = Number(formData.get("amount") ?? 0);
+  const method = String(formData.get("method") ?? "cash") as PaymentMethod;
+  const notes = String(formData.get("notes") ?? "").trim();
+
+  if (!movementId) {
+    return { status: "error", message: "Falta el egreso a editar." };
+  }
+  if (!isExpenseConcept(expenseConcept)) {
+    return { status: "error", message: "Selecciona un concepto de gasto válido." };
+  }
+  if (amount <= 0 || Number.isNaN(amount)) {
+    return { status: "error", message: "El monto debe ser mayor a cero." };
+  }
+  if (expenseConcept === "extras" && conceptDetail.length < 3) {
+    return { status: "error", message: "Para extras, describe el gasto (mínimo 3 caracteres)." };
+  }
+  if (!["cash", "transfer", "card"].includes(method)) {
+    return { status: "error", message: "Método de pago no válido." };
+  }
+
+  const gate = await assertEditableShiftExpense(adminSupabase, actor, movementId);
+  if (gate.error || !gate.movement) {
+    return { status: "error", message: gate.error ?? "No se pudo editar el egreso." };
+  }
+
+  const before = snapshotExpenseFields(gate.movement);
+  const after = {
+    expense_concept: expenseConcept,
+    concept_detail: expenseConcept === "extras" ? conceptDetail : null,
+    amount,
+    method,
+    notes: notes || null,
+    receipt_image_path: gate.movement.receipt_image_path ?? null,
+  };
+
+  const unchanged =
+    before.expense_concept === after.expense_concept &&
+    (before.concept_detail ?? null) === after.concept_detail &&
+    Number(before.amount) === after.amount &&
+    before.method === after.method &&
+    (before.notes ?? null) === after.notes;
+
+  if (unchanged) {
+    return { status: "success", message: "Sin cambios que guardar." };
+  }
+
+  const { error: updateError } = await adminSupabase
+    .from("cash_movements")
+    .update({
+      expense_concept: after.expense_concept,
+      concept_detail: after.concept_detail,
+      amount: after.amount,
+      method: after.method,
+      notes: after.notes,
+    })
+    .eq("id", movementId)
+    .eq("direction", "expense");
+
+  if (updateError) {
+    console.error("[updateExpenseResultAction] update failed:", updateError.message, updateError);
+    return { status: "error", message: `No se pudo actualizar el egreso: ${updateError.message}` };
+  }
+
+  await adminSupabase.from("audit_logs").insert({
+    actor_user_id: actor.id,
+    action: "expense_updated",
+    entity_type: "cash_movement",
+    entity_id: movementId,
+    metadata: {
+      before,
+      after,
+      shift_id: gate.movement.shift_id,
+      movement_date: gate.movement.movement_date,
+    },
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/expenses");
+  revalidatePath("/dashboard/cash-cuts");
+  return { status: "success", message: "Egreso actualizado correctamente." };
+}
+
+export async function getExpenseHistoryAction(movementId: string): Promise<ExpenseHistoryResult> {
+  const adminSupabase = createAdminClient();
+  const actor = await getActorProfile();
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return { status: "error", message: "No tienes permiso para ver este historial." };
+  }
+
+  const id = movementId.trim();
+  if (!id) {
+    return { status: "error", message: "Egreso inválido." };
+  }
+
+  const gate = await assertEditableShiftExpense(adminSupabase, actor, id);
+  // Reception may view history for own open-shift expenses; admin for any.
+  // For closed-shift own expenses, reception should still see history — relax for admin only edit,
+  // but allow history read for own expenses even if shift closed.
+  let movement = gate.movement;
+  if (!movement) {
+    const { data } = await adminSupabase
+      .from("cash_movements")
+      .select(
+        "id,movement_date,direction,category,expense_concept,concept_detail,amount,method,notes,receipt_image_path,shift_id,responsible_profile_id",
+      )
+      .eq("id", id)
+      .eq("direction", "expense")
+      .maybeSingle();
+    if (!data) {
+      return { status: "error", message: "No se encontró el egreso." };
+    }
+    if (actor.role === "reception" && data.responsible_profile_id !== actor.id) {
+      return { status: "error", message: "Solo puedes ver historial de tus egresos." };
+    }
+    movement = data;
+  }
+
+  const { data: logs, error } = await adminSupabase
+    .from("audit_logs")
+    .select("id, action, created_at, metadata, profiles:actor_user_id(full_name)")
+    .eq("entity_type", "cash_movement")
+    .eq("entity_id", movement.id)
+    .in("action", ["expense_created", "expense_updated"])
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    return { status: "error", message: "No se pudo cargar el historial." };
+  }
+
+  const methodLabels: Record<string, string> = {
+    cash: "Efectivo",
+    transfer: "Transferencia",
+    card: "Tarjeta",
+  };
+
+  const entries: ExpenseHistoryEntry[] = (logs ?? []).map((log) => {
+    const meta = (log.metadata ?? {}) as Record<string, unknown>;
+    const actorProfile = log.profiles as { full_name?: string } | { full_name?: string }[] | null;
+    const actorName = Array.isArray(actorProfile)
+      ? actorProfile[0]?.full_name ?? null
+      : actorProfile?.full_name ?? null;
+
+    let summary = "";
+    if (log.action === "expense_created") {
+      const concept = getExpenseConceptLabel(String(meta.expense_concept ?? ""));
+      const amount = Number(meta.amount ?? 0);
+      const method = methodLabels[String(meta.method ?? "")] ?? String(meta.method ?? "");
+      summary = `Registrado · ${concept} · $${amount.toFixed(2)} · ${method}`;
+    } else {
+      const before = (meta.before ?? null) as Record<string, unknown> | null;
+      const after = (meta.after ?? null) as Record<string, unknown> | null;
+      const changes: string[] = [];
+      if (before && after) {
+        if (before.expense_concept !== after.expense_concept || before.concept_detail !== after.concept_detail) {
+          changes.push(
+            `concepto → ${getExpenseConceptLabel(String(after.expense_concept ?? ""))}${
+              after.expense_concept === "extras" && after.concept_detail
+                ? `: ${after.concept_detail}`
+                : ""
+            }`,
+          );
+        }
+        if (Number(before.amount) !== Number(after.amount)) {
+          changes.push(`monto → $${Number(after.amount ?? 0).toFixed(2)}`);
+        }
+        if (before.method !== after.method) {
+          changes.push(`método → ${methodLabels[String(after.method ?? "")] ?? after.method}`);
+        }
+        if ((before.notes ?? null) !== (after.notes ?? null)) {
+          changes.push("notas actualizadas");
+        }
+      }
+      summary = changes.length > 0 ? `Editado · ${changes.join(" · ")}` : "Editado";
+    }
+
+    return {
+      id: log.id,
+      action: log.action,
+      createdAt: log.created_at,
+      actorName,
+      summary,
+      before: (meta.before as Record<string, unknown> | undefined) ?? null,
+      after: (meta.after as Record<string, unknown> | undefined) ?? null,
+    };
+  });
+
+  return { status: "success", entries };
 }
 
 export async function createDailyCashCutAction(): Promise<void> {

@@ -29,7 +29,7 @@ export const AUDIT_CATEGORY_FILTERS: {
   {
     value: "cash",
     toggleLabel: "Caja y gastos",
-    actions: ["expense_created", "cash_movement_created", "daily_cash_cut_generated"],
+    actions: ["expense_created", "expense_updated", "cash_movement_created", "daily_cash_cut_generated"],
   },
   {
     value: "beds",
@@ -59,6 +59,7 @@ const ACTION_LABELS: Record<string, string> = {
   payment_reversed: "Pago corregido",
   cash_movement_created: "Movimiento de caja",
   expense_created: "Gasto operativo",
+  expense_updated: "Gasto editado",
   daily_cash_cut_generated: "Corte de caja",
   whatsapp_ticket_sent: "Ticket por WhatsApp",
   import_preview_created: "Vista previa de importación",
@@ -172,6 +173,13 @@ export function formatAuditSummary(action: string, metadata: Record<string, unkn
       const amount = money(meta.amount);
       const method = methodLabel(meta.method);
       return [detail, amount, method].filter(Boolean).join(" · ");
+    }
+    case "expense_updated": {
+      const after = (meta.after ?? {}) as Record<string, unknown>;
+      const concept = getExpenseConceptLabel(String(after.expense_concept ?? meta.expense_concept ?? ""));
+      const amount = money(after.amount ?? meta.amount);
+      const method = methodLabel(after.method ?? meta.method);
+      return ["Edición", concept, amount, method].filter(Boolean).join(" · ");
     }
     case "cash_movement_created": {
       const direction = DIRECTION_LABELS[String(meta.direction)] ?? String(meta.direction);

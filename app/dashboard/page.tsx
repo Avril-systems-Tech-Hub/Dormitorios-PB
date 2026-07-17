@@ -34,7 +34,7 @@ import {
   parseFinanceWeekAnchor,
 } from "@/lib/dates";
 import { parseFolioSummaryFilter } from "@/lib/folio-summary";
-import { getOpenShift, getShiftExpenseTotal } from "@/lib/open-shift";
+import { getOpenShift, getShiftExpenseCount, getShiftExpenseTotal } from "@/lib/open-shift";
 
 export const dynamic = "force-dynamic";
 
@@ -60,13 +60,17 @@ export default async function DashboardPage({
       );
     }
 
-    const shiftExpenseTotal = await getShiftExpenseTotal(openShift.id);
+    const [shiftExpenseTotal, shiftExpenseCount] = await Promise.all([
+      getShiftExpenseTotal(openShift.id),
+      getShiftExpenseCount(openShift.id),
+    ]);
 
     return (
       <div className="min-w-0 space-y-4">
         <ReceptionHome
           openShift={openShift}
           shiftExpenseTotal={shiftExpenseTotal}
+          shiftExpenseCount={shiftExpenseCount}
           searchParams={params}
         />
       </div>

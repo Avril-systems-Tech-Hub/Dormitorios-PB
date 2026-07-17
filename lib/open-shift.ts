@@ -51,3 +51,14 @@ export async function getShiftExpenseTotal(shiftId: string): Promise<number> {
 
   return (data ?? []).reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
 }
+
+export async function getShiftExpenseCount(shiftId: string): Promise<number> {
+  const supabase = createAdminClient();
+  const { count } = await supabase
+    .from("cash_movements")
+    .select("id", { count: "exact", head: true })
+    .eq("direction", "expense")
+    .eq("shift_id", shiftId);
+
+  return count ?? 0;
+}
