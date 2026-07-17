@@ -78,25 +78,36 @@ export default async function DashboardPage({
   const selectedWeek = parseFinanceWeekAnchor(params.financeWeek, selectedMonth, today);
   const dayOptions = getFinanceDayOptions(selectedMonth);
   const weekOptions = getFinanceWeekOptions(selectedMonth);
-
-  const finance = await getDayFinanceSummary(supabase, today);
-  const weekFinance = await getWeekFinanceSummary(supabase, today);
-  const monthFinance = await getMonthFinanceSummary(supabase, monthAnchor);
-  const chartDayFinance = await getDayFinanceSummary(supabase, selectedDay);
-  const chartWeekFinance = await getWeekFinanceSummary(supabase, selectedWeek);
   const { start: monthStart, end: monthEnd } = getMexicoCityMonthBoundsFromKey(selectedMonth);
-  const [dailyFinance, guestDetailsByDate] = await Promise.all([
-    getDailyFinanceSummariesInRange(supabase, monthStart, monthEnd),
-    getDailyFinanceGuestDetailsInRange(supabase, monthStart, monthEnd),
-  ]);
-
   const weekLabel = getReservationPeriodBounds("week", today).label;
   const monthLabel = formatMexicoCityMonthLabel(monthAnchor);
   const chartDayLabel = formatMexicoCityDayLabel(selectedDay);
   const chartWeekLabel = getReservationPeriodBounds("week", selectedWeek).label;
-
   const bedFilter = parseBedSummaryFilter(params.bedFilter);
-  const [{ data: beds }, { data: rgRows }] = await Promise.all([
+  const folioFilter = parseFolioSummaryFilter(params.folioFilter);
+
+  const [
+    finance,
+    weekFinance,
+    monthFinance,
+    chartDayFinance,
+    chartWeekFinance,
+    dailyFinance,
+    guestDetailsByDate,
+    { data: beds },
+    { data: rgRows },
+    { count: foliosPorPagar },
+    { count: foliosPagados },
+    { count: foliosTodos },
+    { data: openShift },
+  ] = await Promise.all([
+    getDayFinanceSummary(supabase, today),
+    getWeekFinanceSummary(supabase, today),
+    getMonthFinanceSummary(supabase, monthAnchor),
+    getDayFinanceSummary(supabase, selectedDay),
+    getWeekFinanceSummary(supabase, selectedWeek),
+    getDailyFinanceSummariesInRange(supabase, monthStart, monthEnd),
+    getDailyFinanceGuestDetailsInRange(supabase, monthStart, monthEnd),
     supabase.from("beds").select("id, status"),
     supabase
       .from("reservation_guests")
@@ -109,17 +120,6 @@ export default async function DashboardPage({
         )`,
       )
       .not("bed_id", "is", null),
-  ]);
-  const bedOccupancyMap = buildBedOccupancyMap(rgRows ?? [], today);
-  const bedCounts = computeBedSummaryCounts(beds ?? [], bedOccupancyMap);
-  const occupiedToday = bedCounts.inventario - bedCounts.libres;
-
-  const folioFilter = parseFolioSummaryFilter(params.folioFilter);
-  const [
-    { count: foliosPorPagar },
-    { count: foliosPagados },
-    { count: foliosTodos },
-  ] = await Promise.all([
     supabase
       .from("folios")
       .select("id", { count: "exact", head: true })
@@ -129,17 +129,21 @@ export default async function DashboardPage({
       .select("id", { count: "exact", head: true })
       .eq("payment_status", "liquidated"),
     supabase.from("folios").select("id", { count: "exact", head: true }),
+    supabase
+      .from("shifts")
+      .select("id,status")
+      .eq("status", "open")
+      .maybeSingle(),
   ]);
+
+  const bedOccupancyMap = buildBedOccupancyMap(rgRows ?? [], today);
+  const bedCounts = computeBedSummaryCounts(beds ?? [], bedOccupancyMap);
+  const occupiedToday = bedCounts.inventario - bedCounts.libres;
   const folioCounts = {
     por_pagar: foliosPorPagar ?? 0,
     pagados: foliosPagados ?? 0,
     todos: foliosTodos ?? 0,
   };
-  const { data: openShift } = await supabase
-    .from("shifts")
-    .select("id,status")
-    .eq("status", "open")
-    .maybeSingle();
 
   return (
     <div className="min-w-0 space-y-4">

@@ -46,16 +46,17 @@ export async function getDayFinanceSummary(
   supabase: SupabaseClient,
   dateString: string,
 ): Promise<DayFinanceSummary> {
-  const { data: payments } = await supabase
-    .from("payments")
-    .select("amount")
-    .eq("effective_date", dateString);
-
-  const { data: expenses } = await supabase
-    .from("cash_movements")
-    .select("amount")
-    .eq("direction", "expense")
-    .eq("movement_date", dateString);
+  const [{ data: payments }, { data: expenses }] = await Promise.all([
+    supabase
+      .from("payments")
+      .select("amount")
+      .eq("effective_date", dateString),
+    supabase
+      .from("cash_movements")
+      .select("amount")
+      .eq("direction", "expense")
+      .eq("movement_date", dateString),
+  ]);
 
   return sumFinance(payments, expenses);
 }
@@ -66,18 +67,19 @@ export async function getWeekFinanceSummary(
 ): Promise<DayFinanceSummary> {
   const { start, end } = getMexicoCityWeekBounds(dateString);
 
-  const { data: payments } = await supabase
-    .from("payments")
-    .select("amount")
-    .gte("effective_date", start)
-    .lte("effective_date", end);
-
-  const { data: expenses } = await supabase
-    .from("cash_movements")
-    .select("amount")
-    .eq("direction", "expense")
-    .gte("movement_date", start)
-    .lte("movement_date", end);
+  const [{ data: payments }, { data: expenses }] = await Promise.all([
+    supabase
+      .from("payments")
+      .select("amount")
+      .gte("effective_date", start)
+      .lte("effective_date", end),
+    supabase
+      .from("cash_movements")
+      .select("amount")
+      .eq("direction", "expense")
+      .gte("movement_date", start)
+      .lte("movement_date", end),
+  ]);
 
   return sumFinance(payments, expenses);
 }
@@ -88,18 +90,19 @@ export async function getMonthFinanceSummary(
 ): Promise<DayFinanceSummary> {
   const { start, end } = getMexicoCityMonthBounds(dateString);
 
-  const { data: payments } = await supabase
-    .from("payments")
-    .select("amount")
-    .gte("effective_date", start)
-    .lte("effective_date", end);
-
-  const { data: expenses } = await supabase
-    .from("cash_movements")
-    .select("amount")
-    .eq("direction", "expense")
-    .gte("movement_date", start)
-    .lte("movement_date", end);
+  const [{ data: payments }, { data: expenses }] = await Promise.all([
+    supabase
+      .from("payments")
+      .select("amount")
+      .gte("effective_date", start)
+      .lte("effective_date", end),
+    supabase
+      .from("cash_movements")
+      .select("amount")
+      .eq("direction", "expense")
+      .gte("movement_date", start)
+      .lte("movement_date", end),
+  ]);
 
   return sumFinance(payments, expenses);
 }
@@ -117,18 +120,19 @@ export async function getDailyFinanceSummariesInRange(
   startDate: string,
   endDate: string,
 ): Promise<DailyFinanceEntry[]> {
-  const { data: payments } = await supabase
-    .from("payments")
-    .select("amount, effective_date")
-    .gte("effective_date", startDate)
-    .lte("effective_date", endDate);
-
-  const { data: expenses } = await supabase
-    .from("cash_movements")
-    .select("amount, movement_date")
-    .eq("direction", "expense")
-    .gte("movement_date", startDate)
-    .lte("movement_date", endDate);
+  const [{ data: payments }, { data: expenses }] = await Promise.all([
+    supabase
+      .from("payments")
+      .select("amount, effective_date")
+      .gte("effective_date", startDate)
+      .lte("effective_date", endDate),
+    supabase
+      .from("cash_movements")
+      .select("amount, movement_date")
+      .eq("direction", "expense")
+      .gte("movement_date", startDate)
+      .lte("movement_date", endDate),
+  ]);
 
   const totals = new Map<string, { income: number; expenses: number }>();
 
