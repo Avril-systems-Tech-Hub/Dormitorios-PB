@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/purity -- Temporary production timing instrumentation. */
 import { Suspense } from "react";
 import Link from "next/link";
 import { ReceptionHome } from "@/components/dashboard/reception-home";
@@ -12,10 +11,6 @@ import { ReservationsFinanceChart } from "@/components/dashboard/reservations-fi
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { createAdminClient } from "@/lib/supabase/admin";
-import {
-  getAuthTraceId,
-  logAuthDiagnostic,
-} from "@/lib/auth/diagnostics";
 import { getSessionProfile } from "@/lib/auth/guards";
 import {
   getDailyFinanceGuestDetailsInRange,
@@ -43,36 +38,12 @@ import { getOpenShift, getShiftExpenseTotal } from "@/lib/open-shift";
 
 export const dynamic = "force-dynamic";
 
-type DashboardQueryTiming = {
-  label: string;
-  ms: number;
-};
-
-async function timeDashboardQuery<T>(
-  label: string,
-  query: () => PromiseLike<T>,
-  timings: DashboardQueryTiming[],
-) {
-  const startedAt = performance.now();
-  try {
-    return await query();
-  } finally {
-    timings.push({
-      label,
-      ms: Number((performance.now() - startedAt).toFixed(1)),
-    });
-  }
-}
-
 export default async function DashboardPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const startedAt = performance.now();
-  const authStartedAt = performance.now();
-  const profile = await getSessionProfile("dashboard-page");
-  const authMs = Number((performance.now() - authStartedAt).toFixed(1));
+  const profile = await getSessionProfile();
   const params = await searchParams;
   const today = getMexicoCityDateString();
   const selectedMonth = parseFinanceMonthKey(params.financeMonth, today);
@@ -117,8 +88,6 @@ export default async function DashboardPage({
   const bedFilter = parseBedSummaryFilter(params.bedFilter);
   const folioFilter = parseFolioSummaryFilter(params.folioFilter);
 
-  const queriesStartedAt = performance.now();
-  const queryTimings: DashboardQueryTiming[] = [];
   const [
     finance,
     weekFinance,
@@ -134,73 +103,40 @@ export default async function DashboardPage({
     { count: foliosTodos },
     { data: openShift },
   ] = await Promise.all([
-    timeDashboardQuery("finance-day", () => getDayFinanceSummary(supabase, today), queryTimings),
-    timeDashboardQuery("finance-week", () => getWeekFinanceSummary(supabase, today), queryTimings),
-    timeDashboardQuery("finance-month", () => getMonthFinanceSummary(supabase, monthAnchor), queryTimings),
-    timeDashboardQuery("chart-day", () => getDayFinanceSummary(supabase, selectedDay), queryTimings),
-    timeDashboardQuery("chart-week", () => getWeekFinanceSummary(supabase, selectedWeek), queryTimings),
-    timeDashboardQuery(
-      "daily-finance",
-      () => getDailyFinanceSummariesInRange(supabase, monthStart, monthEnd),
-      queryTimings,
-    ),
-    timeDashboardQuery(
-      "guest-finance-details",
-      () => getDailyFinanceGuestDetailsInRange(supabase, monthStart, monthEnd),
-      queryTimings,
-    ),
-    timeDashboardQuery("beds", () => supabase.from("beds").select("id, status"), queryTimings),
-    timeDashboardQuery(
-      "reservation-guests",
-      () =>
-        supabase
-          .from("reservation_guests")
-          .select(
-            `bed_id, reservation_id, guest_id, locker_number, locker_days,
-            guests(full_name, phone, email),
-            reservations!inner(
-              id, status, checked_out_at, reservation_source, check_in_date, check_out_date, nights, notes, created_at,
-              folios(folio_code, payment_status, total_amount, balance_due)
-            )`,
-          )
-          .not("bed_id", "is", null),
-      queryTimings,
-    ),
-    timeDashboardQuery(
-      "folios-unpaid",
-      () =>
-        supabase
-          .from("folios")
-          .select("id", { count: "exact", head: true })
-          .neq("payment_status", "liquidated"),
-      queryTimings,
-    ),
-    timeDashboardQuery(
-      "folios-paid",
-      () =>
-        supabase
-          .from("folios")
-          .select("id", { count: "exact", head: true })
-          .eq("payment_status", "liquidated"),
-      queryTimings,
-    ),
-    timeDashboardQuery(
-      "folios-all",
-      () => supabase.from("folios").select("id", { count: "exact", head: true }),
-      queryTimings,
-    ),
-    timeDashboardQuery(
-      "open-shift",
-      () =>
-        supabase
-          .from("shifts")
-          .select("id,status")
-          .eq("status", "open")
-          .maybeSingle(),
-      queryTimings,
-    ),
+    getDayFinanceSummary(supabase, today),
+    getWeekFinanceSummary(supabase, today),
+    getMonthFinanceSummary(supabase, monthAnchor),
+    getDayFinanceSummary(supabase, selectedDay),
+    getWeekFinanceSummary(supabase, selectedWeek),
+    getDailyFinanceSummariesInRange(supabase, monthStart, monthEnd),
+    getDailyFinanceGuestDetailsInRange(supabase, monthStart, monthEnd),
+    supabase.from("beds").select("id, status"),
+    supabase
+      .from("reservation_guests")
+      .select(
+        `bed_id, reservation_id, guest_id, locker_number, locker_days,
+        guests(full_name, phone, email),
+        reservations!inner(
+          id, status, checked_out_at, reservation_source, check_in_date, check_out_date, nights, notes, created_at,
+          folios(folio_code, payment_status, total_amount, balance_due)
+        )`,
+      )
+      .not("bed_id", "is", null),
+    supabase
+      .from("folios")
+      .select("id", { count: "exact", head: true })
+      .neq("payment_status", "liquidated"),
+    supabase
+      .from("folios")
+      .select("id", { count: "exact", head: true })
+      .eq("payment_status", "liquidated"),
+    supabase.from("folios").select("id", { count: "exact", head: true }),
+    supabase
+      .from("shifts")
+      .select("id,status")
+      .eq("status", "open")
+      .maybeSingle(),
   ]);
-  const queriesMs = Number((performance.now() - queriesStartedAt).toFixed(1));
 
   const bedOccupancyMap = buildBedOccupancyMap(rgRows ?? [], today);
   const bedCounts = computeBedSummaryCounts(beds ?? [], bedOccupancyMap);
@@ -210,26 +146,9 @@ export default async function DashboardPage({
     pagados: foliosPagados ?? 0,
     todos: foliosTodos ?? 0,
   };
-  const totalMs = Number((performance.now() - startedAt).toFixed(1));
-  logAuthDiagnostic("dashboard-page", {
-    traceId: await getAuthTraceId(),
-    userId: profile.id.slice(0, 8),
-    authMs,
-    queriesMs,
-    queryTimings: JSON.stringify(queryTimings),
-    totalMs,
-  });
 
   return (
     <div className="min-w-0 space-y-4">
-      <span
-        hidden
-        data-auth-diagnostic="dashboard-page"
-        data-auth-ms={authMs}
-        data-queries-ms={queriesMs}
-        data-query-timings={JSON.stringify(queryTimings)}
-        data-total-ms={totalMs}
-      />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         <Suspense fallback={
           <Card className="h-full animate-pulse">
