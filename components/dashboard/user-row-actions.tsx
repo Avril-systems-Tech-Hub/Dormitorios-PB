@@ -2,6 +2,7 @@
 
 import {
   deleteUserAction,
+  resetSystemUserPasswordAction,
   toggleUserStatusAction,
   updateUserRoleAction,
 } from "@/actions/auth";
@@ -112,6 +113,53 @@ export function UserRowActions({
           </form>
         ) : null}
       </div>
+
+      <details className="rounded-md border border-border-soft bg-surface-soft/40 p-2">
+        <summary className="cursor-pointer text-xs font-medium text-text-main">
+          Restablecer contraseña
+        </summary>
+        <form
+          action={resetSystemUserPasswordAction}
+          className="mt-2 space-y-2"
+          onSubmit={(event) => {
+            if (!confirm(`¿Establecer una nueva contraseña para ${fullName}?`)) {
+              event.preventDefault();
+            }
+          }}
+        >
+          <input type="hidden" name="user_id" value={userId} />
+          <input type="hidden" name="return_to" value="/dashboard/users" />
+          <label className="block text-xs text-text-muted" htmlFor={`password-${userId}`}>
+            Nueva contraseña
+          </label>
+          <input
+            id={`password-${userId}`}
+            name="password"
+            type="password"
+            required
+            minLength={8}
+            maxLength={128}
+            autoComplete="new-password"
+            className={cn(fieldClass, "w-full")}
+          />
+          <label className="block text-xs text-text-muted" htmlFor={`password-confirmation-${userId}`}>
+            Confirmar contraseña
+          </label>
+          <input
+            id={`password-confirmation-${userId}`}
+            name="password_confirmation"
+            type="password"
+            required
+            minLength={8}
+            maxLength={128}
+            autoComplete="new-password"
+            className={cn(fieldClass, "w-full")}
+          />
+          <Button type="submit" variant="outline" className="h-8 px-3 text-xs">
+            Guardar nueva contraseña
+          </Button>
+        </form>
+      </details>
 
       {isCurrentUser ? (
         <p className="text-xs text-text-muted">Eres tú: no puedes desactivar ni eliminar tu cuenta.</p>

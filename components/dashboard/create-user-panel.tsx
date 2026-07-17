@@ -23,6 +23,7 @@ export function CreateUserPanel({
   const [open, setOpen] = useState(false);
   const [selectedRoleId, setSelectedRoleId] = useState("");
   const selectedRole = roles.find((role) => role.id === selectedRoleId);
+  const usesUsername = selectedRole?.name === "reception";
 
   return (
     <Card className="border-brand-primary/30 bg-brand-primary/5">
@@ -59,17 +60,42 @@ export function CreateUserPanel({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor="new-user-email">
-                Correo electrónico
-              </label>
-              <input
-                id="new-user-email"
-                name="email"
-                type="email"
-                required
-                className={fieldClass}
-                placeholder="correo@ejemplo.com"
-              />
+              {usesUsername ? (
+                <>
+                  <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor="new-user-username">
+                    Nombre de usuario
+                  </label>
+                  <input
+                    id="new-user-username"
+                    name="username"
+                    required
+                    minLength={3}
+                    maxLength={32}
+                    pattern="[a-z0-9][a-z0-9._-]{1,30}[a-z0-9]"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    className={fieldClass}
+                    placeholder="Ej. recepcion01"
+                  />
+                  <p className="mt-1 text-xs text-text-muted">
+                    Minúsculas, números, punto, guion o guion bajo.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor="new-user-email">
+                    Correo electrónico
+                  </label>
+                  <input
+                    id="new-user-email"
+                    name="email"
+                    type="email"
+                    required
+                    className={fieldClass}
+                    placeholder="correo@ejemplo.com"
+                  />
+                </>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor="new-user-password">
@@ -80,9 +106,11 @@ export function CreateUserPanel({
                 name="password"
                 type="password"
                 required
-                minLength={6}
+                minLength={8}
+                maxLength={128}
+                autoComplete="new-password"
                 className={fieldClass}
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Mínimo 8 caracteres"
               />
             </div>
             <div>

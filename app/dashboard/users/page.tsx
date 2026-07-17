@@ -22,7 +22,9 @@ export default async function UsersPage({
 
   let profilesQuery = adminSupabase
     .from("profiles")
-    .select("id, full_name, role, system_role_id, is_disabled, created_at", { count: "exact" });
+    .select("id, full_name, username, role, system_role_id, is_disabled, created_at", {
+      count: "exact",
+    });
 
   if (q) {
     profilesQuery = profilesQuery.ilike("full_name", `%${escapeIlike(q)}%`);
@@ -34,10 +36,10 @@ export default async function UsersPage({
 
   const { data: allProfiles } = await adminSupabase
     .from("profiles")
-    .select("id, full_name, role, system_role_id, is_disabled, created_at")
+    .select("id, full_name, username, role, system_role_id, is_disabled, created_at")
     .order("created_at", { ascending: true });
 
-  const userIds = (pagedProfiles ?? []).map((p) => p.id);
+  const userIds = (pagedProfiles ?? []).filter((p) => !p.username).map((p) => p.id);
   const emailMap = new Map<string, string>();
 
   await Promise.all(
@@ -64,7 +66,7 @@ export default async function UsersPage({
   }
 
   const userRows = (pagedProfiles ?? []).map((p) => {
-    const email = emailMap.get(p.id) ?? "—";
+    const login = p.username ? `@${p.username}` : (emailMap.get(p.id) ?? "—");
     const systemRole = roles.find((r) => r.id === p.system_role_id);
     const roleLabel = systemRole?.label ?? p.role ?? "Sin rol";
     const isAdmin = p.role === "admin";
@@ -72,7 +74,7 @@ export default async function UsersPage({
     const nameCell = (
       <div key={`name-${p.id}`} className="min-w-0">
         <p className="font-medium text-text-main">{p.full_name}</p>
-        <p className="text-xs text-text-muted">{email}</p>
+        <p className="text-xs text-text-muted">{login}</p>
       </div>
     );
 

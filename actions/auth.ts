@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth/guards";
+import {
+  isValidStaffUsername,
+  normalizeStaffUsername,
+  staffUsernameToEmail,
+} from "@/lib/auth/staff-credentials";
 
 // ============================================================
 // CRUD Usuarios del sistema (solo admin)
@@ -13,17 +18,18 @@ export async function createSystemUserAction(formData: FormData) {
   const actor = await requireRole(["admin"]);
   const adminSupabase = createAdminClient();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const username = normalizeStaffUsername(String(formData.get("username") ?? ""));
   const password = String(formData.get("password") ?? "");
   const fullName = String(formData.get("full_name") ?? "").trim();
   const roleId = String(formData.get("role_id") ?? "");
   const returnTo = String(formData.get("return_to") ?? "/dashboard/users");
 
-  if (!email || !password || !fullName || !roleId) {
+  if (!password || !fullName || !roleId) {
     return redirectWithResult(returnTo, "error", "Todos los campos son obligatorios.");
   }
 
-  if (password.length < 6) {
-    return redirectWithResult(returnTo, "error", "La contraseña debe tener al menos 6 caracteres.");
+  if (password.length < 8 || password.length > 128) {
+    return redirectWithResult(returnTo, "error", "La contraseña debe tener entre 8 y 128 caracteres.");
   }
 
   const { data: role } = await adminSupabase
@@ -43,15 +49,50 @@ export async function createSystemUserAction(formData: FormData) {
     );
   }
 
+  const usesUsername = role.name === "reception";
+  if (usesUsername && !isValidStaffUsername(username)) {
+    return redirectWithResult(
+      returnTo,
+      "error",
+      "El usuario debe tener entre 3 y 32 caracteres y usar solo letras minúsculas, números, punto, guion o guion bajo.",
+    );
+  }
+  if (!usesUsername && !email) {
+    return redirectWithResult(returnTo, "error", "El correo electrónico es obligatorio para este rol.");
+  }
+
+  if (usesUsername) {
+    const { data: existingProfile, error: usernameLookupError } = await adminSupabase
+      .from("profiles")
+      .select("id")
+      .eq("username", username)
+      .maybeSingle();
+
+    if (usernameLookupError) {
+      return redirectWithResult(returnTo, "error", "No se pudo validar el nombre de usuario.");
+    }
+    if (existingProfile) {
+      return redirectWithResult(returnTo, "error", "Ese nombre de usuario ya está en uso.");
+    }
+  }
+
+  const authEmail = usesUsername ? staffUsernameToEmail(username) : email;
+
   // Crear usuario en auth.users
   const { data: authUser, error: authError } = await adminSupabase.auth.admin.createUser({
-    email,
+    email: authEmail,
     password,
     email_confirm: true,
+    user_metadata: usesUsername
+      ? { login_type: "username", staff_username: username }
+      : { login_type: "email" },
   });
 
   if (authError || !authUser) {
-    return redirectWithResult(returnTo, "error", `Error creando usuario: ${authError?.message ?? "desconocido"}`);
+    const message = usesUsername
+      ? "No se pudo crear la cuenta. Verifica que el usuario no esté registrado."
+      : "No se pudo crear la cuenta. Verifica que el correo no esté registrado.";
+    return redirectWithResult(returnTo, "error", message);
   }
 
   // Crear perfil con system_role_id
@@ -60,6 +101,7 @@ export async function createSystemUserAction(formData: FormData) {
     full_name: fullName,
     role: role.name,
     system_role_id: roleId,
+    username: usesUsername ? username : null,
   });
 
   if (profileError) {
@@ -74,7 +116,12 @@ export async function createSystemUserAction(formData: FormData) {
     action: "system_user_created",
     entity_type: "profile",
     entity_id: authUser.user.id,
-    metadata: { full_name: fullName, email, role: role.name },
+    metadata: {
+      full_name: fullName,
+      login: usesUsername ? username : email,
+      login_type: usesUsername ? "username" : "email",
+      role: role.name,
+    },
   });
 
   revalidatePath("/dashboard/users");
@@ -83,6 +130,7 @@ export async function createSystemUserAction(formData: FormData) {
 }
 
 export async function updateUserRoleAction(formData: FormData) {
+  await requireRole(["admin"]);
   const adminSupabase = createAdminClient();
   const userId = String(formData.get("user_id") ?? "");
   const roleId = String(formData.get("role_id") ?? "");
@@ -140,6 +188,7 @@ export async function updateUserRoleAction(formData: FormData) {
 }
 
 export async function deleteUserAction(formData: FormData) {
+  await requireRole(["admin"]);
   const adminSupabase = createAdminClient();
   const userId = String(formData.get("user_id") ?? "");
   const returnTo = String(formData.get("return_to") ?? "/dashboard/users");
@@ -175,6 +224,7 @@ export async function deleteUserAction(formData: FormData) {
 }
 
 export async function toggleUserStatusAction(formData: FormData) {
+  await requireRole(["admin"]);
   const adminSupabase = createAdminClient();
   const userId = String(formData.get("user_id") ?? "");
   const setDisabled = formData.get("is_disabled") === "true";
@@ -221,11 +271,68 @@ export async function toggleUserStatusAction(formData: FormData) {
   return redirectWithResult(returnTo, "success", `Usuario ${profile.full_name} ${action}.`);
 }
 
+export async function resetSystemUserPasswordAction(formData: FormData) {
+  const actor = await requireRole(["admin"]);
+  const adminSupabase = createAdminClient();
+  const userId = String(formData.get("user_id") ?? "");
+  const password = String(formData.get("password") ?? "");
+  const passwordConfirmation = String(formData.get("password_confirmation") ?? "");
+  const returnTo = String(formData.get("return_to") ?? "/dashboard/users");
+
+  if (!userId || !password || !passwordConfirmation) {
+    return redirectWithResult(returnTo, "error", "Completa y confirma la nueva contraseña.");
+  }
+  if (password !== passwordConfirmation) {
+    return redirectWithResult(returnTo, "error", "Las contraseñas no coinciden.");
+  }
+  if (password.length < 8 || password.length > 128) {
+    return redirectWithResult(returnTo, "error", "La contraseña debe tener entre 8 y 128 caracteres.");
+  }
+
+  const { data: profile } = await adminSupabase
+    .from("profiles")
+    .select("role, full_name, username")
+    .eq("id", userId)
+    .single();
+
+  if (!profile) {
+    return redirectWithResult(returnTo, "error", "Usuario no encontrado.");
+  }
+  if (profile.role === "admin") {
+    return redirectWithResult(returnTo, "error", "La contraseña del administrador no se modifica aquí.");
+  }
+
+  const { error } = await adminSupabase.auth.admin.updateUserById(userId, { password });
+  if (error) {
+    return redirectWithResult(returnTo, "error", "No se pudo restablecer la contraseña.");
+  }
+
+  await adminSupabase.from("audit_logs").insert({
+    actor_user_id: actor.id,
+    actor_role: "admin",
+    action: "system_user_password_reset",
+    entity_type: "profile",
+    entity_id: userId,
+    metadata: {
+      full_name: profile.full_name,
+      username: profile.username,
+    },
+  });
+
+  revalidatePath("/dashboard/users");
+  return redirectWithResult(
+    returnTo,
+    "success",
+    `Contraseña de ${profile.full_name} restablecida.`,
+  );
+}
+
 // ============================================================
 // CRUD Roles y Permisos (solo admin)
 // ============================================================
 
 export async function createRoleAction(formData: FormData) {
+  await requireRole(["admin"]);
   const adminSupabase = createAdminClient();
   const name = String(formData.get("name") ?? "").trim().toLowerCase().replace(/\s+/g, "_");
   const label = String(formData.get("label") ?? "").trim();
@@ -250,6 +357,7 @@ export async function createRoleAction(formData: FormData) {
 }
 
 export async function deleteRoleAction(formData: FormData) {
+  await requireRole(["admin"]);
   const adminSupabase = createAdminClient();
   const roleId = String(formData.get("role_id") ?? "");
   const returnTo = String(formData.get("return_to") ?? "/dashboard/users");
@@ -294,6 +402,7 @@ export async function deleteRoleAction(formData: FormData) {
 }
 
 export async function updateRolePermissionsAction(formData: FormData) {
+  await requireRole(["admin"]);
   const adminSupabase = createAdminClient();
   const roleId = String(formData.get("role_id") ?? "");
   const moduleKeysRaw = String(formData.get("module_keys") ?? "[]");

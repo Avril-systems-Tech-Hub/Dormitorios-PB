@@ -122,8 +122,22 @@ export function UnifiedLoginView({
         </div>
 
         <form action="/api/auth/login" method="post" className="space-y-3">
-          <Input name="email" placeholder="Correo" type="email" required />
-          <Input name="password" placeholder="Contraseña" type="password" required />
+          <Input
+            name="identifier"
+            placeholder="Usuario o correo"
+            type="text"
+            autoCapitalize="none"
+            autoCorrect="off"
+            autoComplete="username"
+            required
+          />
+          <Input
+            name="password"
+            placeholder="Contraseña"
+            type="password"
+            autoComplete="current-password"
+            required
+          />
           {staffError ? <p className="text-sm text-danger">{staffError}</p> : null}
           <Button className="w-full" type="submit">
             Entrar
