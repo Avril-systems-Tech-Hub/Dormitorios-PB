@@ -1,5 +1,9 @@
 import { CreateUserPanel } from "@/components/dashboard/create-user-panel";
-import { UserRowActions, UserStatusBadge } from "@/components/dashboard/user-row-actions";
+import {
+  UserCredentialsCell,
+  UserRowActions,
+  UserStatusBadge,
+} from "@/components/dashboard/user-row-actions";
 import { UsersPanel } from "@/components/dashboard/users-panel";
 import { Card } from "@/components/ui/card";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
@@ -66,16 +70,19 @@ export default async function UsersPage({
   }
 
   const userRows = (pagedProfiles ?? []).map((p) => {
-    const login = p.username ? `@${p.username}` : (emailMap.get(p.id) ?? "—");
+    const loginKind = p.username ? ("username" as const) : ("email" as const);
+    const loginLabel = p.username ?? emailMap.get(p.id) ?? "—";
     const systemRole = roles.find((r) => r.id === p.system_role_id);
     const roleLabel = systemRole?.label ?? p.role ?? "Sin rol";
     const isAdmin = p.role === "admin";
 
     const nameCell = (
-      <div key={`name-${p.id}`} className="min-w-0">
-        <p className="font-medium text-text-main">{p.full_name}</p>
-        <p className="text-xs text-text-muted">{login}</p>
-      </div>
+      <UserCredentialsCell
+        key={`name-${p.id}`}
+        fullName={p.full_name}
+        loginLabel={loginLabel}
+        loginKind={loginKind}
+      />
     );
 
     const roleCell = <span className="text-sm text-text-main">{roleLabel}</span>;
@@ -109,8 +116,9 @@ export default async function UsersPage({
       <Card>
         <h2 className="text-lg font-semibold text-text-main">Usuarios y permisos</h2>
         <p className="mt-1 text-sm text-text-muted">
-          Administra quién puede entrar al sistema, su rol y si tiene el acceso activo. Los cambios
-          aplican de inmediato.
+          Administra quién puede entrar, su usuario/correo y contraseñas. Las contraseñas no se
+          pueden recuperar: solo restablecer. Para recepción el acceso es el usuario (ej.{" "}
+          <span className="font-medium text-text-main">arturo</span>), sin @.
         </p>
       </Card>
 

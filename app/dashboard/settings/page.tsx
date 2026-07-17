@@ -28,12 +28,18 @@ export default async function SettingsPage() {
       <div className="space-y-8">
         <section>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-text-main">Accesos del personal</h2>
+            <div>
+              <h2 className="text-lg font-semibold text-text-main">Accesos del personal</h2>
+              <p className="mt-1 text-sm text-text-muted">
+                Crea usuarios de recepción, mira su nombre de acceso y restablece contraseñas cuando
+                las olviden. La clave nunca se puede recuperar: solo definir una nueva.
+              </p>
+            </div>
             <Link
               href="/dashboard/users"
               className="inline-flex h-10 items-center justify-center rounded-lg border border-border-soft bg-white px-4 py-2 text-sm font-medium text-text-main transition-colors hover:bg-surface-soft"
             >
-              Administrar usuarios y contraseñas
+              Ver usuarios y restablecer contraseñas
             </Link>
           </div>
           <CreateUserPanel roles={roleOptions} returnTo="/dashboard/settings" />

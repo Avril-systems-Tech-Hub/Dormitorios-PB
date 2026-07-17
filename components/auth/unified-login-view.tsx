@@ -118,7 +118,9 @@ export function UnifiedLoginView({
             className="mx-auto rounded-md"
           />
           <h1 className="text-xl font-semibold">Acceso operativo</h1>
-          <p className="text-sm text-text-muted">Inicia sesión para continuar</p>
+          <p className="text-sm text-text-muted">
+            Recepción: usuario (ej. arturo). Admin: correo.
+          </p>
         </div>
 
         <form action="/api/auth/login" method="post" className="space-y-3">
@@ -126,8 +128,10 @@ export function UnifiedLoginView({
             name="identifier"
             placeholder="Usuario o correo"
             type="text"
+            inputMode="text"
             autoCapitalize="none"
             autoCorrect="off"
+            spellCheck={false}
             autoComplete="username"
             required
           />

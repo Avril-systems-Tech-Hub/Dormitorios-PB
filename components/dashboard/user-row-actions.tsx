@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   deleteUserAction,
   resetSystemUserPasswordAction,
@@ -33,6 +34,110 @@ export function UserStatusBadge({ isAdmin, isDisabled }: { isAdmin: boolean; isD
     return <Badge variant="warning">Acceso desactivado</Badge>;
   }
   return <Badge variant="success">Activo</Badge>;
+}
+
+export function UserCredentialsCell({
+  fullName,
+  loginLabel,
+  loginKind,
+}: {
+  fullName: string;
+  loginLabel: string;
+  loginKind: "username" | "email";
+}) {
+  const [showPasswordHint, setShowPasswordHint] = useState(false);
+
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <p className="font-medium text-text-main">{fullName}</p>
+      <p className="text-xs text-text-muted">
+        {loginKind === "username" ? "Usuario de acceso" : "Correo de acceso"}:{" "}
+        <span className="font-medium text-text-main">{loginLabel}</span>
+      </p>
+      {loginKind === "username" ? (
+        <p className="text-[11px] text-text-muted">
+          En el login escribe solo <span className="font-medium text-text-main">{loginLabel}</span>, sin @.
+        </p>
+      ) : null}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-text-muted">Contraseña:</span>
+        <span className="font-mono text-xs tracking-widest text-text-main">••••••••</span>
+        <button
+          type="button"
+          className="rounded p-1 text-text-muted hover:bg-surface-soft hover:text-text-main"
+          aria-label={showPasswordHint ? "Ocultar aviso de contraseña" : "Ver aviso de contraseña"}
+          title="La contraseña guardada no se puede recuperar"
+          onClick={() => setShowPasswordHint((prev) => !prev)}
+        >
+          <EyeIcon open={showPasswordHint} />
+        </button>
+      </div>
+      {showPasswordHint ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
+          Por seguridad la contraseña no se puede ver después de guardarla. Usa “Restablecer
+          contraseña” y el ojito al escribir la nueva para confirmarla antes de compartirla.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function EyeIcon({ open }: { open: boolean }) {
+  if (open) {
+    return (
+      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+        <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+        <path d="M1 1l22 22" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function PasswordField({
+  id,
+  name,
+  label,
+}: {
+  id: string;
+  name: string;
+  label: string;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div>
+      <label className="block text-xs text-text-muted" htmlFor={id}>
+        {label}
+      </label>
+      <div className="mt-1 flex items-center gap-1">
+        <input
+          id={id}
+          name={name}
+          type={visible ? "text" : "password"}
+          required
+          minLength={8}
+          maxLength={128}
+          autoComplete="new-password"
+          className={cn(fieldClass, "w-full")}
+        />
+        <button
+          type="button"
+          className="rounded p-1.5 text-text-muted hover:bg-white hover:text-text-main"
+          aria-label={visible ? "Ocultar contraseña" : "Mostrar contraseña"}
+          onClick={() => setVisible((prev) => !prev)}
+        >
+          <EyeIcon open={visible} />
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export function UserRowActions({
@@ -129,31 +234,11 @@ export function UserRowActions({
         >
           <input type="hidden" name="user_id" value={userId} />
           <input type="hidden" name="return_to" value="/dashboard/users" />
-          <label className="block text-xs text-text-muted" htmlFor={`password-${userId}`}>
-            Nueva contraseña
-          </label>
-          <input
-            id={`password-${userId}`}
-            name="password"
-            type="password"
-            required
-            minLength={8}
-            maxLength={128}
-            autoComplete="new-password"
-            className={cn(fieldClass, "w-full")}
-          />
-          <label className="block text-xs text-text-muted" htmlFor={`password-confirmation-${userId}`}>
-            Confirmar contraseña
-          </label>
-          <input
+          <PasswordField id={`password-${userId}`} name="password" label="Nueva contraseña" />
+          <PasswordField
             id={`password-confirmation-${userId}`}
             name="password_confirmation"
-            type="password"
-            required
-            minLength={8}
-            maxLength={128}
-            autoComplete="new-password"
-            className={cn(fieldClass, "w-full")}
+            label="Confirmar contraseña"
           />
           <Button type="submit" variant="outline" className="h-8 px-3 text-xs">
             Guardar nueva contraseña
