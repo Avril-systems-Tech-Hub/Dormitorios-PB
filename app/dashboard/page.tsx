@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/purity -- Temporary production timing instrumentation. */
 import { Suspense } from "react";
 import Link from "next/link";
 import { ReceptionHome } from "@/components/dashboard/reception-home";
@@ -11,6 +12,10 @@ import { ReservationsFinanceChart } from "@/components/dashboard/reservations-fi
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
+import {
+  getAuthTraceId,
+  logAuthDiagnostic,
+} from "@/lib/auth/diagnostics";
 import { getSessionProfile } from "@/lib/auth/guards";
 import {
   getDailyFinanceGuestDetailsInRange,
@@ -43,7 +48,10 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const profile = await getSessionProfile();
+  const startedAt = performance.now();
+  const authStartedAt = performance.now();
+  const profile = await getSessionProfile("dashboard-page");
+  const authMs = Number((performance.now() - authStartedAt).toFixed(1));
   const supabase = await createClient();
   const params = await searchParams;
   const today = getMexicoCityDateString();
@@ -86,6 +94,7 @@ export default async function DashboardPage({
   const bedFilter = parseBedSummaryFilter(params.bedFilter);
   const folioFilter = parseFolioSummaryFilter(params.folioFilter);
 
+  const queriesStartedAt = performance.now();
   const [
     finance,
     weekFinance,
@@ -135,6 +144,7 @@ export default async function DashboardPage({
       .eq("status", "open")
       .maybeSingle(),
   ]);
+  const queriesMs = Number((performance.now() - queriesStartedAt).toFixed(1));
 
   const bedOccupancyMap = buildBedOccupancyMap(rgRows ?? [], today);
   const bedCounts = computeBedSummaryCounts(beds ?? [], bedOccupancyMap);
@@ -144,9 +154,24 @@ export default async function DashboardPage({
     pagados: foliosPagados ?? 0,
     todos: foliosTodos ?? 0,
   };
+  const totalMs = Number((performance.now() - startedAt).toFixed(1));
+  logAuthDiagnostic("dashboard-page", {
+    traceId: await getAuthTraceId(),
+    userId: profile.id.slice(0, 8),
+    authMs,
+    queriesMs,
+    totalMs,
+  });
 
   return (
     <div className="min-w-0 space-y-4">
+      <span
+        hidden
+        data-auth-diagnostic="dashboard-page"
+        data-auth-ms={authMs}
+        data-queries-ms={queriesMs}
+        data-total-ms={totalMs}
+      />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         <Suspense fallback={
           <Card className="h-full animate-pulse">

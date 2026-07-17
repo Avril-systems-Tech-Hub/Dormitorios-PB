@@ -3,6 +3,11 @@
  * Consulta system_roles, system_modules y role_module_permissions desde Supabase.
  */
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  durationMs,
+  getAuthTraceId,
+  logAuthDiagnostic,
+} from "@/lib/auth/diagnostics";
 import { createClient } from "@/lib/supabase/server";
 
 export type SystemModule = {
@@ -24,47 +29,118 @@ export type SystemRole = {
  * Usa el campo system_role_id del perfil para consultar role_module_permissions.
  */
 export async function getUserModules(): Promise<SystemModule[]> {
+  const startedAt = performance.now();
+  const traceId = await getAuthTraceId();
   const supabase = await createClient();
+  const getUserStartedAt = performance.now();
   const {
     data: { user },
+    error: getUserError,
   } = await supabase.auth.getUser();
+  const getUserMs = durationMs(getUserStartedAt);
 
-  if (!user) return [];
+  if (!user) {
+    logAuthDiagnostic("user-modules", {
+      traceId,
+      outcome: "no-user",
+      errorCode: getUserError?.code ?? null,
+      getUserMs,
+      totalMs: durationMs(startedAt),
+    });
+    return [];
+  }
 
   // Obtener el system_role_id del perfil
+  const profileStartedAt = performance.now();
   const { data: profile } = await supabase
     .from("profiles")
     .select("system_role_id, role")
     .eq("id", user.id)
     .single();
+  const profileMs = durationMs(profileStartedAt);
 
-  if (!profile) return [];
+  if (!profile) {
+    logAuthDiagnostic("user-modules", {
+      traceId,
+      outcome: "no-profile",
+      userId: user.id.slice(0, 8),
+      getUserMs,
+      profileMs,
+      totalMs: durationMs(startedAt),
+    });
+    return [];
+  }
 
   // Si es admin por el campo role legacy y no tiene system_role_id, dar todos los módulos
   if (profile.role === "admin" && !profile.system_role_id) {
     const adminSupabase = createAdminClient();
+    const permissionsStartedAt = performance.now();
     const { data: modules } = await adminSupabase
       .from("system_modules")
       .select("key, label, href, sort_order")
       .order("sort_order");
+    const permissionsMs = durationMs(permissionsStartedAt);
+    logAuthDiagnostic("user-modules", {
+      traceId,
+      outcome: "legacy-admin",
+      userId: user.id.slice(0, 8),
+      getUserMs,
+      profileMs,
+      permissionsMs,
+      totalMs: durationMs(startedAt),
+    });
     return modules ?? [];
   }
 
-  if (!profile.system_role_id) return [];
+  if (!profile.system_role_id) {
+    logAuthDiagnostic("user-modules", {
+      traceId,
+      outcome: "no-system-role",
+      userId: user.id.slice(0, 8),
+      getUserMs,
+      profileMs,
+      totalMs: durationMs(startedAt),
+    });
+    return [];
+  }
 
   // Consultar módulos del rol
   const adminSupabase = createAdminClient();
+  const permissionsStartedAt = performance.now();
   const { data: permissions } = await adminSupabase
     .from("role_module_permissions")
     .select("system_modules(key, label, href, sort_order)")
     .eq("role_id", profile.system_role_id);
+  const permissionsMs = durationMs(permissionsStartedAt);
 
-  if (!permissions) return [];
+  if (!permissions) {
+    logAuthDiagnostic("user-modules", {
+      traceId,
+      outcome: "no-permissions",
+      userId: user.id.slice(0, 8),
+      getUserMs,
+      profileMs,
+      permissionsMs,
+      totalMs: durationMs(startedAt),
+    });
+    return [];
+  }
 
-  return permissions
+  const modules = permissions
     .map((p) => p.system_modules as unknown as SystemModule)
     .filter(Boolean)
     .sort((a, b) => a.sort_order - b.sort_order);
+  logAuthDiagnostic("user-modules", {
+    traceId,
+    outcome: "ok",
+    userId: user.id.slice(0, 8),
+    moduleCount: modules.length,
+    getUserMs,
+    profileMs,
+    permissionsMs,
+    totalMs: durationMs(startedAt),
+  });
+  return modules;
 }
 
 /**
@@ -104,12 +180,19 @@ export async function getAllModules(): Promise<SystemModule[]> {
  */
 export async function getRoleLabel(roleId: string | null | undefined): Promise<string | null> {
   if (!roleId) return null;
+  const startedAt = performance.now();
+  const traceId = await getAuthTraceId();
   const adminSupabase = createAdminClient();
   const { data: role } = await adminSupabase
     .from("system_roles")
     .select("label")
     .eq("id", roleId)
     .single();
+  logAuthDiagnostic("role-label", {
+    traceId,
+    outcome: role ? "ok" : "not-found",
+    totalMs: durationMs(startedAt),
+  });
   return role?.label ?? null;
 }
 
