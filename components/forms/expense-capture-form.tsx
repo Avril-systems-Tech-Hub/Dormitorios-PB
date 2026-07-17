@@ -25,6 +25,12 @@ import {
   pruneExpenseReceiptDrafts,
   saveExpenseReceiptDraft,
 } from "@/lib/expense-draft-storage";
+import {
+  EXPENSE_RECEIPT_ACCEPT,
+  MAX_EXPENSE_RECEIPT_BYTES,
+  resolveExpenseReceiptMime,
+  withResolvedReceiptFile,
+} from "@/lib/expense-receipt";
 import type { ExpenseConcept } from "@/types/domain";
 
 type ExpenseCaptureFormProps = {
@@ -32,16 +38,6 @@ type ExpenseCaptureFormProps = {
   returnTo?: string;
   onClose?: () => void;
 };
-
-/** Stay under next.config serverActions.bodySizeLimit (10 MB) including other fields. */
-const MAX_RECEIPT_BYTES = 9 * 1024 * 1024;
-const ACCEPTED_RECEIPT_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/heic",
-  "image/heif",
-]);
 
 type ExpenseDraft = {
   amount: string;
@@ -126,7 +122,7 @@ export function ExpenseCaptureForm({
           }
           void loadExpenseReceiptDraft(restoredSubmissionId)
             .then((file) => {
-              if (file) setReceiptFile(file);
+              if (file) setReceiptFile(withResolvedReceiptFile(file));
             })
             .catch(() => {
               setDraftStorageWarning("No se pudo restaurar la fotografía guardada en este dispositivo.");
@@ -172,22 +168,23 @@ export function ExpenseCaptureForm({
     if (!file) {
       return;
     }
-    if (file.size > MAX_RECEIPT_BYTES) {
+    if (file.size > MAX_EXPENSE_RECEIPT_BYTES) {
       setReceiptFile(null);
       setReceiptFileError("La imagen es muy pesada (máx. 9 MB). Elige otra.");
       event.target.value = "";
       return;
     }
-    if (!ACCEPTED_RECEIPT_TYPES.has(file.type)) {
+    if (!resolveExpenseReceiptMime(file.type, file.name)) {
       setReceiptFile(null);
       setReceiptFileError("Usa una imagen JPG, PNG, WebP, HEIC o HEIF.");
       event.target.value = "";
       return;
     }
-    setReceiptFile(file);
+    const normalized = withResolvedReceiptFile(file);
+    setReceiptFile(normalized);
     setReceiptFileError("");
     setDraftStorageWarning("");
-    void saveExpenseReceiptDraft(submissionId, file).catch(() => {
+    void saveExpenseReceiptDraft(submissionId, normalized).catch(() => {
       setDraftStorageWarning(
         "La foto está lista para enviar, pero el navegador no permitió conservarla tras una recarga.",
       );
@@ -210,7 +207,9 @@ export function ExpenseCaptureForm({
     if (getCurrentFormError()) return;
 
     const formData = new FormData(event.currentTarget);
-    if (receiptFile) formData.set("receipt_image", receiptFile);
+    if (receiptFile) {
+      formData.set("receipt_image", withResolvedReceiptFile(receiptFile));
+    }
     submittingRef.current = true;
 
     startTransition(async () => {
@@ -235,7 +234,7 @@ export function ExpenseCaptureForm({
     if (!movementId || !receiptFile || submittingRef.current) return;
     const formData = new FormData();
     formData.set("movement_id", movementId);
-    formData.set("receipt_image", receiptFile);
+    formData.set("receipt_image", withResolvedReceiptFile(receiptFile));
     submittingRef.current = true;
     startTransition(async () => {
       try {
@@ -401,7 +400,7 @@ export function ExpenseCaptureForm({
         <input
           ref={cameraInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+          accept={EXPENSE_RECEIPT_ACCEPT}
           capture="environment"
           onChange={handleReceiptChange}
           className="sr-only"
@@ -410,7 +409,7 @@ export function ExpenseCaptureForm({
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+          accept={EXPENSE_RECEIPT_ACCEPT}
           onChange={handleReceiptChange}
           className="sr-only"
           tabIndex={-1}

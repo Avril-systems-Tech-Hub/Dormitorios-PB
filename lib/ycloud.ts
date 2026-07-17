@@ -14,6 +14,8 @@
  * - YCLOUD_TEMPLATE_LANGUAGE (código de idioma del template, ej: "es", default: "es")
  */
 
+import { digitsOnly, formatMexicanPhoneE164 } from "@/lib/phone";
+
 type YCloudTextMessagePayload = {
   from: string;
   to: string;
@@ -49,6 +51,44 @@ type YCloudResponse = {
   pricingCategory?: string;
 };
 
+type YCloudErrorBody = {
+  message?: string;
+  error?: {
+    status?: number;
+    code?: string;
+    message?: string;
+    target?: string;
+    whatsappApiError?: {
+      message?: string;
+      code?: string | number;
+    };
+  };
+};
+
+/** Digits YCloud accepts for `to` / `from` (E.164 without "+"). */
+function cleanWhatsAppPhone(phone: string): string {
+  const e164 = formatMexicanPhoneE164(phone);
+  if (e164) return digitsOnly(e164);
+  return digitsOnly(phone);
+}
+
+function formatYCloudError(status: number, result: YCloudErrorBody): string {
+  const nested = result.error;
+  const code = nested?.code;
+  const message =
+    nested?.message ||
+    nested?.whatsappApiError?.message ||
+    result.message;
+  const waCode = nested?.whatsappApiError?.code;
+
+  if (code && message) {
+    return waCode ? `${code}: ${message} (WA ${waCode})` : `${code}: ${message}`;
+  }
+  if (message) return message;
+  if (code) return `${code} (HTTP ${status})`;
+  return `HTTP ${status}`;
+}
+
 export async function sendWhatsAppTextMessage(
   toPhone: string,
   body: string,
@@ -63,9 +103,8 @@ export async function sendWhatsAppTextMessage(
     return { success: false, error: "Missing YCloud configuration" };
   }
 
-  // Limpiar el número: quitar "+" y espacios
-  const cleanTo = toPhone.replace(/\+|\s|-/g, "");
-  const cleanFrom = fromPhone.replace(/\+|\s|-/g, "");
+  const cleanTo = cleanWhatsAppPhone(toPhone);
+  const cleanFrom = cleanWhatsAppPhone(fromPhone);
 
   const payload: YCloudTextMessagePayload = {
     from: cleanFrom,
@@ -87,13 +126,13 @@ export async function sendWhatsAppTextMessage(
       },
     );
 
-    const result = await response.json();
+    const result = (await response.json()) as YCloudErrorBody & { id?: string };
 
     if (!response.ok) {
       console.error("[YCloud] Error enviando WhatsApp:", result);
       return {
         success: false,
-        error: result.message || `HTTP ${response.status}`,
+        error: formatYCloudError(response.status, result),
       };
     }
 
@@ -124,8 +163,8 @@ export async function sendWhatsAppDocument(
     return { success: false, error: "Missing YCloud configuration" };
   }
 
-  const cleanTo = toPhone.replace(/\+|\s|-/g, "");
-  const cleanFrom = fromPhone.replace(/\+|\s|-/g, "");
+  const cleanTo = cleanWhatsAppPhone(toPhone);
+  const cleanFrom = cleanWhatsAppPhone(fromPhone);
 
   const payload = {
     from: cleanFrom,
@@ -151,13 +190,13 @@ export async function sendWhatsAppDocument(
       },
     );
 
-    const result = await response.json();
+    const result = (await response.json()) as YCloudErrorBody & { id?: string };
 
     if (!response.ok) {
       console.error("[YCloud] Error enviando documento WhatsApp:", result);
       return {
         success: false,
-        error: result.message || `HTTP ${response.status}`,
+        error: formatYCloudError(response.status, result),
       };
     }
 
@@ -197,8 +236,8 @@ export async function sendWhatsAppTemplateMessage(
     return { success: false, error: "Missing YCloud configuration" };
   }
 
-  const cleanTo = toPhone.replace(/\+|\s|-/g, "");
-  const cleanFrom = fromPhone.replace(/\+|\s|-/g, "");
+  const cleanTo = cleanWhatsAppPhone(toPhone);
+  const cleanFrom = cleanWhatsAppPhone(fromPhone);
 
   // Construir componentes: header y body por separado
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -265,13 +304,16 @@ export async function sendWhatsAppTemplateMessage(
       },
     );
 
-    const result = await response.json();
+    const result = (await response.json()) as YCloudErrorBody & {
+      id?: string;
+      pricingCategory?: string;
+    };
 
     if (!response.ok) {
       console.error("[YCloud] Error enviando template WhatsApp:", result);
       return {
         success: false,
-        error: result.message || `HTTP ${response.status}`,
+        error: formatYCloudError(response.status, result),
       };
     }
 

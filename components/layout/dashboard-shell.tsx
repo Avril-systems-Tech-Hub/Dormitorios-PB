@@ -43,11 +43,20 @@ export function DashboardShell({
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             {userName ? (
-              <span className="hidden max-w-[9rem] truncate text-sm font-medium text-white md:inline">
-                {userName}
+              <div className="min-w-0 max-w-[9.5rem] text-right sm:max-w-[14rem]">
+                <p className="truncate text-xs font-semibold leading-tight text-white sm:text-sm">
+                  {userName}
+                </p>
+                <p className="truncate text-[10px] leading-tight text-white/75 sm:hidden">
+                  {roleLabel ?? (role === "admin" ? "Admin" : "Recepción")}
+                </p>
+              </div>
+            ) : (
+              <span className="rounded-full bg-mkt-terracotta/90 px-2 py-0.5 text-[10px] font-medium text-white sm:hidden sm:py-1 sm:text-xs">
+                {roleLabel ?? (role === "admin" ? "Admin" : "Recepción")}
               </span>
-            ) : null}
-            <span className="rounded-full bg-mkt-terracotta/90 px-2 py-0.5 text-[10px] font-medium text-white sm:py-1 sm:text-xs">
+            )}
+            <span className="hidden rounded-full bg-mkt-terracotta/90 px-2 py-0.5 text-[10px] font-medium text-white sm:inline sm:py-1 sm:text-xs">
               {roleLabel ?? (role === "admin" ? "Admin" : "Recepción")}
             </span>
             <form action="/api/auth/signout" method="post">

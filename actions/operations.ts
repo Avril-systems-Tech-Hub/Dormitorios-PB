@@ -14,6 +14,11 @@ import type {
   PaymentMethod,
 } from "@/types/domain";
 import { EXPENSE_CONCEPTS } from "@/lib/expense-concepts";
+import {
+  expenseReceiptExtension,
+  MAX_EXPENSE_RECEIPT_BYTES,
+  resolveExpenseReceiptMime,
+} from "@/lib/expense-receipt";
 import { getMexicoCityDateString } from "@/lib/dates";
 import { parseTsvToRows } from "@/lib/imports/tsv";
 import { sendWhatsAppTemplateMessage, buildPaymentConfirmationMessage } from "@/lib/ycloud";
@@ -1180,14 +1185,6 @@ export async function closeShiftAction(formData: FormData): Promise<void> {
   return redirectWithResult(returnTo, "success", "Turno finalizado.");
 }
 
-const MAX_EXPENSE_RECEIPT_BYTES = 9 * 1024 * 1024;
-const EXPENSE_RECEIPT_MIME_EXTENSIONS: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/heic": "heic",
-  "image/heif": "heif",
-};
 
 export type CreateExpenseResult = {
   status: "success" | "partial" | "error";
@@ -1216,7 +1213,11 @@ export async function createExpenseResultAction(formData: FormData): Promise<Cre
   const amount = Number(formData.get("amount") ?? 0);
   const method = String(formData.get("method") ?? "cash") as PaymentMethod;
   const notes = String(formData.get("notes") ?? "").trim();
-  const receiptFile = formData.get("receipt_image");
+  const receiptFileRaw = formData.get("receipt_image");
+  const receiptFile = receiptFileRaw instanceof File && receiptFileRaw.size > 0 ? receiptFileRaw : null;
+  const receiptMime = receiptFile
+    ? resolveExpenseReceiptMime(receiptFile.type, receiptFile.name)
+    : null;
   let receiptBuffer: Buffer | null = null;
   const requestedMovementId = String(formData.get("expense_submission_id") ?? "").trim();
   const movementId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -1237,11 +1238,11 @@ export async function createExpenseResultAction(formData: FormData): Promise<Cre
   if (!["cash", "transfer", "card"].includes(method)) {
     return expenseError("Método de pago no válido.");
   }
-  if (receiptFile instanceof File && receiptFile.size > 0) {
+  if (receiptFile) {
     if (receiptFile.size > MAX_EXPENSE_RECEIPT_BYTES) {
       return expenseError("La evidencia supera el máximo permitido de 9 MB.");
     }
-    if (!EXPENSE_RECEIPT_MIME_EXTENSIONS[receiptFile.type]) {
+    if (!receiptMime || !expenseReceiptExtension(receiptMime)) {
       return expenseError("La evidencia debe ser una imagen JPG, PNG, WebP, HEIC o HEIF.");
     }
     receiptBuffer = Buffer.from(await receiptFile.arrayBuffer());
@@ -1281,7 +1282,7 @@ export async function createExpenseResultAction(formData: FormData): Promise<Cre
         receipt: receiptBuffer
           ? {
               sha256: receiptHash,
-              type: receiptFile instanceof File ? receiptFile.type : null,
+              type: receiptMime,
               size: receiptBuffer.byteLength,
             }
           : null,
@@ -1369,7 +1370,7 @@ export async function createExpenseResultAction(formData: FormData): Promise<Cre
 
   const movement = { id: movementId };
 
-  if (receiptFile instanceof File && receiptFile.size > 0) {
+  if (receiptFile && receiptMime && receiptBuffer) {
     const { error: bucketError } = await adminSupabase.storage.createBucket(EXPENSE_RECEIPTS_BUCKET, {
       public: false,
     });
@@ -1384,16 +1385,22 @@ export async function createExpenseResultAction(formData: FormData): Promise<Cre
         evidence: "failed",
       };
     }
-    const extension = EXPENSE_RECEIPT_MIME_EXTENSIONS[receiptFile.type];
-    const objectPath = `${movementDate}/${movement.id}.${extension}`;
-    const fileBuffer = receiptBuffer;
-    if (!fileBuffer) {
-      return expenseError("No se pudo leer la evidencia.");
+    const extension = expenseReceiptExtension(receiptMime);
+    if (!extension) {
+      return {
+        status: "partial",
+        message: "El gasto se guardó, pero el formato de la evidencia no es válido.",
+        movementId,
+        amount,
+        expenseConcept,
+        evidence: "failed",
+      };
     }
+    const objectPath = `${movementDate}/${movement.id}.${extension}`;
 
     const { error: uploadError } = await adminSupabase.storage
       .from(EXPENSE_RECEIPTS_BUCKET)
-      .upload(objectPath, fileBuffer, { contentType: receiptFile.type, upsert: true });
+      .upload(objectPath, receiptBuffer, { contentType: receiptMime, upsert: true });
 
     if (uploadError) {
       console.error("[createExpenseResultAction] upload failed:", uploadError.message, uploadError);
@@ -1439,13 +1446,13 @@ export async function createExpenseResultAction(formData: FormData): Promise<Cre
   return {
     status: "success",
     message:
-      receiptFile instanceof File && receiptFile.size > 0
+      receiptFile && receiptMime
         ? "Gasto y evidencia guardados correctamente."
         : "Gasto guardado correctamente sin evidencia.",
     movementId,
     amount,
     expenseConcept,
-    evidence: receiptFile instanceof File && receiptFile.size > 0 ? "saved" : "not_provided",
+    evidence: receiptFile && receiptMime ? "saved" : "not_provided",
   };
 }
 
@@ -1457,15 +1464,17 @@ export async function retryExpenseReceiptAction(formData: FormData): Promise<Cre
   }
 
   const movementId = String(formData.get("movement_id") ?? "").trim();
-  const receiptFile = formData.get("receipt_image");
-  if (!movementId || !(receiptFile instanceof File) || receiptFile.size <= 0) {
+  const receiptFileRaw = formData.get("receipt_image");
+  const receiptFile = receiptFileRaw instanceof File && receiptFileRaw.size > 0 ? receiptFileRaw : null;
+  if (!movementId || !receiptFile) {
     return expenseError("Selecciona la evidencia que deseas reintentar.");
   }
   if (receiptFile.size > MAX_EXPENSE_RECEIPT_BYTES) {
     return expenseError("La evidencia supera el máximo permitido de 9 MB.");
   }
-  const extension = EXPENSE_RECEIPT_MIME_EXTENSIONS[receiptFile.type];
-  if (!extension) {
+  const receiptMime = resolveExpenseReceiptMime(receiptFile.type, receiptFile.name);
+  const extension = receiptMime ? expenseReceiptExtension(receiptMime) : null;
+  if (!receiptMime || !extension) {
     return expenseError("La evidencia debe ser una imagen JPG, PNG, WebP, HEIC o HEIF.");
   }
 
@@ -1507,7 +1516,7 @@ export async function retryExpenseReceiptAction(formData: FormData): Promise<Cre
   const fileBuffer = Buffer.from(await receiptFile.arrayBuffer());
   const { error: uploadError } = await adminSupabase.storage
     .from(EXPENSE_RECEIPTS_BUCKET)
-    .upload(objectPath, fileBuffer, { contentType: receiptFile.type, upsert: true });
+    .upload(objectPath, fileBuffer, { contentType: receiptMime, upsert: true });
   if (uploadError) {
     return {
       status: "partial",
