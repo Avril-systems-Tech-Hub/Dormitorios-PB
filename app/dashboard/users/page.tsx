@@ -28,7 +28,9 @@ export default async function UsersPage({
     .from("profiles")
     .select("id, full_name, username, role, system_role_id, is_disabled, created_at", {
       count: "exact",
-    });
+    })
+    // Soft-retired staff (historial de pagos) no se listan como cuentas activas.
+    .not("full_name", "ilike", "%(eliminado)%");
 
   if (q) {
     profilesQuery = profilesQuery.ilike("full_name", `%${escapeIlike(q)}%`);
@@ -41,6 +43,7 @@ export default async function UsersPage({
   const { data: allProfiles } = await adminSupabase
     .from("profiles")
     .select("id, full_name, username, role, system_role_id, is_disabled, created_at")
+    .not("full_name", "ilike", "%(eliminado)%")
     .order("created_at", { ascending: true });
 
   const userIds = (pagedProfiles ?? []).filter((p) => !p.username).map((p) => p.id);

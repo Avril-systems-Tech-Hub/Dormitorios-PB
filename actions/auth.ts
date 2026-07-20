@@ -187,6 +187,70 @@ export async function updateUserRoleAction(formData: FormData) {
   return redirectWithResult(returnTo, "success", `Rol de ${profile.full_name} actualizado a ${role.label}.`);
 }
 
+/** Nullable profile FKs that block auth.admin.deleteUser (profiles cascades from auth.users). */
+const PROFILE_REFERENCE_COLUMNS: Array<{ table: string; column: string }> = [
+  { table: "shifts", column: "opened_by" },
+  { table: "shifts", column: "closed_by" },
+  { table: "payments", column: "received_by" },
+  { table: "reservations", column: "created_by" },
+  { table: "reservations", column: "checked_out_by" },
+  { table: "cash_cuts", column: "generated_by" },
+  { table: "audit_logs", column: "actor_user_id" },
+  { table: "cash_movements", column: "responsible_profile_id" },
+  { table: "promo_codes", column: "created_by" },
+  { table: "import_batches", column: "uploaded_by" },
+  { table: "folio_extra_services", column: "created_by" },
+  { table: "imported_record_extra_services", column: "created_by" },
+];
+
+async function detachProfileReferences(
+  adminSupabase: ReturnType<typeof createAdminClient>,
+  userId: string,
+): Promise<string | null> {
+  for (const { table, column } of PROFILE_REFERENCE_COLUMNS) {
+    const { error } = await adminSupabase
+      .from(table)
+      .update({ [column]: null })
+      .eq(column, userId);
+    if (error) {
+      // Payments are append-only until migration 20260720140000; other tables should null fine.
+      if (table === "payments" && /append-only/i.test(error.message)) {
+        return "payments_append_only";
+      }
+      return `No se pudo liberar ${table}.${column}: ${error.message}`;
+    }
+  }
+  return null;
+}
+
+async function softRetireStaffUser(
+  adminSupabase: ReturnType<typeof createAdminClient>,
+  userId: string,
+  fullName: string,
+): Promise<string | null> {
+  const { error: banError } = await adminSupabase.auth.admin.updateUserById(userId, {
+    ban_duration: "876600h",
+  });
+  if (banError) {
+    return `No se pudo bloquear el acceso: ${banError.message}`;
+  }
+
+  const retiredName = fullName.includes("(eliminado)") ? fullName : `${fullName} (eliminado)`;
+  const { error: profileError } = await adminSupabase
+    .from("profiles")
+    .update({
+      is_disabled: true,
+      username: null,
+      full_name: retiredName,
+    })
+    .eq("id", userId);
+
+  if (profileError) {
+    return `No se pudo retirar el perfil: ${profileError.message}`;
+  }
+  return null;
+}
+
 export async function deleteUserAction(formData: FormData) {
   await requireRole(["admin"]);
   const adminSupabase = createAdminClient();
@@ -212,15 +276,37 @@ export async function deleteUserAction(formData: FormData) {
     return redirectWithResult(returnTo, "error", "No se puede eliminar al administrador.");
   }
 
+  // Historial (turnos, pagos, auditoría, etc.) referencia al perfil sin ON DELETE;
+  // hay que soltar esas FKs antes de borrar auth.users → profiles.
+  const detachError = await detachProfileReferences(adminSupabase, userId);
+  if (detachError && detachError !== "payments_append_only") {
+    return redirectWithResult(returnTo, "error", detachError);
+  }
+
   // Eliminar usuario (cascade elimina perfil)
   const { error: deleteError } = await adminSupabase.auth.admin.deleteUser(userId);
 
-  if (deleteError) {
-    return redirectWithResult(returnTo, "error", `Error eliminando usuario: ${deleteError.message}`);
+  if (!deleteError) {
+    revalidatePath("/dashboard/users");
+    return redirectWithResult(returnTo, "success", `Usuario ${profile.full_name} eliminado.`);
+  }
+
+  // Si hay pagos históricos protegidos, retirar acceso sin borrar el historial contable.
+  const softError = await softRetireStaffUser(adminSupabase, userId, profile.full_name);
+  if (softError) {
+    return redirectWithResult(
+      returnTo,
+      "error",
+      `No se pudo eliminar (${deleteError.message}). ${softError}`,
+    );
   }
 
   revalidatePath("/dashboard/users");
-  return redirectWithResult(returnTo, "success", `Usuario ${profile.full_name} eliminado.`);
+  return redirectWithResult(
+    returnTo,
+    "success",
+    `No se pudo borrar del todo por historial de pagos; se bloqueó el acceso de ${profile.full_name} y quedó liberado el usuario.`,
+  );
 }
 
 export async function toggleUserStatusAction(formData: FormData) {

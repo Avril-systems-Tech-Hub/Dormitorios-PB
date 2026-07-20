@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import {
   deleteUserAction,
   resetSystemUserPasswordAction,
@@ -9,7 +10,7 @@ import {
 } from "@/actions/auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, isNextRedirect } from "@/lib/utils";
 
 type RoleOption = { id: string; label: string };
 
@@ -149,6 +150,8 @@ export function UserRowActions({
   isCurrentUser,
   roles,
 }: UserRowActionsProps) {
+  const [isPending, startTransition] = useTransition();
+
   if (isAdmin) {
     return (
       <p className="text-xs text-text-muted">La cuenta de administrador no se puede modificar aquí.</p>
@@ -198,24 +201,38 @@ export function UserRowActions({
         </form>
 
         {!isCurrentUser ? (
-          <form
-            action={deleteUserAction}
-            onSubmit={(event) => {
+          <Button
+            type="button"
+            variant="danger"
+            className="h-8 px-3 text-xs"
+            disabled={isPending}
+            onClick={() => {
               if (
                 !confirm(
                   `¿Eliminar a ${fullName}? Se borrará su cuenta y ya no podrá iniciar sesión.`,
                 )
               ) {
-                event.preventDefault();
+                return;
               }
+              startTransition(async () => {
+                try {
+                  const formData = new FormData();
+                  formData.set("user_id", userId);
+                  formData.set("return_to", "/dashboard/users");
+                  await deleteUserAction(formData);
+                } catch (error) {
+                  if (isNextRedirect(error)) throw error;
+                  toast.error(
+                    error instanceof Error
+                      ? error.message
+                      : "No se pudo eliminar el usuario. Intenta de nuevo.",
+                  );
+                }
+              });
             }}
           >
-            <input type="hidden" name="user_id" value={userId} />
-            <input type="hidden" name="return_to" value="/dashboard/users" />
-            <Button type="submit" variant="danger" className="h-8 px-3 text-xs">
-              Eliminar
-            </Button>
-          </form>
+            {isPending ? "Eliminando…" : "Eliminar"}
+          </Button>
         ) : null}
       </div>
 
