@@ -2,12 +2,14 @@
 
 import { Fragment, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { formatBedLabel } from "@/lib/beds";
 
 export type GuestStaySummary = {
   checkIn: string;
   checkOut: string;
   nights: number;
-  bedNumber?: number;
+  bedNumber?: string | number;
+  bedZone?: string | null;
   lockerNumber?: string | number | null;
   lockerDays?: number;
   folioCode?: string;
@@ -53,7 +55,7 @@ export function GuestHistoryDetail({
       <p className="whitespace-nowrap text-sm text-text-main">{formatStayRange(latest.checkIn, latest.checkOut)}</p>
       <p className="mt-0.5 whitespace-nowrap text-xs text-text-muted">
         {latest.nights} noche{latest.nights === 1 ? "" : "s"}
-        {latest.bedNumber != null ? ` · Cama ${latest.bedNumber}` : ""}
+        {latest.bedNumber != null ? ` · ${formatBedLabel(latest.bedNumber, latest.bedZone) ?? latest.bedNumber}` : ""}
         {latest.lockerNumber ? ` · Locker ${latest.lockerNumber}` : ""}
       </p>
       {latest.reservationNotes ? (
@@ -85,7 +87,7 @@ export function GuestHistoryDetail({
                   <Fragment key={`${stay.checkIn}-${stay.checkOut}-${stay.bedNumber ?? "x"}`}>
                     <span className="whitespace-nowrap font-medium text-text-main">{formatStayRange(stay.checkIn, stay.checkOut)}</span>
                     <span className="whitespace-nowrap text-text-muted">
-                      {stay.nights}n{stay.bedNumber != null ? ` · Cama ${stay.bedNumber}` : ""}
+                      {stay.nights}n{stay.bedNumber != null ? ` · ${formatBedLabel(stay.bedNumber, stay.bedZone) ?? stay.bedNumber}` : ""}
                     </span>
                     <span
                       className="whitespace-nowrap font-mono text-text-main"

@@ -1,8 +1,10 @@
 "use client";
 
+import { formatBedLabel } from "@/lib/beds";
 import { BedChangeButton } from "@/components/ui/bed-change-button";
 import { LockerAssignButton } from "@/components/ui/locker-assign-button";
 import { normalizeLockerCode } from "@/lib/locker";
+import type { BedZone } from "@/types/domain";
 
 export type GuestAssignmentGuestRow = {
   id?: string;
@@ -10,7 +12,10 @@ export type GuestAssignmentGuestRow = {
   locker_number?: string | number | null;
   locker_days?: number | null;
   guests?: { full_name?: string } | { full_name?: string }[] | null;
-  beds?: { bed_number?: number } | { bed_number?: number }[] | null;
+  beds?:
+    | { bed_number?: string | number; zone?: BedZone | string }
+    | { bed_number?: string | number; zone?: BedZone | string }[]
+    | null;
 };
 
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | undefined {
@@ -25,7 +30,8 @@ export function parseGuestAssignmentRow(row: GuestAssignmentGuestRow) {
 
   return {
     guestId: row.guest_id ?? "",
-    bedNumber: bed?.bed_number ?? null,
+    bedNumber: bed?.bed_number != null ? String(bed.bed_number) : null,
+    bedZone: bed?.zone ?? null,
     lockerDays,
     lockerNumber,
     requiresLocker: lockerDays > 0,
@@ -36,6 +42,7 @@ export function GuestAssignmentActions({
   reservationId,
   guestId,
   bedNumber,
+  bedZone = null,
   lockerNumber,
   lockerDays,
   nights,
@@ -44,7 +51,8 @@ export function GuestAssignmentActions({
 }: {
   reservationId: string;
   guestId: string;
-  bedNumber: number | null;
+  bedNumber: string | number | null;
+  bedZone?: BedZone | string | null;
   lockerNumber: string | null;
   lockerDays: number;
   nights: number;
@@ -52,11 +60,12 @@ export function GuestAssignmentActions({
   readOnly?: boolean;
 }) {
   const requiresLocker = lockerDays > 0;
+  const bedLabel = formatBedLabel(bedNumber, bedZone);
 
   if (readOnly) {
     return (
       <span className="inline-flex flex-wrap items-center gap-1.5 text-xs text-text-muted">
-        <span>{bedNumber ? `Cama ${bedNumber}` : "Sin cama"}</span>
+        <span>{bedLabel ?? "Sin cama"}</span>
         {requiresLocker ? (
           <span>{lockerNumber ? `· Locker ${lockerNumber}` : "· Locker sin número"}</span>
         ) : null}
@@ -70,6 +79,7 @@ export function GuestAssignmentActions({
         reservationId={reservationId}
         guestId={guestId}
         bedNumber={bedNumber}
+        bedZone={bedZone}
         returnTo={returnTo}
       />
       {requiresLocker ? (
@@ -121,6 +131,7 @@ export function GuestAssignmentCell({
         reservationId={reservationId}
         guestId={parsed.guestId}
         bedNumber={parsed.bedNumber}
+        bedZone={parsed.bedZone}
         lockerNumber={parsed.lockerNumber}
         lockerDays={parsed.lockerDays}
         nights={nights}
@@ -145,6 +156,7 @@ export function GuestAssignmentCell({
               reservationId={reservationId}
               guestId={parsed.guestId}
               bedNumber={parsed.bedNumber}
+              bedZone={parsed.bedZone}
               lockerNumber={parsed.lockerNumber}
               lockerDays={parsed.lockerDays}
               nights={nights}

@@ -27,7 +27,10 @@ type ReservationInfo = {
 };
 
 type ReservationGuestRow = {
-  beds?: { bed_number?: number } | { bed_number?: number }[] | null;
+  beds?:
+    | { bed_number?: string | number; zone?: string }
+    | { bed_number?: string | number; zone?: string }[]
+    | null;
   locker_number?: string | number | null;
   reservations?: ReservationInfo | ReservationInfo[] | null;
 };
@@ -50,6 +53,7 @@ function getStays(rows: ReservationGuestRow[]): GuestStaySummary[] {
       source: reservation.reservation_source ?? "guest_app",
     };
     if (bed?.bed_number != null) stay.bedNumber = bed.bed_number;
+    if (bed?.zone != null) stay.bedZone = bed.zone;
     if (row.locker_number !== undefined) stay.lockerNumber = row.locker_number;
     if (folio?.folio_code) stay.folioCode = folio.folio_code;
     if (folio?.payment_status) stay.paymentStatus = folio.payment_status;
@@ -98,7 +102,7 @@ export async function getGuestAccountDataAction(): Promise<GuestAccountData | nu
   const { data: reservationRows } = await supabase
     .from("reservation_guests")
     .select(
-      "beds(bed_number),locker_number,reservations(check_in_date,check_out_date,nights,status,reservation_source,folios(folio_code,payment_status))",
+      "beds(bed_number, zone),locker_number,reservations(check_in_date,check_out_date,nights,status,reservation_source,folios(folio_code,payment_status))",
     )
     .in("guest_id", guestIds);
 

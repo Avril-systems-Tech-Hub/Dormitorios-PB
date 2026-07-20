@@ -9,14 +9,14 @@ import { cn } from "@/lib/utils";
 
 type BedStatusToggleProps = {
   bedId: string;
-  bedNumber: number;
+  bedLabel: string;
   status: BedStatus;
   returnTo?: string;
 };
 
 export function BedStatusToggle({
   bedId,
-  bedNumber,
+  bedLabel,
   status,
   returnTo = "/dashboard/beds",
 }: BedStatusToggleProps) {
@@ -55,8 +55,8 @@ export function BedStatusToggle({
       )}
       title={
         isBlocked
-          ? `Quitar bloqueo de cama ${bedNumber}`
-          : `Bloquear cama ${bedNumber} (mantenimiento)`
+          ? `Quitar bloqueo de ${bedLabel}`
+          : `Bloquear ${bedLabel} (mantenimiento)`
       }
     >
       {pending ? "Guardando…" : isBlocked ? "Desbloquear cama" : "Bloquear cama"}

@@ -13,7 +13,7 @@ import { captureReservationScroll, restoreReservationScroll } from "@/lib/preser
 type ReservationFormProps = {
   action: (formData: FormData) => Promise<CreateGuestReservationResult | void>;
   onConfirmed?: (data: GuestConfirmationPayload) => void;
-  beds: { bed_number: number }[];
+  beds: { bed_number: string | number; zone?: string }[];
   recurringGuest?: {
     full_name?: string | null;
     email?: string | null;

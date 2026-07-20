@@ -37,6 +37,7 @@ import {
   type ReceptionSearchResult,
 } from "@/lib/reception-check-in";
 import { normalizeLockerCode } from "@/lib/locker";
+import { formatBedLabel } from "@/lib/beds";
 
 const BASE_NIGHTLY_RATE = 120;
 const LOCKER_DAILY_PRICE = 30;
@@ -67,7 +68,10 @@ type ReservationGuestAssignmentRow = {
   locker_number?: string | number | null;
   locker_days?: number | null;
   guests?: { full_name?: string; id?: string; phone?: string } | { full_name?: string; id?: string; phone?: string }[] | null;
-  beds?: { bed_number?: number } | { bed_number?: number }[] | null;
+  beds?:
+    | { bed_number?: string | number; zone?: string }
+    | { bed_number?: string | number; zone?: string }[]
+    | null;
 };
 
 function unwrapAssignmentRelation<T>(value: T | T[] | null | undefined): T | undefined {
@@ -84,7 +88,8 @@ function parseReservationGuestAssignments(rows: ReservationGuestAssignmentRow[])
       if (bedNumber == null) return null;
       return {
         guestName: guest?.full_name ?? "Huésped",
-        bedNumber,
+        bedNumber: String(bedNumber),
+        bedZone: bed?.zone ?? null,
         lockerNumber: normalizeLockerCode(row.locker_number),
         lockerDays: Number(row.locker_days ?? 0),
       };
@@ -213,7 +218,10 @@ export async function pickAvailableBeds({
   const supabase = createAdminClient();
 
   // 1. Get ALL beds (not just "available" status — status may be stale)
-  const { data: allBeds } = await supabase.from("beds").select("id, bed_number, status").order("bed_number");
+  const { data: allBeds } = await supabase
+    .from("beds")
+    .select("id, bed_number, zone, status, sort_order")
+    .order("sort_order");
 
   // Filter out only blocked beds
   const usableBeds = (allBeds ?? []).filter(b => b.status !== "blocked");
@@ -264,7 +272,11 @@ export async function pickAvailableBeds({
 
   // 5. Filter free beds
   const freeBeds = usableBeds.filter(bed => !occupiedBedIds.has(bed.id));
-  console.log("[pickAvailableBeds] Free beds:", freeBeds.length, freeBeds.map(b => `Cama ${b.bed_number}`));
+  console.log(
+    "[pickAvailableBeds] Free beds:",
+    freeBeds.length,
+    freeBeds.map((b) => formatBedLabel(b.bed_number, b.zone) ?? b.bed_number),
+  );
 
   return freeBeds.slice(0, count).map(b => b.id);
 }
@@ -644,7 +656,7 @@ export async function createReservationAction(
 }
 
 const RECEPTION_RESERVATION_SELECT =
-  "id, status, checked_out_at, created_at, check_in_date, check_out_date, nights, notes, folio_id, folios!inner(id, folio_code, payment_status, balance_due, total_amount, paid_amount), reservation_guests(id, guest_id, bed_id, locker_number, locker_days, locker_amount, locker_price, guests(full_name, phone, email), beds(bed_number))";
+  "id, status, checked_out_at, created_at, check_in_date, check_out_date, nights, notes, folio_id, folios!inner(id, folio_code, payment_status, balance_due, total_amount, paid_amount), reservation_guests(id, guest_id, bed_id, locker_number, locker_days, locker_amount, locker_price, guests(full_name, phone, email), beds(bed_number, zone))";
 
 const RECENT_RECEPTION_RESERVATIONS_LIMIT = 20;
 
@@ -736,7 +748,7 @@ async function registerPaymentCore(input: PaymentCoreInput): Promise<PaymentCore
   const { data: reservationForPayment } = await supabase
     .from("reservations")
     .select(
-      "id, status, checked_out_at, is_historical, check_in_date, check_out_date, nights, discount_percent, reservation_guests(bed_id, locker_number, locker_days, guests(id, full_name, phone), beds(bed_number))",
+      "id, status, checked_out_at, is_historical, check_in_date, check_out_date, nights, discount_percent, reservation_guests(bed_id, locker_number, locker_days, guests(id, full_name, phone), beds(bed_number, zone))",
     )
     .eq("folio_id", folioId)
     .limit(1)
@@ -2289,7 +2301,7 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
   const { data: reservationForFolio } = await supabase
     .from("reservations")
     .select(
-      "id, check_in_date, check_out_date, nights, discount_percent, reservation_guests(bed_id, locker_number, locker_days, guests(id, full_name, phone), beds(bed_number))",
+      "id, check_in_date, check_out_date, nights, discount_percent, reservation_guests(bed_id, locker_number, locker_days, guests(id, full_name, phone), beds(bed_number, zone))",
     )
     .eq("folio_id", folioId)
     .limit(1)
@@ -2472,8 +2484,8 @@ export async function getBedsMapForChange() {
 
   const { data: beds } = await supabase
     .from("beds")
-    .select("id, bed_number, status")
-    .order("bed_number", { ascending: true });
+    .select("id, bed_number, zone, status, sort_order")
+    .order("sort_order", { ascending: true });
 
   const { data: rgRows } = await supabase
     .from("reservation_guests")
@@ -2505,7 +2517,8 @@ export async function getBedsMapForChange() {
 
   return (beds ?? []).map((bed) => ({
     id: bed.id,
-    bed_number: bed.bed_number,
+    bed_number: String(bed.bed_number),
+    zone: bed.zone as string,
     status: bed.status,
     occupied_by: bedGuestMap.get(bed.id) ?? null,
   }));
@@ -2546,6 +2559,14 @@ export async function reassignBedAction(formData: FormData): Promise<OperationRe
   const oldBedNumber = assignmentResult.old_bed_number;
   const newBedNumber = assignmentResult.new_bed_number;
 
+  const { data: newBedRow } = await supabase
+    .from("beds")
+    .select("bed_number, zone")
+    .eq("id", newBedId)
+    .maybeSingle();
+  const newBedLabel =
+    formatBedLabel(newBedRow?.bed_number ?? newBedNumber, newBedRow?.zone) ?? String(newBedNumber);
+
   await supabase.from("audit_logs").insert({
     actor_user_id: actorId,
     action: "bed_reassigned",
@@ -2554,7 +2575,7 @@ export async function reassignBedAction(formData: FormData): Promise<OperationRe
     metadata: {
       guest_id: guestId,
       old_bed: oldBedNumber ?? "Sin cama",
-      new_bed: newBedNumber,
+      new_bed: newBedLabel,
     },
   });
 
@@ -2564,7 +2585,7 @@ export async function reassignBedAction(formData: FormData): Promise<OperationRe
   revalidatePath("/dashboard/folios");
   revalidatePath("/dashboard/guests");
 
-  return actionResult("success", `Cama cambiada a ${newBedNumber}.`);
+  return actionResult("success", `Cama cambiada a ${newBedLabel}.`);
 }
 
 export async function registerCheckoutAction(formData: FormData): Promise<OperationResult> {
@@ -2658,7 +2679,7 @@ export async function updateBedStatusAction(formData: FormData): Promise<Operati
   const supabase = createAdminClient();
   const { data: bed } = await supabase
     .from("beds")
-    .select("id, bed_number, status")
+    .select("id, bed_number, zone, status")
     .eq("id", bedId)
     .maybeSingle();
 
@@ -2666,10 +2687,12 @@ export async function updateBedStatusAction(formData: FormData): Promise<Operati
     return actionResult("error", "Cama no encontrada.");
   }
 
+  const bedLabel = formatBedLabel(bed.bed_number, bed.zone) ?? String(bed.bed_number);
+
   if (bed.status === nextStatus) {
     return actionResult(
       "success",
-      `Cama ${bed.bed_number} ya está ${nextStatus === "blocked" ? "bloqueada" : "disponible"}.`,
+      `${bedLabel} ya está ${nextStatus === "blocked" ? "bloqueada" : "disponible"}.`,
     );
   }
 
@@ -2691,6 +2714,7 @@ export async function updateBedStatusAction(formData: FormData): Promise<Operati
     entity_id: bedId,
     metadata: {
       bed_number: bed.bed_number,
+      zone: bed.zone,
       from: bed.status,
       to: nextStatus,
     },
@@ -2701,8 +2725,8 @@ export async function updateBedStatusAction(formData: FormData): Promise<Operati
 
   const message =
     nextStatus === "blocked"
-      ? `Cama ${bed.bed_number} bloqueada.`
-      : `Cama ${bed.bed_number} disponible en inventario.`;
+      ? `${bedLabel} bloqueada.`
+      : `${bedLabel} disponible en inventario.`;
 
   return actionResult("success", message);
 }

@@ -1,5 +1,6 @@
 import { getExpenseConceptLabel } from "@/lib/expense-concepts";
 import { PAYMENT_METHOD_LABELS } from "@/lib/payment-insights";
+import { formatBedLabel } from "@/lib/beds";
 
 export type AuditCategory =
   | "all"
@@ -213,7 +214,10 @@ export function formatAuditSummary(action: string, metadata: Record<string, unkn
       return `De ${meta.old_bed ?? "—"} a cama ${meta.new_bed ?? "—"}`;
     }
     case "bed_status_updated": {
-      const bed = meta.bed_number ? `Cama ${meta.bed_number}` : "Cama";
+      const bed = meta.bed_number
+        ? formatBedLabel(meta.bed_number as string | number, meta.zone as string | undefined) ??
+          `Cama ${meta.bed_number}`
+        : "Cama";
       const from = BED_STATUS_LABELS[String(meta.from)] ?? meta.from;
       const to = BED_STATUS_LABELS[String(meta.to)] ?? meta.to;
       return `${bed}: ${from} → ${to}`;

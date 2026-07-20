@@ -68,6 +68,7 @@ export function ReservationGuestsAccordion({
                         reservationId={reservationId}
                         guestId={parsed.guestId}
                         bedNumber={parsed.bedNumber}
+                        bedZone={parsed.bedZone}
                         lockerNumber={parsed.lockerNumber}
                         lockerDays={parsed.lockerDays}
                         nights={nights}
@@ -109,6 +110,7 @@ export function ReservationGuestsAccordion({
                           reservationId={reservationId}
                           guestId={parsed.guestId}
                           bedNumber={parsed.bedNumber}
+                          bedZone={parsed.bedZone}
                           lockerNumber={parsed.lockerNumber}
                           lockerDays={parsed.lockerDays}
                           nights={nights}

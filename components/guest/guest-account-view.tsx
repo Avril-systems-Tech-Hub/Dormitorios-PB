@@ -12,6 +12,7 @@ import { useWaaP } from "@/components/guest/waap-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { formatBedLabel } from "@/lib/beds";
 
 export function GuestAccountView({
   account,
@@ -125,7 +126,9 @@ export function GuestAccountView({
                     </div>
                     <p className="mt-1 text-text-muted">
                       {stay.nights} noche{stay.nights === 1 ? "" : "s"}
-                      {stay.bedNumber != null ? ` · Cama ${stay.bedNumber}` : ""}
+                      {stay.bedNumber != null
+                        ? ` · ${formatBedLabel(stay.bedNumber, stay.bedZone) ?? stay.bedNumber}`
+                        : ""}
                       {stay.folioCode ? ` · ${stay.folioCode}` : ""}
                     </p>
                   </li>

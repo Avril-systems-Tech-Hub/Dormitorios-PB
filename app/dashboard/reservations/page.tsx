@@ -23,6 +23,7 @@ import {
   parseReservationPeriod,
 } from "@/lib/dates";
 import { requireModulePermission } from "@/lib/auth/guards";
+import { formatBedLabel } from "@/lib/beds";
 
 export default async function ReservationsPage({
   searchParams,
@@ -46,7 +47,7 @@ export default async function ReservationsPage({
   let query = supabase
     .from("reservations")
     .select(
-      "id,created_at,status,checked_out_at,is_historical,reservation_source,check_in_date,check_out_date,nights,notes,profiles(full_name),folios!inner(id,folio_code,payment_status,balance_due,total_amount),reservation_guests(id,guest_id,locker_number,locker_days,guests(full_name,phone,email),beds(bed_number))",
+      "id,created_at,status,checked_out_at,is_historical,reservation_source,check_in_date,check_out_date,nights,notes,profiles(full_name),folios!inner(id,folio_code,payment_status,balance_due,total_amount),reservation_guests(id,guest_id,locker_number,locker_days,guests(full_name,phone,email),beds(bed_number, zone))",
       { count: "exact" },
     )
     .gte("created_at", periodBounds.startAt)
@@ -106,8 +107,10 @@ export default async function ReservationsPage({
         guest?.phone ?? "-",
         ft(
           allGuests.map((g) => {
-            const bed = (Array.isArray(g.beds) ? g.beds[0] : g.beds) as { bed_number?: number } | undefined;
-            return bed?.bed_number ? `Cama ${bed.bed_number}` : "Pendiente";
+            const bed = (Array.isArray(g.beds) ? g.beds[0] : g.beds) as
+              | { bed_number?: string | number; zone?: string }
+              | undefined;
+            return formatBedLabel(bed?.bed_number, bed?.zone) ?? "Pendiente";
           }).join(" "),
           <GuestAssignmentCell
             key={`assign-${reservation.id}`}

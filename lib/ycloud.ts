@@ -15,6 +15,7 @@
  */
 
 import { digitsOnly, formatMexicanPhoneE164 } from "@/lib/phone";
+import { formatBedLabel } from "@/lib/beds";
 
 type YCloudTextMessagePayload = {
   from: string;
@@ -331,7 +332,8 @@ export async function sendWhatsAppTemplateMessage(
 
 export type PaymentGuestAssignment = {
   guestName: string;
-  bedNumber: number;
+  bedNumber: string | number;
+  bedZone?: string | null;
   lockerNumber?: string | number | null;
   lockerDays?: number;
 };
@@ -381,7 +383,7 @@ export function buildPaymentConfirmationMessage(opts: {
   if (opts.assignments?.length) {
     msg += `\n🛏️ *Asignaciones:*\n`;
     for (const assignment of opts.assignments) {
-      msg += `• *${assignment.guestName}*: Cama ${assignment.bedNumber}`;
+      msg += `• *${assignment.guestName}*: ${formatBedLabel(assignment.bedNumber, assignment.bedZone) ?? `Cama ${assignment.bedNumber}`}`;
       const lockerDays = Number(assignment.lockerDays ?? 0);
       if (lockerDays > 0) {
         msg += assignment.lockerNumber

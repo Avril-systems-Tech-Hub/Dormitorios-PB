@@ -4,6 +4,8 @@ import { ft } from "@/components/ui/filterable-cell";
 import { ReservationsPeriodFilter } from "@/components/dashboard/reservations-period-filter";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatGuestSexLabel } from "@/lib/guest-sex-label";
+import { formatBedLabel } from "@/lib/beds";
+import { normalizeLockerCode } from "@/lib/locker";
 import {
   computeGuestLineTotal,
   formatRosterDate,
@@ -23,7 +25,6 @@ import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 import { RegisterCheckoutButton } from "@/components/ui/register-checkout-button";
 import { ReservationPaymentInline } from "@/components/ui/reservation-payment-inline";
 import { Badge } from "@/components/ui/badge";
-import { normalizeLockerCode } from "@/lib/locker";
 
 type FolioFields = {
   id?: string;
@@ -40,7 +41,7 @@ type ReservationGuestRow = {
   final_rate: number | null;
   locker_amount: number | null;
   guests: { full_name?: string; sex?: string } | { full_name?: string; sex?: string }[] | null;
-  beds: { bed_number?: number } | { bed_number?: number }[] | null;
+  beds: { bed_number?: string | number; zone?: string } | { bed_number?: string | number; zone?: string }[] | null;
   reservations:
     | {
         id?: string;
@@ -140,7 +141,7 @@ export async function ReceptionGuestRosterContent({
     .select(
       `id, locker_number, final_rate, locker_amount,
       guests!inner(full_name, sex),
-      beds(bed_number),
+      beds(bed_number, zone),
       reservations!inner(id, created_at, check_in_date, check_out_date, nights, status, checked_out_at, notes, folios!inner(id, folio_code, total_amount, paid_amount, balance_due, payment_status))`,
       { count: "exact" },
     )
@@ -174,7 +175,7 @@ export async function ReceptionGuestRosterContent({
     const createdAt = reservation?.created_at ?? "";
     const folioCode = folio?.folio_code ?? "—";
     const guestName = guest?.full_name ?? "—";
-    const bedNumber = bed?.bed_number != null ? String(bed.bed_number) : "—";
+    const bedNumber = formatBedLabel(bed?.bed_number, bed?.zone) ?? "—";
     const lockerNumber = normalizeLockerCode(row.locker_number) ?? "—";
     const sexLabel = formatGuestSexLabel(guest?.sex);
     const dayLabel = checkIn ? formatRosterDay(checkIn) : "—";

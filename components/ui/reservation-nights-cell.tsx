@@ -1,4 +1,5 @@
 import { normalizeLockerCode } from "@/lib/locker";
+import { formatBedLabel, type BedZone } from "@/lib/beds";
 
 type ReservationGuestLocker = {
   locker_number?: string | number | null;
@@ -18,11 +19,12 @@ export function formatLockerLabel(
 }
 
 export function formatBedLockerLabel(
-  bedNumber: number | undefined | null,
+  bedNumber: string | number | undefined | null,
   lockerNumber: string | number | null | undefined,
   lockerDays: number | null | undefined,
+  zone?: BedZone | string | null,
 ) {
-  const bedPart = bedNumber ? `Cama ${bedNumber}` : "Pendiente";
+  const bedPart = formatBedLabel(bedNumber, zone) ?? "Pendiente";
   const lockerPart = formatLockerLabel(lockerNumber, lockerDays);
   if (lockerPart) return `${bedPart} · ${lockerPart}`;
   return bedPart;

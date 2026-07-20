@@ -2,6 +2,8 @@ export type UserRole = string;
 
 export type BedStatus = "available" | "blocked";
 
+export type BedZone = "mixta" | "mujeres";
+
 export type PaymentMethod = "cash" | "transfer" | "card";
 
 export type PaymentType = "advance" | "settlement" | "extra";

@@ -69,10 +69,9 @@ export default async function Home({
 
   const { data: beds } = await supabase
     .from("beds")
-    .select("bed_number, status")
+    .select("bed_number, zone, status, sort_order")
     .eq("status", "available")
-    .order("bed_number")
-    .limit(60);
+    .order("sort_order");
 
   return (
     <ReservationWizardProvider action={createReservationAction}>

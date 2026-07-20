@@ -13,7 +13,7 @@ import { restoreReservationScroll } from "@/lib/preserve-scroll";
 
 type ReservationBookingSectionProps = {
   action: (formData: FormData) => Promise<CreateGuestReservationResult | void>;
-  beds: { bed_number: number }[];
+  beds: { bed_number: string | number; zone?: string }[];
   /** Decoded on the server from searchParams so SSR and hydration match. */
   initialConfirmation?: GuestConfirmationPayload | null;
 };

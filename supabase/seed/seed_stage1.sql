@@ -1,13 +1,39 @@
 -- Requiere al menos 2 usuarios en auth.users (admin y recepción).
 -- Ajusta los emails en el CTE staff_users según tus cuentas reales.
 
-insert into public.beds (bed_number, status, notes)
+-- Mixta 1a–15c (45) + Mujeres 1a–7c (21) = 66
+with inventory as (
+  select
+    'mixta'::public.bed_zone as zone,
+    n::text || letter as bed_number,
+    ((n - 1) * 3) + letter_ord as sort_order
+  from generate_series(1, 15) as n
+  cross join (values ('a', 1), ('b', 2), ('c', 3)) as levels(letter, letter_ord)
+
+  union all
+
+  select
+    'mujeres'::public.bed_zone,
+    n::text || letter,
+    45 + ((n - 1) * 3) + letter_ord
+  from generate_series(1, 7) as n
+  cross join (values ('a', 1), ('b', 2), ('c', 3)) as levels(letter, letter_ord)
+)
+insert into public.beds (bed_number, zone, sort_order, status, notes)
 select
-  gs,
-  case when gs in (7, 19, 44) then 'blocked'::public.bed_status else 'available'::public.bed_status end,
-  case when gs in (7, 19, 44) then 'Bloqueada por mantenimiento' else null end
-from generate_series(1, 60) as gs
-on conflict (bed_number) do nothing;
+  bed_number,
+  zone,
+  sort_order,
+  case
+    when zone = 'mixta' and bed_number in ('3a', '7b', '12c') then 'blocked'::public.bed_status
+    else 'available'::public.bed_status
+  end,
+  case
+    when zone = 'mixta' and bed_number in ('3a', '7b', '12c') then 'Bloqueada por mantenimiento'
+    else null
+  end
+from inventory
+on conflict (zone, bed_number) do nothing;
 
 with staff_users as (
   select id, email
@@ -49,7 +75,7 @@ guest_pool as (
   select id, row_number() over () as rn from public.guests order by created_at asc limit 15
 ),
 bed_pool as (
-  select id, row_number() over () as rn from public.beds where status = 'available' order by bed_number asc limit 20
+  select id, row_number() over () as rn from public.beds where status = 'available' order by sort_order asc limit 20
 ),
 folio_insert as (
   insert into public.folios (folio_code, total_amount, paid_amount, balance_due, payment_status)

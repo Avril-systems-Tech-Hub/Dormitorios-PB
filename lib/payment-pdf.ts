@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import QRCode from "qrcode";
+import { formatBedLabel } from "@/lib/beds";
 
 export type PaymentPdfData = {
   guestName: string;
@@ -24,7 +25,8 @@ export type PaymentPdfData = {
   originalTotal?: number;
   assignments?: Array<{
     guestName: string;
-    bedNumber: number;
+    bedNumber: string | number;
+    bedZone?: string | null;
     lockerNumber?: string | number | null;
     lockerDays?: number;
   }>;
@@ -121,7 +123,7 @@ export async function generatePaymentConfirmationPdf(
     page.drawText("Asignaciones:", { x: 40, y: assignY, size: 10, font: boldFont, color: primaryColor });
     for (const assignment of data.assignments) {
       assignY -= 14;
-      let line = `${assignment.guestName}: Cama ${assignment.bedNumber}`;
+      let line = `${assignment.guestName}: ${formatBedLabel(assignment.bedNumber, assignment.bedZone) ?? `Cama ${assignment.bedNumber}`}`;
       const lockerDays = Number(assignment.lockerDays ?? 0);
       if (lockerDays > 0) {
         line += assignment.lockerNumber

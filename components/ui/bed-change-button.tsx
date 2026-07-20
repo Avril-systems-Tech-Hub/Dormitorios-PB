@@ -4,10 +4,13 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { getBedsMapForChange, getBedReservations, reassignBedAction } from "@/actions/operations";
+import { BED_ZONE_LABELS, formatBedLabel, groupBedsByZone, isBedAssigned } from "@/lib/beds";
+import type { BedZone } from "@/types/domain";
 
 type BedInfo = {
   id: string;
-  bed_number: number;
+  bed_number: string;
+  zone: BedZone | string;
   status: string;
   occupied_by: string | null;
 };
@@ -39,7 +42,6 @@ function BedCalendar({
   ];
   const dayNames = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
 
-  // Build set of reserved dates
   const reservedDates = new Set<string>();
   for (const res of reservations) {
     const start = new Date(`${res.checkIn}T00:00:00`);
@@ -52,11 +54,9 @@ function BedCalendar({
     }
   }
 
-  // Calendar grid
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
   const daysInMonth = lastDay.getDate();
-  // Monday=0, Sunday=6
   let startDow = firstDay.getDay() - 1;
   if (startDow < 0) startDow = 6;
 
@@ -71,7 +71,6 @@ function BedCalendar({
     isCurrentMonth: boolean;
   }> = [];
 
-  // Empty cells before first day
   for (let i = 0; i < startDow; i++) {
     cells.push({ day: 0, dateStr: "", isReserved: false, isToday: false, isCurrentMonth: false });
   }
@@ -134,15 +133,129 @@ function BedCalendar({
   );
 }
 
+function ZoneBedGrid({
+  title,
+  beds,
+  selected,
+  calendarBedId,
+  calendarReservations,
+  calendarLoading,
+  calendarMonth,
+  setCalendarMonth,
+  onSelect,
+  onShowCalendar,
+}: {
+  title: string;
+  beds: BedInfo[];
+  selected: string | null;
+  calendarBedId: string | null;
+  calendarReservations: BedReservation[];
+  calendarLoading: boolean;
+  calendarMonth: { month: number; year: number };
+  setCalendarMonth: (value: { month: number; year: number }) => void;
+  onSelect: (bedId: string) => void;
+  onShowCalendar: (bedId: string) => void;
+}) {
+  if (beds.length === 0) return null;
+
+  return (
+    <section className="space-y-2">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-text-muted">{title}</h4>
+      <div className="grid grid-cols-5 gap-2 sm:grid-cols-6 md:grid-cols-8">
+        {beds.map((bed) => {
+          const isBlocked = bed.status === "blocked";
+          const isOccupied = !!bed.occupied_by;
+          const isSelected = selected === bed.id;
+          const isDisabled = isBlocked || isOccupied;
+          const showingCalendar = calendarBedId === bed.id;
+          const label = formatBedLabel(bed.bed_number, bed.zone) ?? bed.bed_number;
+
+          return (
+            <div key={bed.id} className="contents">
+              <div className="relative">
+                <button
+                  type="button"
+                  disabled={isDisabled}
+                  onClick={() => onSelect(bed.id)}
+                  className={`w-full rounded-lg border px-2 py-2 text-center text-xs transition ${
+                    isSelected
+                      ? "border-blue-500 bg-blue-50 ring-2 ring-blue-300"
+                      : isBlocked
+                        ? "border-red-200 bg-red-50 text-red-400 cursor-not-allowed"
+                        : isOccupied
+                          ? "border-yellow-200 bg-yellow-50 text-yellow-700 cursor-not-allowed"
+                          : "border-border-soft bg-gray-50 hover:border-green-400 hover:bg-green-50 cursor-pointer"
+                  }`}
+                >
+                  <p className="font-semibold">{bed.bed_number}</p>
+                  {isBlocked ? (
+                    <p className="text-[10px] mt-0.5">Bloqueada</p>
+                  ) : isOccupied ? (
+                    <p className="text-[10px] mt-0.5 truncate">{bed.occupied_by}</p>
+                  ) : (
+                    <p className="text-[10px] mt-0.5 text-green-600">Libre</p>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onShowCalendar(bed.id)}
+                  className={`absolute -top-1 -right-1 rounded-full w-4 h-4 flex items-center justify-center text-[8px] transition ${
+                    showingCalendar
+                      ? "bg-blue-500 text-white"
+                      : "bg-gray-200 text-gray-500 hover:bg-blue-100 hover:text-blue-600"
+                  }`}
+                  title="Ver calendario de reservaciones"
+                >
+                  📅
+                </button>
+              </div>
+              {showingCalendar && (
+                <div className="col-span-full rounded-lg border border-blue-200 bg-blue-50/50 p-2 mt-1">
+                  <p className="text-xs font-semibold text-text-main mb-1">
+                    Reservaciones — {label}
+                  </p>
+                  {calendarLoading ? (
+                    <p className="text-[10px] text-text-muted">Cargando...</p>
+                  ) : calendarReservations.length === 0 ? (
+                    <p className="text-[10px] text-green-600">Sin reservaciones futuras</p>
+                  ) : (
+                    <BedCalendar
+                      reservations={calendarReservations}
+                      month={calendarMonth.month}
+                      year={calendarMonth.year}
+                      onPrev={() => {
+                        const m = calendarMonth.month - 1;
+                        if (m < 0) setCalendarMonth({ month: 11, year: calendarMonth.year - 1 });
+                        else setCalendarMonth({ month: m, year: calendarMonth.year });
+                      }}
+                      onNext={() => {
+                        const m = calendarMonth.month + 1;
+                        if (m > 11) setCalendarMonth({ month: 0, year: calendarMonth.year + 1 });
+                        else setCalendarMonth({ month: m, year: calendarMonth.year });
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export function BedChangeButton({
   reservationId,
   guestId,
   bedNumber = null,
+  bedZone = null,
   returnTo = "/dashboard/reservations",
 }: {
   reservationId: string;
   guestId: string;
-  bedNumber?: number | null;
+  bedNumber?: string | number | null;
+  bedZone?: BedZone | string | null;
   returnTo?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -152,7 +265,6 @@ export function BedChangeButton({
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
-  // Calendar state
   const [calendarBedId, setCalendarBedId] = useState<string | null>(null);
   const [calendarReservations, setCalendarReservations] = useState<BedReservation[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
@@ -160,6 +272,9 @@ export function BedChangeButton({
     const now = new Date();
     return { month: now.getMonth(), year: now.getFullYear() };
   });
+
+  const currentLabel = formatBedLabel(bedNumber, bedZone);
+  const hasBed = isBedAssigned(bedNumber);
 
   const handleOpen = () => {
     setOpen(true);
@@ -188,8 +303,6 @@ export function BedChangeButton({
     });
   };
 
-  const hasBed = bedNumber != null && bedNumber > 0;
-
   const closeModal = () => {
     setOpen(false);
     setSelected(null);
@@ -215,12 +328,18 @@ export function BedChangeButton({
     });
   };
 
+  const { mixta, mujeres } = groupBedsByZone(beds);
+  const selectedBed = beds.find((b) => b.id === selected);
+  const selectedLabel = selectedBed
+    ? formatBedLabel(selectedBed.bed_number, selectedBed.zone)
+    : null;
+
   return (
     <>
       {hasBed ? (
         <>
           <span className="rounded-full bg-surface-soft px-2 py-0.5 text-xs font-medium text-text-main">
-            Cama {bedNumber}
+            {currentLabel}
           </span>
           <button
             type="button"
@@ -242,7 +361,7 @@ export function BedChangeButton({
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-xl bg-white p-5 shadow-lg">
+          <div className="w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-xl bg-white p-5 shadow-lg">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-text-main">
                 {hasBed ? "Cambiar cama" : "Asignar cama"}
@@ -257,10 +376,10 @@ export function BedChangeButton({
             </div>
             <p className="mt-1 text-sm text-text-muted">
               Selecciona una cama libre para el huésped.
-              {hasBed ? (
+              {hasBed && currentLabel ? (
                 <>
                   {" "}
-                  Actual: <span className="font-medium text-text-main">Cama {bedNumber}</span>
+                  Actual: <span className="font-medium text-text-main">{currentLabel}</span>
                 </>
               ) : null}
             </p>
@@ -269,92 +388,37 @@ export function BedChangeButton({
               <p className="mt-4 text-sm text-text-muted text-center">Cargando mapa de camas...</p>
             ) : (
               <>
-                <div className="mt-4 grid grid-cols-5 gap-2">
-                  {beds.map((bed) => {
-                    const isBlocked = bed.status === "blocked";
-                    const isOccupied = !!bed.occupied_by;
-                    const isSelected = selected === bed.id;
-                    const isDisabled = isBlocked || isOccupied;
-                    const showingCalendar = calendarBedId === bed.id;
-
-                    return (
-                      <div key={bed.id} className="contents">
-                        <div className="relative">
-                          <button
-                            type="button"
-                            disabled={isDisabled}
-                            onClick={() => setSelected(bed.id)}
-                            className={`w-full rounded-lg border px-2 py-2 text-center text-xs transition ${
-                              isSelected
-                                ? "border-blue-500 bg-blue-50 ring-2 ring-blue-300"
-                                : isBlocked
-                                  ? "border-red-200 bg-red-50 text-red-400 cursor-not-allowed"
-                                  : isOccupied
-                                    ? "border-yellow-200 bg-yellow-50 text-yellow-700 cursor-not-allowed"
-                                    : "border-border-soft bg-gray-50 hover:border-green-400 hover:bg-green-50 cursor-pointer"
-                            }`}
-                          >
-                            <p className="font-semibold">{bed.bed_number}</p>
-                            {isBlocked ? (
-                              <p className="text-[10px] mt-0.5">Bloqueada</p>
-                            ) : isOccupied ? (
-                              <p className="text-[10px] mt-0.5 truncate">{bed.occupied_by}</p>
-                            ) : (
-                              <p className="text-[10px] mt-0.5 text-green-600">Libre</p>
-                            )}
-                          </button>
-                          {/* Calendar toggle button */}
-                          <button
-                            type="button"
-                            onClick={() => handleShowCalendar(bed.id)}
-                            className={`absolute -top-1 -right-1 rounded-full w-4 h-4 flex items-center justify-center text-[8px] transition ${
-                              showingCalendar
-                                ? "bg-blue-500 text-white"
-                                : "bg-gray-200 text-gray-500 hover:bg-blue-100 hover:text-blue-600"
-                            }`}
-                            title="Ver calendario de reservaciones"
-                          >
-                            📅
-                          </button>
-                        </div>
-                        {/* Show calendar below the bed card */}
-                        {showingCalendar && (
-                          <div className="col-span-5 rounded-lg border border-blue-200 bg-blue-50/50 p-2 mt-1">
-                            <p className="text-xs font-semibold text-text-main mb-1">
-                              📅 Reservaciones — Cama {bed.bed_number}
-                            </p>
-                            {calendarLoading ? (
-                              <p className="text-[10px] text-text-muted">Cargando...</p>
-                            ) : calendarReservations.length === 0 ? (
-                              <p className="text-[10px] text-green-600">Sin reservaciones futuras</p>
-                            ) : (
-                              <BedCalendar
-                                reservations={calendarReservations}
-                                month={calendarMonth.month}
-                                year={calendarMonth.year}
-                                onPrev={() => {
-                                  const m = calendarMonth.month - 1;
-                                  if (m < 0) setCalendarMonth({ month: 11, year: calendarMonth.year - 1 });
-                                  else setCalendarMonth({ month: m, year: calendarMonth.year });
-                                }}
-                                onNext={() => {
-                                  const m = calendarMonth.month + 1;
-                                  if (m > 11) setCalendarMonth({ month: 0, year: calendarMonth.year + 1 });
-                                  else setCalendarMonth({ month: m, year: calendarMonth.year });
-                                }}
-                              />
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div className="mt-4 space-y-4">
+                  <ZoneBedGrid
+                    title={BED_ZONE_LABELS.mixta}
+                    beds={mixta}
+                    selected={selected}
+                    calendarBedId={calendarBedId}
+                    calendarReservations={calendarReservations}
+                    calendarLoading={calendarLoading}
+                    calendarMonth={calendarMonth}
+                    setCalendarMonth={setCalendarMonth}
+                    onSelect={setSelected}
+                    onShowCalendar={handleShowCalendar}
+                  />
+                  <ZoneBedGrid
+                    title={`Solo ${BED_ZONE_LABELS.mujeres.toLowerCase()}`}
+                    beds={mujeres}
+                    selected={selected}
+                    calendarBedId={calendarBedId}
+                    calendarReservations={calendarReservations}
+                    calendarLoading={calendarLoading}
+                    calendarMonth={calendarMonth}
+                    setCalendarMonth={setCalendarMonth}
+                    onSelect={setSelected}
+                    onShowCalendar={handleShowCalendar}
+                  />
                 </div>
 
                 <div className="mt-4 flex items-center justify-between">
                   <p className="text-xs text-text-muted">
-                    {selected
-                      ? `Seleccionada: Cama ${beds.find((b) => b.id === selected)?.bed_number}`
+                    {selectedLabel
+                      ? `Seleccionada: ${selectedLabel}`
                       : "Haz click en una cama libre"}
                   </p>
                   <div className="flex gap-2">

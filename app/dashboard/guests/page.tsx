@@ -57,7 +57,10 @@ type ReservationInfo = {
 };
 
 type ReservationGuestRow = {
-  beds?: { bed_number?: number } | { bed_number?: number }[] | null;
+  beds?:
+    | { bed_number?: string | number; zone?: string }
+    | { bed_number?: string | number; zone?: string }[]
+    | null;
   locker_number?: string | number | null;
   locker_days?: number | null;
   reservations?: ReservationInfo | ReservationInfo[] | null;
@@ -98,6 +101,7 @@ function getStays(guest: GuestRecord): GuestStaySummary[] {
       reservationNotes: reservation.notes?.trim() || null,
     };
     if (bed?.bed_number != null) stay.bedNumber = bed.bed_number;
+    if (bed?.zone != null) stay.bedZone = bed.zone;
     if (row.locker_number !== undefined) stay.lockerNumber = row.locker_number;
     const lockerDays = Number(row.locker_days ?? 0);
     if (lockerDays > 0) stay.lockerDays = lockerDays;
@@ -144,7 +148,7 @@ export default async function GuestsPage({
   const { data: guestsRaw } = await supabase
     .from("guests")
     .select(
-      "id,full_name,phone,email,created_at,reservation_guests!inner(beds(bed_number),locker_number,locker_days,reservations(check_in_date,check_out_date,nights,status,reservation_source,notes,folios(folio_code,payment_status,total_amount,paid_amount,balance_due)))",
+      "id,full_name,phone,email,created_at,reservation_guests!inner(beds(bed_number, zone),locker_number,locker_days,reservations(check_in_date,check_out_date,nights,status,reservation_source,notes,folios(folio_code,payment_status,total_amount,paid_amount,balance_due)))",
     )
     .limit(1000);
 

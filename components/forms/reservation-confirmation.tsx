@@ -6,6 +6,7 @@ import {
   formatReservationDate,
   type GuestConfirmationPayload,
 } from "@/lib/guest-reservation-confirmation";
+import { formatBedLabel } from "@/lib/beds";
 
 type ReservationConfirmationProps = {
   data: GuestConfirmationPayload;
@@ -14,7 +15,9 @@ type ReservationConfirmationProps = {
 
 export function ReservationConfirmation({ data, onNewReservation }: ReservationConfirmationProps) {
   const lockerTotal = data.locker_total;
-  const bedNumbers = data.guests.map((g) => g.bed_number).filter((n): n is number => typeof n === "number");
+  const bedLabels = data.guests
+    .map((g) => formatBedLabel(g.bed_number, g.bed_zone))
+    .filter((label): label is string => Boolean(label));
 
   return (
     <div className="flex flex-col gap-4">
@@ -67,11 +70,11 @@ export function ReservationConfirmation({ data, onNewReservation }: ReservationC
           </dl>
         </section>
 
-        {bedNumbers.length > 0 ? (
+        {bedLabels.length > 0 ? (
           <p className="mb-4 rounded-xl border border-emerald-200/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
-            {bedNumbers.length === 1
-              ? `Tu cama asignada: Cama ${bedNumbers[0]}.`
-              : `Camas asignadas: ${bedNumbers.map((n) => `Cama ${n}`).join(", ")}.`}
+            {bedLabels.length === 1
+              ? `Tu cama asignada: ${bedLabels[0]}.`
+              : `Camas asignadas: ${bedLabels.join(", ")}.`}
           </p>
         ) : (
           <p className="mb-4 rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white/80">
@@ -114,7 +117,9 @@ export function ReservationConfirmation({ data, onNewReservation }: ReservationC
                 {guest.bed_number != null ? (
                   <div>
                     <dt className="text-mkt-ink/60">Cama</dt>
-                    <dd className="font-medium">Cama {guest.bed_number}</dd>
+                    <dd className="font-medium">
+                      {formatBedLabel(guest.bed_number, guest.bed_zone) ?? guest.bed_number}
+                    </dd>
                   </div>
                 ) : null}
               </dl>

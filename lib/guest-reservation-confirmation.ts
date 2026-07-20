@@ -4,7 +4,8 @@ export type GuestConfirmationGuest = {
   email: string;
   locker_days: number;
   locker_amount: number;
-  bed_number?: number;
+  bed_number?: string | number;
+  bed_zone?: string;
 };
 
 export type CreateGuestReservationResult =

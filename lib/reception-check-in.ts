@@ -6,7 +6,8 @@ export type ReceptionSearchGuest = {
   fullName: string;
   phone: string | null;
   bedId: string | null;
-  bedNumber: number | null;
+  bedNumber: string | null;
+  bedZone: string | null;
   lockerDays: number;
   lockerAmount: number;
   lockerNumber: string | null;
@@ -81,7 +82,10 @@ type RawGuestRow = {
     | { full_name?: string; phone?: string; email?: string }
     | { full_name?: string; phone?: string; email?: string }[]
     | null;
-  beds?: { bed_number?: number } | { bed_number?: number }[] | null;
+  beds?:
+    | { bed_number?: string | number; zone?: string }
+    | { bed_number?: string | number; zone?: string }[]
+    | null;
 };
 
 type RawFolio = {
@@ -133,7 +137,8 @@ export function mapReservationToReceptionSearch(row: {
       fullName: guest?.full_name ?? "Huésped",
       phone: guest?.phone ?? null,
       bedId: g.bed_id ?? null,
-      bedNumber: bed?.bed_number ?? null,
+      bedNumber: bed?.bed_number != null ? String(bed.bed_number) : null,
+      bedZone: bed?.zone ?? null,
       lockerDays,
       lockerAmount,
       lockerNumber,
