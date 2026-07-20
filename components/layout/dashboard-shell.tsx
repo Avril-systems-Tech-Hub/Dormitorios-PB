@@ -2,6 +2,7 @@ import { groupDashboardLinks, groupModules } from "@/lib/navigation";
 import type { UserRole } from "@/types/domain";
 import type { SystemModule } from "@/lib/auth/permissions";
 import { Button } from "@/components/ui/button";
+import { ReceptionSessionNav } from "@/components/dashboard/reception-session-nav";
 import {
   DashboardHeaderTitle,
   DashboardNav,
@@ -42,6 +43,7 @@ export function DashboardShell({
             <DashboardHeaderTitle fallback={title} branded />
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            {isReception ? <ReceptionSessionNav /> : null}
             {userName ? (
               <div className="min-w-0 max-w-[9.5rem] text-right sm:max-w-[14rem]">
                 <p className="truncate text-xs font-semibold leading-tight text-white sm:text-sm">
