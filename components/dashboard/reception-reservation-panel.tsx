@@ -14,10 +14,12 @@ export function ReceptionReservationPanel() {
     action: createReservationAction,
     reservationSource: "cashier_counter",
     returnTo: "/dashboard",
+    allowLockerSelection: true,
   });
   const [expanded, setExpanded] = useState(false);
 
   const bedTotal = form.estimatedBedTotal(NIGHTLY_RATE);
+  const lockerTotal = form.estimatedLockerTotal();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -108,6 +110,8 @@ export function ReceptionReservationPanel() {
                   variant="dashboard"
                   contactRequired={false}
                   enablePhoneMatching
+                  showLockerFields
+                  showLockerNumberField
                   onLookupPhone={() => void form.lookupGuestForRow(index)}
                   onMatchDecision={(decision) => form.decideGuestMatch(index, decision)}
                   onChange={(field, value) => form.updateGuest(index, field, value)}
@@ -123,7 +127,17 @@ export function ReceptionReservationPanel() {
             onChange={(e) => form.setReservationData((prev) => ({ ...prev, notes: e.target.value }))}
           />
 
-          <p className="text-sm text-white/75">Estimado camas: ${bedTotal.toFixed(0)} MXN</p>
+          <div className="space-y-1 text-sm text-white/75">
+            <p>Estimado camas: ${bedTotal.toFixed(0)} MXN</p>
+            {lockerTotal > 0 ? (
+              <p>Estimado lockers: ${lockerTotal.toFixed(0)} MXN</p>
+            ) : null}
+            {lockerTotal > 0 ? (
+              <p className="font-medium text-white">
+                Total estimado: ${(bedTotal + lockerTotal).toFixed(0)} MXN
+              </p>
+            ) : null}
+          </div>
 
           {form.submitResult && !form.submitResult.success ? (
             <p className="text-sm text-red-300">{form.submitResult.message}</p>
