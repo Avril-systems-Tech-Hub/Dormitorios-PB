@@ -55,7 +55,7 @@ export function ReceptionReservationPanel() {
           noValidate
         >
           <div>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-mkt-terracotta">
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-brand-accent">
               Fechas de estancia
             </label>
             <DateRangeCalendar
@@ -72,36 +72,36 @@ export function ReceptionReservationPanel() {
               }}
             />
             {(form.showDateError("check_in_date") || form.showDateError("check_out_date")) && (
-              <p className="mt-1 text-xs text-red-300">
+              <p className="mt-1 text-xs font-medium text-red-200">
                 {form.dateErrors.check_in_date || form.dateErrors.check_out_date}
               </p>
             )}
           </div>
 
           <div className="max-w-[140px]">
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-mkt-terracotta">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-brand-accent">
               Personas
             </label>
             <input
               type="number"
               min={1}
-              className="w-full rounded-xl border border-mkt-border bg-white px-3 py-2 text-sm text-mkt-ink"
+              className="w-full rounded-xl border border-white/25 bg-white px-3 py-2 text-sm text-text-main"
               value={form.guestCount}
               onChange={(e) => form.setGuestCount(Math.max(1, Number(e.target.value) || 1))}
             />
           </div>
 
           <div className="space-y-3">
-            <p className="text-xs text-white/75">
+            <p className="text-sm leading-relaxed text-white/90">
               Teléfono y correo son opcionales en recepción. Si capturas un teléfono, busca coincidencias y
               elige explícitamente si reutilizas el perfil o creas uno nuevo.
             </p>
             {form.guests.map((guest, index) => (
               <div
                 key={index}
-                className="rounded-xl border border-white/15 bg-white/5 p-4 backdrop-blur-sm"
+                className="rounded-xl border border-white/25 bg-white/10 p-4 backdrop-blur-sm"
               >
-                <h3 className="mb-3 text-sm font-semibold text-white">Huésped {index + 1}</h3>
+                <h3 className="mb-1 text-sm font-semibold text-white">Huésped {index + 1}</h3>
                 <ReservationGuestFields
                   guest={guest}
                   guestIndex={index}
@@ -121,19 +121,19 @@ export function ReceptionReservationPanel() {
           </div>
 
           <textarea
-            className="min-h-20 w-full rounded-xl border border-mkt-border bg-white px-3 py-2 text-sm text-mkt-ink"
+            className="min-h-20 w-full rounded-xl border border-white/25 bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted"
             placeholder="Notas (opcional)"
             value={form.reservationData.notes}
             onChange={(e) => form.setReservationData((prev) => ({ ...prev, notes: e.target.value }))}
           />
 
-          <div className="space-y-1 text-sm text-white/75">
+          <div className="space-y-1 text-sm text-white/90">
             <p>Estimado camas: ${bedTotal.toFixed(0)} MXN</p>
             {lockerTotal > 0 ? (
               <p>Estimado lockers: ${lockerTotal.toFixed(0)} MXN</p>
             ) : null}
             {lockerTotal > 0 ? (
-              <p className="font-medium text-white">
+              <p className="font-semibold text-white">
                 Total estimado: ${(bedTotal + lockerTotal).toFixed(0)} MXN
               </p>
             ) : null}

@@ -36,13 +36,16 @@ export function ReservationGuestFields({
   onChange,
 }: ReservationGuestFieldsProps) {
   const isDashboard = variant === "dashboard";
+  // Dashboard walk-in form sits on `.dashboard-brand-panel` (dark teal) — use light text.
   const inputClass = isDashboard
-    ? "w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-text-main"
-    : "w-full rounded-xl border border-mkt-border bg-white px-3 py-2.5 text-sm text-mkt-ink";
+    ? "w-full rounded-lg border border-white/25 bg-white px-3 py-2 text-sm text-text-main placeholder:text-text-muted"
+    : "w-full rounded-xl border border-mkt-border bg-white px-3 py-2.5 text-sm text-mkt-ink placeholder:text-mkt-ink-muted";
   const labelClass = isDashboard
-    ? "mb-1 block text-xs font-semibold uppercase tracking-wide text-text-muted"
+    ? "mb-1 block text-xs font-semibold uppercase tracking-wide text-brand-accent"
     : "mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-mkt-terracotta";
-  const hintClass = isDashboard ? "mt-1 text-xs text-text-muted" : "mt-1 text-xs text-white/70";
+  const hintClass = isDashboard
+    ? "mt-1 text-xs leading-relaxed text-white/90"
+    : "mt-1 text-xs text-white/70";
 
   return (
     <div className="space-y-3">
