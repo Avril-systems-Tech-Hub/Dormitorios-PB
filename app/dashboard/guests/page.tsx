@@ -58,7 +58,7 @@ type ReservationInfo = {
 
 type ReservationGuestRow = {
   beds?: { bed_number?: number } | { bed_number?: number }[] | null;
-  locker_number?: number | null;
+  locker_number?: string | number | null;
   locker_days?: number | null;
   reservations?: ReservationInfo | ReservationInfo[] | null;
 };

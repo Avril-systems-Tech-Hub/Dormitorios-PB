@@ -8,7 +8,7 @@ export type GuestStaySummary = {
   checkOut: string;
   nights: number;
   bedNumber?: number;
-  lockerNumber?: number | null;
+  lockerNumber?: string | number | null;
   lockerDays?: number;
   folioCode?: string;
   paymentStatus?: string;

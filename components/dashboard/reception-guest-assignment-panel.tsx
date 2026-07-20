@@ -87,17 +87,18 @@ export function ReceptionGuestAssignmentPanel({
 
               {requiresLocker ? (
                 <label className="flex flex-col gap-1 text-sm text-text-muted">
-                  Número de locker
+                  Código de locker
                   <input
-                    type="number"
-                    min={1}
+                    type="text"
+                    inputMode="text"
+                    autoCapitalize="characters"
                     value={draft.lockerNumber}
                     onChange={(e) =>
                       onDraftChange(guest.guestId, { lockerNumber: e.target.value })
                     }
-                    placeholder="Ej. 12"
+                    placeholder="Ej. 12 o A1"
                     disabled={disabled}
-                    className="h-10 rounded-lg border border-border-soft bg-white px-3 text-text-main"
+                    className="h-10 rounded-lg border border-border-soft bg-white px-3 uppercase text-text-main"
                   />
                 </label>
               ) : null}

@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 type LockerAssignButtonProps = {
   reservationId: string;
   guestId: string;
-  lockerNumber: number | null;
+  lockerNumber: string | null;
   lockerDays: number;
   nights: number;
   returnTo?: string;
@@ -30,19 +30,17 @@ export function LockerAssignButton({
   const [open, setOpen] = useState(false);
   const [addLocker, setAddLocker] = useState(lockerDays > 0 ? "yes" : "no");
   const [lockerDaysInput, setLockerDaysInput] = useState(String(lockerDays > 0 ? lockerDays : nights));
-  const [lockerNumberInput, setLockerNumberInput] = useState(
-    lockerNumber != null ? String(lockerNumber) : "",
-  );
+  const [lockerNumberInput, setLockerNumberInput] = useState(lockerNumber ?? "");
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
   const hasLockerService = lockerDays > 0;
-  const hasLockerNumber = lockerNumber != null && lockerNumber > 0;
+  const hasLockerNumber = Boolean(lockerNumber);
 
   const openModal = () => {
     setAddLocker(mode === "include" ? "yes" : lockerDays > 0 ? "yes" : "no");
     setLockerDaysInput(String(lockerDays > 0 ? lockerDays : nights));
-    setLockerNumberInput(lockerNumber != null ? String(lockerNumber) : "");
+    setLockerNumberInput(lockerNumber ?? "");
     setOpen(true);
   };
 
@@ -131,7 +129,7 @@ export function LockerAssignButton({
       {open ? (
         <LockerAssignModal
           title={hasLockerNumber ? "Editar locker" : "Agregar locker"}
-          description="Asigna el número físico de locker para este huésped."
+          description="Asigna el código físico de locker para este huésped (letras y/o números)."
           addLocker={addLocker}
           setAddLocker={setAddLocker}
           lockerDaysInput={lockerDaysInput}
@@ -229,17 +227,18 @@ function LockerAssignModal({
               </div>
               {showNumberField ? (
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-text-muted">Número de locker</label>
+                  <label className="mb-1 block text-xs font-medium text-text-muted">Código de locker</label>
                   <input
-                    type="number"
-                    min={1}
-                    className="w-full max-w-[140px] rounded-lg border border-border-soft px-3 py-2 text-sm"
-                    placeholder="Ej. 12"
+                    type="text"
+                    inputMode="text"
+                    autoCapitalize="characters"
+                    className="w-full max-w-[140px] rounded-lg border border-border-soft px-3 py-2 text-sm uppercase"
+                    placeholder="Ej. 12 o A1"
                     value={lockerNumberInput}
                     onChange={(e) => setLockerNumberInput(e.target.value)}
                   />
                   <p className="mt-1 text-xs text-text-muted">
-                    Vacío = locker pendiente hasta asignar número.
+                    Letras y/o números. Vacío = pendiente de asignar.
                   </p>
                 </div>
               ) : null}

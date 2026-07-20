@@ -25,7 +25,7 @@ export type PaymentPdfData = {
   assignments?: Array<{
     guestName: string;
     bedNumber: number;
-    lockerNumber?: number | null;
+    lockerNumber?: string | number | null;
     lockerDays?: number;
   }>;
 };

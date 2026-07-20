@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { RegisterCheckoutButton } from "@/components/ui/register-checkout-button";
+import { normalizeLockerCode } from "@/lib/locker";
 
 type ReservationDetail = {
   reservation_id?: string;
@@ -19,7 +20,7 @@ type ReservationDetail = {
   total_amount?: number;
   balance_due?: number;
   notes?: string;
-  locker_number?: number | null;
+  locker_number?: string | number | null;
   locker_days?: number;
   in_house_today?: boolean;
   pending_checkout?: boolean;
@@ -32,8 +33,7 @@ export function BedCardAccordion({ detail }: { detail: ReservationDetail | null 
 
   const sourceLabel = detail.source === "cashier_counter" ? "Caja" : "App cliente";
   const payLabel = detail.payment_status ?? "pending";
-  const lockerNum =
-    detail.locker_number != null && detail.locker_number > 0 ? detail.locker_number : null;
+  const lockerNum = normalizeLockerCode(detail.locker_number);
   const lockerDays = Number(detail.locker_days ?? 0);
 
   return (

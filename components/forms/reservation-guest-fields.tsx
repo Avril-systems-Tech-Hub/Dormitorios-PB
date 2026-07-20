@@ -179,22 +179,23 @@ export function ReservationGuestFields({
               </div>
               {showLockerNumberField ? (
                 <div>
-                  <label className={labelClass}>Número de locker (opcional)</label>
+                  <label className={labelClass}>Código de locker (opcional)</label>
                   <input
-                    type="number"
-                    min={1}
-                    className={`${inputClass} max-w-[140px]`}
-                    placeholder="Ej. 12"
+                    type="text"
+                    inputMode="text"
+                    autoCapitalize="characters"
+                    className={`${inputClass} max-w-[140px] uppercase`}
+                    placeholder="Ej. 12 o A1"
                     value={guest.locker_number}
                     onChange={(e) => onChange("locker_number", e.target.value)}
                   />
                   <p className={hintClass}>
-                    Déjalo vacío si aún no asignas el locker; aparecerá como pendiente en reservas.
+                    Letras y/o números. Déjalo vacío si aún no asignas el locker.
                   </p>
                 </div>
               ) : (
                 <p className={hintClass}>
-                  El número de locker se asigna en recepción al llegar.
+                  El código de locker se asigna en recepción al llegar.
                 </p>
               )}
             </>

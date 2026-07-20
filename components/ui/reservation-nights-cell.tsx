@@ -1,14 +1,16 @@
+import { normalizeLockerCode } from "@/lib/locker";
+
 type ReservationGuestLocker = {
-  locker_number?: number | null;
+  locker_number?: string | number | null;
   locker_days?: number | null;
 };
 
 export function formatLockerLabel(
-  lockerNumber: number | null | undefined,
+  lockerNumber: string | number | null | undefined,
   lockerDays: number | null | undefined,
 ) {
   const days = Number(lockerDays ?? 0);
-  const locker = lockerNumber != null && lockerNumber > 0 ? Number(lockerNumber) : null;
+  const locker = normalizeLockerCode(lockerNumber);
 
   if (locker != null) return `Locker ${locker}`;
   if (days > 0) return "Locker pendiente";
@@ -17,7 +19,7 @@ export function formatLockerLabel(
 
 export function formatBedLockerLabel(
   bedNumber: number | undefined | null,
-  lockerNumber: number | null | undefined,
+  lockerNumber: string | number | null | undefined,
   lockerDays: number | null | undefined,
 ) {
   const bedPart = bedNumber ? `Cama ${bedNumber}` : "Pendiente";

@@ -2,11 +2,12 @@
 
 import { BedChangeButton } from "@/components/ui/bed-change-button";
 import { LockerAssignButton } from "@/components/ui/locker-assign-button";
+import { normalizeLockerCode } from "@/lib/locker";
 
 export type GuestAssignmentGuestRow = {
   id?: string;
   guest_id?: string;
-  locker_number?: number | null;
+  locker_number?: string | number | null;
   locker_days?: number | null;
   guests?: { full_name?: string } | { full_name?: string }[] | null;
   beds?: { bed_number?: number } | { bed_number?: number }[] | null;
@@ -20,8 +21,7 @@ function unwrapRelation<T>(value: T | T[] | null | undefined): T | undefined {
 export function parseGuestAssignmentRow(row: GuestAssignmentGuestRow) {
   const bed = unwrapRelation(row.beds);
   const lockerDays = Number(row.locker_days ?? 0);
-  const lockerNumber =
-    row.locker_number != null && Number(row.locker_number) > 0 ? Number(row.locker_number) : null;
+  const lockerNumber = normalizeLockerCode(row.locker_number);
 
   return {
     guestId: row.guest_id ?? "",
@@ -45,7 +45,7 @@ export function GuestAssignmentActions({
   reservationId: string;
   guestId: string;
   bedNumber: number | null;
-  lockerNumber: number | null;
+  lockerNumber: string | null;
   lockerDays: number;
   nights: number;
   returnTo: string;

@@ -1,4 +1,5 @@
 import { getMexicoCityDateString } from "@/lib/dates";
+import { normalizeLockerCode } from "@/lib/locker";
 
 export type BedOccupancyDetail = {
   reservation_id: string;
@@ -15,7 +16,7 @@ export type BedOccupancyDetail = {
   total_amount?: number;
   balance_due?: number;
   notes?: string;
-  locker_number?: number | null;
+  locker_number?: string | null;
   locker_days?: number;
   /** true when check-in/out includes today (in-house) */
   in_house_today?: boolean;
@@ -25,7 +26,7 @@ type ReservationGuestRow = {
   bed_id: string | null;
   reservation_id: string;
   guest_id: string;
-  locker_number?: number | null;
+  locker_number?: string | number | null;
   locker_days?: number | null;
   guests?: { full_name?: string; phone?: string; email?: string } | { full_name?: string; phone?: string; email?: string }[] | null;
   reservations?: ReservationRow | ReservationRow[] | null;
@@ -128,7 +129,7 @@ function rowToDetail(row: ReservationGuestRow, today: string): BedOccupancyDetai
     total_amount: folio?.total_amount != null ? Number(folio.total_amount) : undefined,
     balance_due: folio?.balance_due != null ? Number(folio.balance_due) : undefined,
     notes: reservation.notes ?? undefined,
-    locker_number: row.locker_number != null ? Number(row.locker_number) : null,
+    locker_number: normalizeLockerCode(row.locker_number),
     locker_days: Number(row.locker_days ?? 0),
     in_house_today: reservationBlocksDate(reservation, today),
   };

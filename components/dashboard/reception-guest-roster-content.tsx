@@ -23,6 +23,7 @@ import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 import { RegisterCheckoutButton } from "@/components/ui/register-checkout-button";
 import { ReservationPaymentInline } from "@/components/ui/reservation-payment-inline";
 import { Badge } from "@/components/ui/badge";
+import { normalizeLockerCode } from "@/lib/locker";
 
 type FolioFields = {
   id?: string;
@@ -35,7 +36,7 @@ type FolioFields = {
 
 type ReservationGuestRow = {
   id: string;
-  locker_number: number | null;
+  locker_number: string | number | null;
   final_rate: number | null;
   locker_amount: number | null;
   guests: { full_name?: string; sex?: string } | { full_name?: string; sex?: string }[] | null;
@@ -174,10 +175,7 @@ export async function ReceptionGuestRosterContent({
     const folioCode = folio?.folio_code ?? "—";
     const guestName = guest?.full_name ?? "—";
     const bedNumber = bed?.bed_number != null ? String(bed.bed_number) : "—";
-    const lockerNumber =
-      row.locker_number != null && Number(row.locker_number) > 0
-        ? String(row.locker_number)
-        : "—";
+    const lockerNumber = normalizeLockerCode(row.locker_number) ?? "—";
     const sexLabel = formatGuestSexLabel(guest?.sex);
     const dayLabel = checkIn ? formatRosterDay(checkIn) : "—";
     const checkInLabel = checkIn ? formatRosterDate(checkIn) : "—";

@@ -36,6 +36,7 @@ import {
   type ReceptionCheckInResult,
   type ReceptionSearchResult,
 } from "@/lib/reception-check-in";
+import { normalizeLockerCode } from "@/lib/locker";
 
 const BASE_NIGHTLY_RATE = 120;
 const LOCKER_DAILY_PRICE = 30;
@@ -63,7 +64,7 @@ function normalizeName(value: string) {
 
 type ReservationGuestAssignmentRow = {
   bed_id?: string | null;
-  locker_number?: number | null;
+  locker_number?: string | number | null;
   locker_days?: number | null;
   guests?: { full_name?: string; id?: string; phone?: string } | { full_name?: string; id?: string; phone?: string }[] | null;
   beds?: { bed_number?: number } | { bed_number?: number }[] | null;
@@ -84,8 +85,7 @@ function parseReservationGuestAssignments(rows: ReservationGuestAssignmentRow[])
       return {
         guestName: guest?.full_name ?? "Huésped",
         bedNumber,
-        lockerNumber:
-          row.locker_number != null && Number(row.locker_number) > 0 ? Number(row.locker_number) : null,
+        lockerNumber: normalizeLockerCode(row.locker_number),
         lockerDays: Number(row.locker_days ?? 0),
       };
     })
@@ -457,7 +457,7 @@ export async function createReservationAction(
   const lockerByGuest = guests.slice(0, guestIds.length).map((guest) => {
     const wantsLocker = guest.add_locker === "yes";
     if (!wantsLocker) {
-      return { locker_days: 0, locker_price: 0, locker_amount: 0, locker_number: null as number | null };
+      return { locker_days: 0, locker_price: 0, locker_amount: 0, locker_number: null as string | null };
     }
 
     const lockerPriceWithDiscount = Math.round(LOCKER_DAILY_PRICE * (100 - discountPercent)) / 100;
@@ -468,11 +468,7 @@ export async function createReservationAction(
     );
     const locker_price = lockerPriceWithDiscount;
     const locker_amount = Number((locker_days * locker_price).toFixed(2));
-    const lockerNumberRaw = String(guest.locker_number ?? "").trim();
-    let locker_number: number | null = lockerNumberRaw ? Number(lockerNumberRaw) : null;
-    if (locker_number != null && (!Number.isFinite(locker_number) || locker_number <= 0)) {
-      locker_number = null;
-    }
+    const locker_number = normalizeLockerCode(guest.locker_number);
 
     return { locker_days, locker_price, locker_amount, locker_number };
   });
@@ -2787,18 +2783,20 @@ export async function assignLockerAction(formData: FormData): Promise<OperationR
   let locker_days = Number(currentRg.locker_days ?? 0);
   let locker_price = Number(currentRg.locker_price ?? 0);
   let locker_amount = Number(currentRg.locker_amount ?? 0);
-  let locker_number: number | null =
-    currentRg.locker_number != null ? Number(currentRg.locker_number) : null;
+  let locker_number: string | null = normalizeLockerCode(currentRg.locker_number);
 
   if (wantsLocker) {
     const requestedDays = lockerDaysRaw ? Number(lockerDaysRaw) : locker_days || nights;
     locker_days = Math.min(Math.max(1, requestedDays), nights);
     locker_price = lockerPriceWithDiscount;
     locker_amount = Number((locker_days * locker_price).toFixed(2));
-    locker_number = lockerNumberRaw ? Number(lockerNumberRaw) : null;
-    if (locker_number != null && (!Number.isFinite(locker_number) || locker_number <= 0)) {
-      return actionResult("error", "Número de locker inválido.");
+    if (lockerNumberRaw && !normalizeLockerCode(lockerNumberRaw)) {
+      return actionResult(
+        "error",
+        "Código de locker inválido. Usa letras y/o números (ej. 12, A1, B-3).",
+      );
     }
+    locker_number = normalizeLockerCode(lockerNumberRaw);
 
     if (locker_number != null) {
       const { data: conflicting } = await supabase

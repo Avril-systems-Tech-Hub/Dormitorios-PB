@@ -1,3 +1,5 @@
+import { normalizeLockerCode, isLockerCodeAssigned } from "@/lib/locker";
+
 export type ReceptionSearchGuest = {
   reservationGuestId: string;
   guestId: string;
@@ -7,7 +9,7 @@ export type ReceptionSearchGuest = {
   bedNumber: number | null;
   lockerDays: number;
   lockerAmount: number;
-  lockerNumber: number | null;
+  lockerNumber: string | null;
 };
 
 export type ReceptionSearchResult = {
@@ -71,7 +73,7 @@ type RawGuestRow = {
   id?: string;
   guest_id?: string;
   bed_id?: string | null;
-  locker_number?: number | null;
+  locker_number?: string | number | null;
   locker_days?: number | null;
   locker_amount?: number | null;
   locker_price?: number | null;
@@ -124,8 +126,7 @@ export function mapReservationToReceptionSearch(row: {
         : lockerDays > 0
           ? Number((lockerDays * (lockerPrice > 0 ? lockerPrice : 30)).toFixed(2))
           : 0;
-    const lockerNumber =
-      g.locker_number != null && Number(g.locker_number) > 0 ? Number(g.locker_number) : null;
+    const lockerNumber = normalizeLockerCode(g.locker_number);
     return {
       reservationGuestId: g.id ?? "",
       guestId: g.guest_id ?? "",
@@ -141,7 +142,7 @@ export function mapReservationToReceptionSearch(row: {
 
   const allBedsAssigned = guestRows.length > 0 && guestRows.every((g) => g.bed_id);
   const allLockersAssigned = guests.every(
-    (g) => g.lockerDays <= 0 || (g.lockerNumber != null && g.lockerNumber > 0),
+    (g) => g.lockerDays <= 0 || isLockerCodeAssigned(g.lockerNumber),
   );
 
   return {

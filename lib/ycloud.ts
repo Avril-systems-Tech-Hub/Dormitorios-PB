@@ -332,7 +332,7 @@ export async function sendWhatsAppTemplateMessage(
 export type PaymentGuestAssignment = {
   guestName: string;
   bedNumber: number;
-  lockerNumber?: number | null;
+  lockerNumber?: string | number | null;
   lockerDays?: number;
 };
 
