@@ -48,11 +48,16 @@ export function ReservationBookingSection({
     };
   }, []);
 
+  // Keep page position stable around form updates; on confirm, anchor to the section.
   useLayoutEffect(() => {
+    if (activeConfirmation) {
+      document.getElementById("reserva")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
     restoreReservationScroll();
     const id = window.setTimeout(restoreReservationScroll, 100);
     return () => window.clearTimeout(id);
-  });
+  }, [activeConfirmation]);
 
   const handleConfirmed = useCallback((data: GuestConfirmationPayload) => {
     setConfirmationData(data);

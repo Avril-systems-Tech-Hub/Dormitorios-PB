@@ -80,6 +80,8 @@ type UseReservationFormOptions = {
   reservationSource?: "guest_app" | "cashier_counter";
   returnTo?: string;
   allowLockerSelection?: boolean;
+  /** Keep document scroll stable around async updates. Disable in fullscreen overlays. */
+  preservePageScroll?: boolean;
   recurringGuest?: {
     full_name?: string | null;
     email?: string | null;
@@ -94,8 +96,19 @@ export function useReservationForm({
   reservationSource = "guest_app",
   returnTo = "/",
   allowLockerSelection = false,
+  preservePageScroll = true,
   recurringGuest,
 }: UseReservationFormOptions) {
+  const captureScroll = useCallback(() => {
+    if (preservePageScroll) captureReservationScroll();
+  }, [preservePageScroll]);
+  const restoreScroll = useCallback(() => {
+    if (preservePageScroll) restoreReservationScroll();
+  }, [preservePageScroll]);
+  const withScroll = useCallback(
+    <T,>(fn: () => Promise<T>) => (preservePageScroll ? withPreservedScroll(fn) : fn()),
+    [preservePageScroll],
+  );
   const [guests, setGuests] = useState<GuestFormRow[]>(() => {
     const guest = emptyGuest();
     if (recurringGuest) {
@@ -178,7 +191,7 @@ export function useReservationForm({
       return;
     }
     setPromoCodeValidating(true);
-    captureReservationScroll();
+    captureScroll();
     try {
       const result = await validatePromoCodeAction(code.trim());
       setPromoCodeResult(result);
@@ -186,9 +199,9 @@ export function useReservationForm({
       setPromoCodeResult({ valid: false, error: "Error al validar el código." });
     } finally {
       setPromoCodeValidating(false);
-      restoreReservationScroll();
+      restoreScroll();
     }
-  }, []);
+  }, [captureScroll, restoreScroll]);
 
   const clearPromoCode = useCallback(() => {
     setPromoCodeInput("");
@@ -224,7 +237,7 @@ export function useReservationForm({
       // Only fetch date-range discounts (no phone)
     }
     let cancelled = false;
-    captureReservationScroll();
+    captureScroll();
     getApplicableDiscountsAction(reservationData.check_in_date, phone)
       .then((discount) => {
         if (!cancelled) setApplicableDiscount(discount);
@@ -233,12 +246,12 @@ export function useReservationForm({
         if (!cancelled) setApplicableDiscount(null);
       })
       .finally(() => {
-        if (!cancelled) restoreReservationScroll();
+        if (!cancelled) restoreScroll();
       });
     return () => {
       cancelled = true;
     };
-  }, [reservationData.check_in_date, primaryGuestPhone]);
+  }, [reservationData.check_in_date, primaryGuestPhone, captureScroll, restoreScroll]);
 
   const dateErrors = useMemo<ReservationDateErrors>(() => {
     const next: ReservationDateErrors = {};
@@ -304,7 +317,7 @@ export function useReservationForm({
     setSearchError("");
     if (!searchPhone) return;
     setIsSearching(true);
-    captureReservationScroll();
+    captureScroll();
     try {
       const res = await searchGuestByPhoneAction(searchPhone);
       if (res.success && res.guest) {
@@ -333,7 +346,7 @@ export function useReservationForm({
       setSearchError("Error al buscar.");
     } finally {
       setIsSearching(false);
-      restoreReservationScroll();
+      restoreScroll();
     }
   };
 
@@ -413,7 +426,7 @@ export function useReservationForm({
     }
 
     setIsSubmitting(true);
-    captureReservationScroll();
+    captureScroll();
     try {
       const formData = new FormData();
       const guestsPayload = allowLockerSelection
@@ -441,7 +454,7 @@ export function useReservationForm({
         formData.set("discount_percent", String(ruleDiscount.rule.discount_percent));
       }
 
-      const result = await withPreservedScroll(() => action(formData));
+      const result = await withScroll(() => action(formData));
       if (result) {
         if (result.ok) {
           onConfirmed?.(result.confirmation);
@@ -466,7 +479,7 @@ export function useReservationForm({
       return { ok: false as const, message };
     } finally {
       setIsSubmitting(false);
-      restoreReservationScroll();
+      restoreScroll();
     }
   };
 

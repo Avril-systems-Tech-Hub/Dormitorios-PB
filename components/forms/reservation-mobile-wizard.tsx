@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { applyDiscount } from "@/lib/discount-rules";
 import { ReservationConfirmation } from "@/components/forms/reservation-confirmation";
@@ -66,13 +66,24 @@ export function ReservationWizard({ open, onOpenChange, action }: ReservationWiz
   const [additionalGuestIndex, setAdditionalGuestIndex] = useState(0);
   const [stepError, setStepError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<GuestConfirmationPayload | null>(null);
+  const scrollBodyRef = useRef<HTMLDivElement>(null);
 
   const form = useReservationForm({
     action,
     onConfirmed: (data) => setConfirmation(data),
     allowLockerSelection: true,
+    preservePageScroll: false,
   });
   const { resetForm } = form;
+
+  const scrollWizardToTop = useCallback(() => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && scrollBodyRef.current?.contains(active)) {
+      active.blur();
+    }
+    const body = scrollBodyRef.current;
+    if (body) body.scrollTop = 0;
+  }, []);
 
   const stepOrder = useMemo(
     () => buildStepOrder(form.guestCount, form.recurringGuestMatched),
@@ -121,6 +132,11 @@ export function ReservationWizard({ open, onOpenChange, action }: ReservationWiz
       setStepIndex(Math.max(0, stepOrder.length - 1));
     }
   }, [stepOrder.length, stepIndex]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    scrollWizardToTop();
+  }, [open, stepIndex, additionalGuestIndex, confirmation, form.recurringGuestMatched, scrollWizardToTop]);
 
   const handleClose = () => {
     if (confirmation) {
@@ -250,9 +266,15 @@ export function ReservationWizard({ open, onOpenChange, action }: ReservationWiz
             </svg>
           </button>
           <div className="min-w-0 flex-1 text-center">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-mkt-terracotta">
-              Paso {stepIndex + 1} de {totalSteps}
-            </p>
+            {confirmation ? (
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-mkt-terracotta">
+                Listo
+              </p>
+            ) : (
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-mkt-terracotta">
+                Paso {stepIndex + 1} de {totalSteps}
+              </p>
+            )}
             <h2 id="reservation-wizard-title" className="truncate text-sm font-semibold text-white">
               {stepTitle}
             </h2>
@@ -269,7 +291,7 @@ export function ReservationWizard({ open, onOpenChange, action }: ReservationWiz
         ) : null}
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:py-4">
+      <div ref={scrollBodyRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:py-4">
         <div className="mx-auto w-full md:max-w-lg lg:max-w-xl">
           {confirmation ? (
             <ReservationConfirmation
