@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition, useState } from "react";
+import { useRouter } from "next/navigation";
 import { registerPaymentResultAction } from "@/actions/operations";
 import { ResendReceiptButton } from "@/components/ui/resend-receipt-button";
 import { getMexicoCityDateString } from "@/lib/dates";
@@ -28,6 +29,7 @@ export function ReservationPaymentInline({
   paymentStatus,
   returnTo,
 }: ReservationPaymentInlineProps) {
+  const router = useRouter();
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [effectiveDate, setEffectiveDate] = useState(getMexicoCityDateString());
@@ -62,14 +64,17 @@ export function ReservationPaymentInline({
     formData.set("amount", String(numAmount));
     formData.set("method", method);
     formData.set("effective_date", effectiveDate);
-    formData.set("notes", notes || `Cobro desde reservaciones - Folio ${folioCode}`);
+    formData.set("notes", notes || `Cobro desde listado - Folio ${folioCode}`);
     formData.set("return_to", returnTo ?? "/dashboard/reservations");
 
     startTransition(async () => {
       try {
         const result = await registerPaymentResultAction(formData);
         setMessage({ type: result.status, text: result.message });
-        if (result.status === "success") setAmount("");
+        if (result.status === "success") {
+          setAmount("");
+          router.refresh();
+        }
       } catch (err) {
         console.error("[ReservationPaymentInline] payment failed:", err);
         setMessage({ type: "error", text: "Error al registrar pago" });
@@ -79,7 +84,9 @@ export function ReservationPaymentInline({
 
   return (
     <form onSubmit={handleSubmit} className="flex w-full min-w-[8.5rem] flex-col gap-1.5">
-      {/* Monto */}
+      <p className="text-[10px] font-medium tabular-nums text-amber-800">
+        Saldo ${balanceDue.toFixed(2)}
+      </p>
       <div className="flex items-center gap-1">
         <span className="text-xs text-gray-500">$</span>
         <input
@@ -104,7 +111,6 @@ export function ReservationPaymentInline({
         <span className="text-[10px] text-red-500">Máx ${maxPayable.toFixed(2)}</span>
       )}
 
-      {/* Método */}
       <select
         value={method}
         onChange={(e) => setMethod(e.target.value as PaymentMethod)}
@@ -131,13 +137,12 @@ export function ReservationPaymentInline({
         className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900"
       />
 
-      {/* Botón Pagado */}
       <button
         type="submit"
         disabled={isPending || !numAmount || numAmount <= 0 || exceedsMax || !effectiveDate}
-        className="w-full rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+        className="w-full rounded bg-brand-primary px-2 py-1 text-xs font-medium text-white hover:bg-brand-secondary disabled:opacity-40"
       >
-        {isPending ? "Registrando..." : "Pagado"}
+        {isPending ? "Registrando..." : "Registrar pago"}
       </button>
 
       {message && (

@@ -21,7 +21,17 @@ import {
 } from "@/lib/dates";
 import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 import { RegisterCheckoutButton } from "@/components/ui/register-checkout-button";
+import { ReservationPaymentInline } from "@/components/ui/reservation-payment-inline";
 import { Badge } from "@/components/ui/badge";
+
+type FolioFields = {
+  id?: string;
+  folio_code?: string;
+  total_amount?: number;
+  paid_amount?: number;
+  balance_due?: number;
+  payment_status?: string;
+};
 
 type ReservationGuestRow = {
   id: string;
@@ -40,10 +50,7 @@ type ReservationGuestRow = {
         status?: string;
         checked_out_at?: string | null;
         notes?: string | null;
-        folios?:
-          | { folio_code?: string; total_amount?: number; balance_due?: number }
-          | { folio_code?: string; total_amount?: number; balance_due?: number }[]
-          | null;
+        folios?: FolioFields | FolioFields[] | null;
       }
     | {
         id?: string;
@@ -54,10 +61,7 @@ type ReservationGuestRow = {
         status?: string;
         checked_out_at?: string | null;
         notes?: string | null;
-        folios?:
-          | { folio_code?: string; total_amount?: number; balance_due?: number }
-          | { folio_code?: string; total_amount?: number; balance_due?: number }[]
-          | null;
+        folios?: FolioFields | FolioFields[] | null;
       }[]
     | null;
 };
@@ -136,7 +140,7 @@ export async function ReceptionGuestRosterContent({
       `id, locker_number, final_rate, locker_amount,
       guests!inner(full_name, sex),
       beds(bed_number),
-      reservations!inner(id, created_at, check_in_date, check_out_date, nights, status, checked_out_at, notes, folios!inner(folio_code, total_amount, balance_due))`,
+      reservations!inner(id, created_at, check_in_date, check_out_date, nights, status, checked_out_at, notes, folios!inner(id, folio_code, total_amount, paid_amount, balance_due, payment_status))`,
       { count: "exact" },
     )
     .neq("reservations.status", "cancelled")
@@ -180,6 +184,10 @@ export async function ReceptionGuestRosterContent({
     const checkOutLabel = checkOut ? formatRosterDate(checkOut) : "—";
     const timeLabel = createdAt ? formatRosterTime(createdAt) : "—";
     const totalLabel = `$${lineTotal.toFixed(2)}`;
+    const balanceDue = Number(folio?.balance_due ?? 0);
+    const paidAmount = Number(folio?.paid_amount ?? 0);
+    const folioTotal = Number(folio?.total_amount ?? lineTotal);
+    const paymentStatus = folio?.payment_status ?? "pending";
     const reservationNotes = reservation?.notes?.trim() || null;
     const isCheckedOut = Boolean(reservation?.checked_out_at) || reservation?.status === "checked_out";
     const pendingCheckout =
@@ -203,6 +211,8 @@ export async function ReceptionGuestRosterContent({
       checkOutLabel,
       String(nights),
       totalLabel,
+      paymentStatus,
+      String(balanceDue),
       reservationNotes ?? "",
     ].join(" ");
 
@@ -218,6 +228,21 @@ export async function ReceptionGuestRosterContent({
       ft(checkOutLabel, <span className="whitespace-nowrap tabular-nums">{checkOutLabel}</span>),
       ft(String(nights), <span className="tabular-nums">{nights}</span>),
       ft(totalLabel, <span className="whitespace-nowrap font-medium tabular-nums">{totalLabel}</span>),
+      ft(
+        `${paymentStatus} ${balanceDue} ${paidAmount}`,
+        folio?.id ? (
+          <ReservationPaymentInline
+            folioId={folio.id}
+            folioCode={folioCode}
+            balanceDue={balanceDue}
+            totalAmount={folioTotal}
+            paymentStatus={paymentStatus}
+            returnTo={basePath}
+          />
+        ) : (
+          <span className="text-xs text-text-muted">—</span>
+        ),
+      ),
       ft(
         reservationNotes ?? "Sin nota",
         <span className="block max-w-64 whitespace-pre-wrap text-text-main">
@@ -237,7 +262,7 @@ export async function ReceptionGuestRosterContent({
           {canCheckout && reservation?.id ? (
             <RegisterCheckoutButton
               reservationId={reservation.id}
-              balanceDue={Number(folio?.balance_due ?? 0)}
+              balanceDue={balanceDue}
               compact
             />
           ) : null}
@@ -287,6 +312,7 @@ export async function ReceptionGuestRosterContent({
           "Fecha salida",
           "Noches",
           "Total",
+          "Pago / saldo",
           "Nota de reservación",
           "Estado / salida",
         ]}
