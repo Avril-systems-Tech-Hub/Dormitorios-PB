@@ -27,6 +27,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   DEFAULT_RECENT_RESERVATION_LIMIT,
+  getReceptionLockerTotal,
   RECEPTION_STEP_LABELS,
   RECEPTION_WIZARD_STEPS,
   type RecentReservationLimit,
@@ -114,6 +115,10 @@ export function ReceptionCheckInWizard({
 
   const currentStep: WizardStepId = successState ? "success" : STEP_ORDER[stepIndex] ?? "search";
   const progressStep = successState ? STEP_ORDER.length : stepIndex + 1;
+  const lockerTotal = selected ? getReceptionLockerTotal(selected.guests) : 0;
+  const bedPortion = selected
+    ? Math.max(0, Number((selected.totalAmount - lockerTotal).toFixed(2)))
+    : 0;
 
   useEffect(() => {
     if (!consumeInitialReservationParam || !searchParams.has("checkin_reservation")) return;
@@ -170,11 +175,6 @@ export function ReceptionCheckInWizard({
     setStepIndex(1);
   }
 
-  function goToConfirmStep(reservation: ReceptionSearchResult) {
-    setAssignmentDrafts(buildGuestAssignmentDrafts(reservation.guests));
-    setStepIndex(2);
-  }
-
   function updateAssignmentDraft(guestId: string, patch: Partial<GuestAssignmentDraft>) {
     setAssignmentDrafts((prev) => ({
       ...prev,
@@ -213,13 +213,9 @@ export function ReceptionCheckInWizard({
 
       const refreshedGuest = working.guests.find((g) => g.guestId === guest.guestId) ?? guest;
       const lockerNumber = draft.lockerNumber.trim();
-      const hadLocker = refreshedGuest.lockerNumber != null && refreshedGuest.lockerNumber > 0;
-      const lockerChanged =
-        refreshedGuest.lockerDays > 0 &&
-        lockerNumber &&
-        String(refreshedGuest.lockerNumber ?? "") !== lockerNumber;
 
-      if (refreshedGuest.lockerDays > 0 && (!hadLocker || lockerChanged)) {
+      // Always re-apply locker service when days > 0 so locker_amount + folio totals stay in sync.
+      if (refreshedGuest.lockerDays > 0 && lockerNumber) {
         const fd = new FormData();
         fd.set("reservation_id", working.reservationId);
         fd.set("guest_id", refreshedGuest.guestId);
@@ -243,8 +239,9 @@ export function ReceptionCheckInWizard({
     if (detail.success && detail.result) {
       setSelected(detail.result);
       setPaymentAmount(
-        detail.result.balanceDue > 0 ? String(detail.result.balanceDue) : paymentAmount,
+        detail.result.balanceDue > 0 ? String(detail.result.balanceDue) : "",
       );
+      setCashReceived(detail.result.balanceDue <= 0);
     }
     return detail.result ?? null;
   }
@@ -252,10 +249,6 @@ export function ReceptionCheckInWizard({
   function goBack() {
     setStepError(null);
     if (stepIndex <= 0) return;
-    if (stepIndex === 2) {
-      setStepIndex(1);
-      return;
-    }
     setStepIndex((i) => i - 1);
   }
 
@@ -277,7 +270,32 @@ export function ReceptionCheckInWizard({
     });
   }
 
-  function validateReviewStep(): string | null {
+  function goNextFromAssign() {
+    if (!selected) return;
+    const assignmentError = validateGuestAssignmentDrafts(selected.guests, assignmentDrafts);
+    if (assignmentError) {
+      setStepError(assignmentError);
+      return;
+    }
+
+    setStepError(null);
+    startTransition(async () => {
+      const assignmentResult = await persistGuestAssignments(selected, assignmentDrafts);
+      if (!assignmentResult.ok) {
+        setStepError(assignmentResult.message);
+        return;
+      }
+
+      const latest = assignmentResult.reservation;
+      setSelected(latest);
+      setAssignmentDrafts(buildGuestAssignmentDrafts(latest.guests));
+      setPaymentAmount(latest.balanceDue > 0 ? String(latest.balanceDue) : "");
+      setCashReceived(latest.balanceDue <= 0);
+      setStepIndex(2);
+    });
+  }
+
+  function validateChargeStep(): string | null {
     if (!selected) return "Selecciona una reservación.";
     if (selected.balanceDue <= 0) return null;
     const amount = Number(paymentAmount);
@@ -289,46 +307,25 @@ export function ReceptionCheckInWizard({
     return null;
   }
 
-  function goNextFromReview() {
-    const error = validateReviewStep();
+  function handleCharge() {
+    if (!selected) return;
+    const error = validateChargeStep();
     if (error) {
       setStepError(error);
       return;
     }
-    if (!selected) return;
+
     setStepError(null);
-    goToConfirmStep(selected);
-  }
-
-  function handleConfirm() {
-    if (!selected) return;
-    setStepError(null);
-
-    const assignmentError = validateGuestAssignmentDrafts(selected.guests, assignmentDrafts);
-    if (assignmentError) {
-      setStepError(assignmentError);
-      return;
-    }
-
     startTransition(async () => {
-      const assignmentResult = await persistGuestAssignments(selected, assignmentDrafts);
-      if (!assignmentResult.ok) {
-        setStepError(assignmentResult.message);
-        return;
-      }
-
-      const latest = assignmentResult.reservation;
-      setSelected(latest);
-      setAssignmentDrafts(buildGuestAssignmentDrafts(latest.guests));
+      const latest = (await refreshSelected(selected.reservationId)) ?? selected;
+      const amountToCharge =
+        latest.balanceDue <= 0 ? 0 : Number(paymentAmount) || latest.balanceDue;
 
       const fd = new FormData();
       fd.set("folio_id", latest.folioId);
       fd.set("folio_code", latest.folioCode);
       fd.set("method", paymentMethod);
-      fd.set(
-        "amount",
-        latest.balanceDue <= 0 ? "0" : String(Number(paymentAmount) || latest.balanceDue),
-      );
+      fd.set("amount", String(amountToCharge));
       fd.set("notes", `Cobro recepción - Folio ${latest.folioCode}`);
 
       const result = await completeReceptionCheckInAction(fd);
@@ -464,7 +461,69 @@ export function ReceptionCheckInWizard({
           </>
         ) : null}
 
-        {currentStep === "review" && selected ? (
+        {currentStep === "assign" && selected ? (
+          <>
+            <div>
+              <h2 className="text-lg font-semibold text-text-main">Asignar cama y locker</h2>
+              <p className="text-sm text-text-muted">
+                {selected.folioCode} · {selected.guests.map((g) => g.fullName).join(", ")}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border-soft bg-surface-soft/40 p-4">
+              <h3 className="text-sm font-semibold text-text-main">Totales de la reservación</h3>
+              <dl className="mt-3 space-y-2 text-sm">
+                {lockerTotal > 0 ? (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-text-muted">Lockers</dt>
+                    <dd className="tabular-nums text-text-main">{formatMoney(lockerTotal)}</dd>
+                  </div>
+                ) : null}
+                <div className="flex justify-between gap-4">
+                  <dt className="text-text-muted">Total en folio</dt>
+                  <dd className="tabular-nums text-text-main">{formatMoney(selected.totalAmount)}</dd>
+                </div>
+                <p className="pt-1 text-xs text-text-muted">
+                  Al continuar se sincroniza el cobro con camas + lockers.
+                </p>
+              </dl>
+            </div>
+
+            <ReceptionGuestAssignmentPanel
+              guests={selected.guests}
+              drafts={assignmentDrafts}
+              onDraftChange={updateAssignmentDraft}
+              disabled={isPending}
+            />
+
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => {
+                  setSelected(null);
+                  setSearchResults([]);
+                  setStepIndex(0);
+                  setStepError(null);
+                }}
+              >
+                Buscar otra
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                className="w-full sm:w-auto"
+                disabled={isPending}
+                onClick={goNextFromAssign}
+              >
+                {isPending ? "Guardando…" : "Continuar a cobrar"}
+              </Button>
+            </div>
+          </>
+        ) : null}
+
+        {currentStep === "charge" && selected ? (
           <>
             <div>
               <h2 className="text-lg font-semibold text-text-main">Cobrar</h2>
@@ -477,16 +536,39 @@ export function ReceptionCheckInWizard({
               <p className="mt-1 text-4xl font-bold tabular-nums text-text-main">
                 {formatMoney(selected.balanceDue)}
               </p>
-              {selected.paidAmount > 0 ? (
-                <p className="mt-2 text-sm text-text-muted">
-                  Total {formatMoney(selected.totalAmount)} · Pagado {formatMoney(selected.paidAmount)}
+              <div className="mt-3 space-y-1 text-sm text-text-muted">
+                <p>
+                  Camas {formatMoney(bedPortion)}
+                  {lockerTotal > 0 ? ` · Lockers ${formatMoney(lockerTotal)}` : ""}
                 </p>
-              ) : null}
+                <p>
+                  Total {formatMoney(selected.totalAmount)}
+                  {selected.paidAmount > 0 ? ` · Pagado ${formatMoney(selected.paidAmount)}` : ""}
+                </p>
+              </div>
             </div>
             <p className="text-sm text-text-muted">
               {selected.checkInDate} → {selected.checkOutDate} · {selected.nights} noche(s) ·{" "}
               {selected.guests.length} huésped(es)
             </p>
+            {lockerTotal > 0 ? (
+              <ul className="space-y-1 rounded-xl border border-border-soft bg-surface-soft/30 p-3 text-sm text-text-muted">
+                {selected.guests
+                  .filter((guest) => guest.lockerAmount > 0)
+                  .map((guest) => (
+                    <li key={guest.guestId} className="flex justify-between gap-3">
+                      <span>
+                        Locker {guest.fullName}
+                        {guest.lockerNumber ? ` #${guest.lockerNumber}` : ""} · {guest.lockerDays}{" "}
+                        día(s)
+                      </span>
+                      <span className="tabular-nums text-text-main">
+                        {formatMoney(guest.lockerAmount)}
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+            ) : null}
             <div className="space-y-3 rounded-xl border border-border-soft bg-surface-soft/30 p-3">
               <div>
                 <h3 className="text-sm font-semibold text-text-main">Nota general de reservación</h3>
@@ -533,70 +615,9 @@ export function ReceptionCheckInWizard({
               </>
             ) : (
               <p className="rounded-lg bg-surface-soft px-3 py-2 text-sm text-text-muted">
-                Esta reservación no tiene saldo pendiente. Continúa para asignar cama y locker.
+                Esta reservación no tiene saldo pendiente. Confirma para cerrar el check-in.
               </p>
             )}
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full sm:w-auto"
-                onClick={() => {
-                  setSelected(null);
-                  setSearchResults([]);
-                  setStepIndex(0);
-                  setStepError(null);
-                }}
-              >
-                Buscar otra
-              </Button>
-              <Button type="button" variant="primary" className="w-full sm:w-auto" onClick={goNextFromReview}>
-                Continuar
-              </Button>
-            </div>
-          </>
-        ) : null}
-
-        {currentStep === "confirm" && selected ? (
-          <>
-            <div>
-              <h2 className="text-lg font-semibold text-text-main">Confirmar y asignar</h2>
-              <p className="text-sm text-text-muted">
-                {selected.folioCode} · Asigna cama y locker, luego registra el pago.
-              </p>
-            </div>
-
-            <ReceptionGuestAssignmentPanel
-              guests={selected.guests}
-              drafts={assignmentDrafts}
-              onDraftChange={updateAssignmentDraft}
-              disabled={isPending}
-            />
-
-            <div className="rounded-xl border border-border-soft bg-surface-soft/40 p-4">
-              <h3 className="text-sm font-semibold text-text-main">Resumen</h3>
-              <dl className="mt-3 space-y-2 text-sm">
-                <div className="flex justify-between gap-4">
-                  <dt className="text-text-muted">Estancia</dt>
-                  <dd className="text-right text-text-main">
-                    {selected.checkInDate} → {selected.checkOutDate} · {selected.nights} noche(s)
-                  </dd>
-                </div>
-                {selected.balanceDue > 0 ? (
-                  <div className="flex justify-between gap-4 border-t border-border-soft pt-2">
-                    <dt className="text-text-muted">Monto a registrar</dt>
-                    <dd className="text-lg font-semibold tabular-nums text-text-main">
-                      {formatMoney(Number(paymentAmount) || selected.balanceDue)}
-                    </dd>
-                  </div>
-                ) : (
-                  <div className="border-t border-border-soft pt-2 text-text-muted">
-                    Sin saldo pendiente — solo confirma las asignaciones.
-                  </div>
-                )}
-              </dl>
-            </div>
-
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
               <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={goBack}>
                 Atrás
@@ -606,13 +627,13 @@ export function ReceptionCheckInWizard({
                 variant="primary"
                 className="w-full sm:w-auto sm:min-w-[12rem]"
                 disabled={isPending}
-                onClick={handleConfirm}
+                onClick={handleCharge}
               >
                 {isPending
                   ? "Registrando…"
                   : selected.balanceDue > 0
                     ? "Registrar pago y enviar WhatsApp"
-                    : "Confirmar asignación"}
+                    : "Confirmar check-in"}
               </Button>
             </div>
           </>

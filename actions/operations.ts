@@ -648,7 +648,7 @@ export async function createReservationAction(
 }
 
 const RECEPTION_RESERVATION_SELECT =
-  "id, status, checked_out_at, created_at, check_in_date, check_out_date, nights, notes, folio_id, folios!inner(id, folio_code, payment_status, balance_due, total_amount, paid_amount), reservation_guests(id, guest_id, bed_id, locker_number, locker_days, guests(full_name, phone, email), beds(bed_number))";
+  "id, status, checked_out_at, created_at, check_in_date, check_out_date, nights, notes, folio_id, folios!inner(id, folio_code, payment_status, balance_due, total_amount, paid_amount), reservation_guests(id, guest_id, bed_id, locker_number, locker_days, locker_amount, locker_price, guests(full_name, phone, email), beds(bed_number))";
 
 const RECENT_RECEPTION_RESERVATIONS_LIMIT = 20;
 

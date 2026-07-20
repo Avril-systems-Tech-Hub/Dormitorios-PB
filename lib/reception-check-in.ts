@@ -6,6 +6,7 @@ export type ReceptionSearchGuest = {
   bedId: string | null;
   bedNumber: number | null;
   lockerDays: number;
+  lockerAmount: number;
   lockerNumber: number | null;
 };
 
@@ -41,14 +42,19 @@ export type ReceptionCheckInResult =
       skippedPayment?: boolean;
     };
 
-export const RECEPTION_WIZARD_STEPS = ["search", "review", "confirm"] as const;
+/** Search → assign bed/locker → collect payment (locker totals included at charge). */
+export const RECEPTION_WIZARD_STEPS = ["search", "assign", "charge"] as const;
 export type ReceptionWizardStep = (typeof RECEPTION_WIZARD_STEPS)[number];
 
 export const RECEPTION_STEP_LABELS: Record<ReceptionWizardStep, string> = {
   search: "Buscar",
-  review: "Cobrar",
-  confirm: "Confirmar y asignar",
+  assign: "Asignar cama y locker",
+  charge: "Cobrar",
 };
+
+export function getReceptionLockerTotal(guests: ReceptionSearchGuest[]): number {
+  return guests.reduce((sum, guest) => sum + Number(guest.lockerAmount ?? 0), 0);
+}
 
 export const RECENT_RESERVATION_LIMIT_OPTIONS = [5, 10, 15, 20] as const;
 export type RecentReservationLimit = (typeof RECENT_RESERVATION_LIMIT_OPTIONS)[number];
@@ -67,6 +73,8 @@ type RawGuestRow = {
   bed_id?: string | null;
   locker_number?: number | null;
   locker_days?: number | null;
+  locker_amount?: number | null;
+  locker_price?: number | null;
   guests?:
     | { full_name?: string; phone?: string; email?: string }
     | { full_name?: string; phone?: string; email?: string }[]
@@ -108,6 +116,14 @@ export function mapReservationToReceptionSearch(row: {
     const guest = unwrap(g.guests);
     const bed = unwrap(g.beds);
     const lockerDays = Number(g.locker_days ?? 0);
+    const lockerPrice = Number(g.locker_price ?? 0);
+    const storedLockerAmount = Number(g.locker_amount ?? 0);
+    const lockerAmount =
+      storedLockerAmount > 0
+        ? storedLockerAmount
+        : lockerDays > 0
+          ? Number((lockerDays * (lockerPrice > 0 ? lockerPrice : 30)).toFixed(2))
+          : 0;
     const lockerNumber =
       g.locker_number != null && Number(g.locker_number) > 0 ? Number(g.locker_number) : null;
     return {
@@ -118,6 +134,7 @@ export function mapReservationToReceptionSearch(row: {
       bedId: g.bed_id ?? null,
       bedNumber: bed?.bed_number ?? null,
       lockerDays,
+      lockerAmount,
       lockerNumber,
     };
   });

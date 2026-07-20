@@ -67,7 +67,10 @@ export function ReceptionGuestAssignmentPanel({
                 Huésped {index + 1}: {guest.fullName}
               </p>
               {requiresLocker ? (
-                <p className="text-xs text-text-muted">Locker incluido · {guest.lockerDays} día(s)</p>
+                <p className="text-xs text-text-muted">
+                  Locker incluido · {guest.lockerDays} día(s)
+                  {guest.lockerAmount > 0 ? ` · $${guest.lockerAmount.toFixed(0)} MXN` : ""}
+                </p>
               ) : null}
             </div>
 
