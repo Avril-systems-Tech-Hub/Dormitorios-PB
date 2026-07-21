@@ -56,17 +56,31 @@ export function DashboardNav({ groups }: { groups: NavGroup[] }) {
   );
 }
 
-/** Sticky horizontal nav for phones — desktop sidebar stays in the aside. */
-export function DashboardNavMobileBar({ groups }: { groups: NavGroup[] }) {
+/** Horizontal primary navigation. Reception keeps it visible on every breakpoint. */
+export function DashboardNavMobileBar({
+  groups,
+  persistent = false,
+}: {
+  groups: NavGroup[];
+  persistent?: boolean;
+}) {
   const pathname = usePathname();
   const items = groups.flatMap((group) => group.items);
 
   return (
     <nav
-      className="dashboard-nav-mobile sticky z-20 border-b border-brand-primary/10 bg-white/95 px-3 py-2 shadow-sm shadow-brand-primary/5 backdrop-blur-sm md:hidden"
-      aria-label="Accesos rápidos"
+      className={cn(
+        "dashboard-nav-mobile border-b border-brand-primary/10 bg-white/95 px-3 py-2 shadow-sm shadow-brand-primary/5 backdrop-blur-sm",
+        !persistent && "md:hidden",
+      )}
+      aria-label={persistent ? "Navegación principal de recepción" : "Accesos rápidos"}
     >
-      <div className="flex gap-2 overflow-x-auto overscroll-x-contain pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div
+        className={cn(
+          "mx-auto flex gap-2 overflow-x-auto overscroll-x-contain pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          persistent && "max-w-7xl md:justify-center",
+        )}
+      >
         {items.map((item) => {
           const active = isActiveLink(pathname, item.href);
           return (

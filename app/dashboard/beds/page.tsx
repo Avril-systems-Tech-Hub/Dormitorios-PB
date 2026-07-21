@@ -11,6 +11,25 @@ import { FolioFilterInput } from "@/components/ui/folio-filter-input";
 import { formatLockerLabel } from "@/components/ui/reservation-nights-cell";
 import type { BedStatus, BedZone } from "@/types/domain";
 
+function groupBedsByBunk<
+  T extends { bed_number: string },
+>(beds: T[]): Array<{ bunkNumber: string; beds: T[] }> {
+  const groups = new Map<string, T[]>();
+  for (const bed of beds) {
+    const match = String(bed.bed_number).match(/^(.*?)([a-c])$/i);
+    const bunkNumber = match?.[1] || String(bed.bed_number);
+    groups.set(bunkNumber, [...(groups.get(bunkNumber) ?? []), bed]);
+  }
+  return Array.from(groups.entries()).map(([bunkNumber, bunkBeds]) => ({
+    bunkNumber,
+    beds: bunkBeds.sort((a, b) =>
+      String(a.bed_number).localeCompare(String(b.bed_number), "es-MX", {
+        numeric: true,
+      }),
+    ),
+  }));
+}
+
 function BedZoneSection({
   title,
   beds,
@@ -27,55 +46,80 @@ function BedZoneSection({
   return (
     <section className="space-y-2">
       <h3 className="text-sm font-semibold uppercase tracking-wide text-text-muted">{title}</h3>
-      <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
-        {beds.map((bed) => {
-          const isBlocked = bed.status === "blocked";
-          const detail = bedDetailMap.get(bed.id) ?? null;
-          const isOccupied = detail?.in_house_today ?? false;
-          const lockerLabel = detail ? formatLockerLabel(detail.locker_number, detail.locker_days) : null;
-          const label = formatBedLabel(bed.bed_number, bed.zone as BedZone) ?? bed.bed_number;
+      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        {groupBedsByBunk(beds).map((bunk) => (
+          <div
+            key={bunk.bunkNumber}
+            className="rounded-2xl border border-border-soft bg-surface-soft/40 p-2 shadow-sm"
+          >
+            <p className="mb-2 text-center text-xs font-semibold uppercase tracking-wide text-text-muted">
+              Litera {bunk.bunkNumber}
+            </p>
+            <div className="space-y-2">
+              {bunk.beds.map((bed) => {
+                const isBlocked = bed.status === "blocked";
+                const detail = bedDetailMap.get(bed.id) ?? null;
+                const isOccupied = detail?.in_house_today ?? false;
+                const lockerLabel = detail
+                  ? formatLockerLabel(detail.locker_number, detail.locker_days)
+                  : null;
+                const label =
+                  formatBedLabel(bed.bed_number, bed.zone as BedZone) ?? bed.bed_number;
 
-          return (
-            <div
-              key={bed.id}
-              className="rounded-xl border border-border-soft bg-white px-3 py-2 text-sm"
-            >
-              <p className="font-semibold text-text-main">{label}</p>
-              {detail?.guest_name ? (
-                <p className="mt-0.5 truncate text-xs font-medium text-text-main">{detail.guest_name}</p>
-              ) : null}
-              {detail?.folio_code ? (
-                <p className="text-xs text-text-muted">{detail.folio_code}</p>
-              ) : null}
-              {lockerLabel ? (
-                <p
-                  className={
-                    lockerLabel === "Locker pendiente"
-                      ? "mt-0.5 text-xs font-medium text-amber-700"
-                      : "mt-0.5 text-xs text-text-muted"
-                  }
-                >
-                  {lockerLabel}
-                </p>
-              ) : null}
-              {isBlocked ? (
-                <Badge variant="danger" className="mt-2">Bloqueada</Badge>
-              ) : isOccupied ? (
-                <Badge variant="warning" className="mt-2">Ocupada</Badge>
-              ) : (
-                <Badge variant="success" className="mt-2">Libre</Badge>
-              )}
-              {canManageBedStatus ? (
-                <BedStatusToggle
-                  bedId={bed.id}
-                  bedLabel={label}
-                  status={bed.status as BedStatus}
-                />
-              ) : null}
-              <BedCardAccordion detail={detail} />
+                return (
+                  <div
+                    key={bed.id}
+                    className={`rounded-xl border px-3 py-2 text-sm ${
+                      isBlocked
+                        ? "border-slate-300 bg-slate-200/80"
+                        : isOccupied
+                          ? "border-red-300 bg-red-50"
+                          : "border-emerald-300 bg-emerald-50"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-semibold text-text-main">Cama {bed.bed_number}</p>
+                      {isBlocked ? (
+                        <Badge variant="danger">Bloqueada</Badge>
+                      ) : isOccupied ? (
+                        <Badge variant="warning">Ocupada</Badge>
+                      ) : (
+                        <Badge variant="success">Libre</Badge>
+                      )}
+                    </div>
+                    {detail?.guest_name ? (
+                      <p className="mt-1 truncate text-xs font-medium text-text-main">
+                        {detail.guest_name}
+                      </p>
+                    ) : null}
+                    {detail?.folio_code ? (
+                      <p className="text-xs text-text-muted">{detail.folio_code}</p>
+                    ) : null}
+                    {lockerLabel ? (
+                      <p
+                        className={
+                          lockerLabel === "Locker pendiente"
+                            ? "mt-0.5 text-xs font-medium text-amber-700"
+                            : "mt-0.5 text-xs text-text-muted"
+                        }
+                      >
+                        {lockerLabel}
+                      </p>
+                    ) : null}
+                    {canManageBedStatus ? (
+                      <BedStatusToggle
+                        bedId={bed.id}
+                        bedLabel={label}
+                        status={bed.status as BedStatus}
+                      />
+                    ) : null}
+                    <BedCardAccordion detail={detail} />
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -132,6 +176,20 @@ export default async function BedsPage({
           Zona mixta (1a–15c) y zona solo mujeres (1a–7c). Ocupada = estancia vigente hoy con pago parcial o liquidado.
           {canManageBedStatus ? " Puedes bloquear o desbloquear camas en cada tarjeta." : null}
         </p>
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 rounded-lg border border-border-soft bg-surface-soft/40 px-3 py-2 text-xs font-medium text-text-muted">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full border border-emerald-400 bg-emerald-100" />
+            Libre
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full border border-red-400 bg-red-100" />
+            Ocupada
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full border border-slate-400 bg-slate-200" />
+            Bloqueada
+          </span>
+        </div>
         <div className="mt-3">
           <Suspense fallback={null}>
             <FolioFilterInput />

@@ -95,7 +95,7 @@ const staticDashboardLinks: DashboardLink[] = [
   { href: "/dashboard/register-stay", label: "Registrar estancia", roles: ["admin", "reception"] },
   { href: "/dashboard/reservations", label: "Reservas", roles: ["admin", "reception"] },
   { href: "/dashboard/beds", label: "Camas", roles: ["admin", "reception"] },
-  { href: "/dashboard/guests", label: "Huéspedes", roles: ["admin"] },
+  { href: "/dashboard/guests", label: "Huéspedes", roles: ["admin", "reception"] },
   { href: "/dashboard/payments", label: "Ingresos", roles: ["admin", "reception"] },
   { href: "/dashboard/expenses", label: "Egresos", roles: ["admin", "reception"] },
   { href: "/dashboard/imported-records", label: "Importados", roles: ["admin"] },

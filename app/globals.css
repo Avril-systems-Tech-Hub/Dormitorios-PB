@@ -120,14 +120,3 @@ body {
   color: #fff;
   box-shadow: 0 4px 14px rgb(47 74 90 / 0.2);
 }
-
-/* Sticky mobile nav sits directly under the brand header. */
-.dashboard-nav-mobile {
-  top: var(--dashboard-header-offset, 3.75rem);
-}
-
-@media (min-width: 640px) {
-  .dashboard-nav-mobile {
-    top: var(--dashboard-header-offset-sm, 4rem);
-  }
-}
