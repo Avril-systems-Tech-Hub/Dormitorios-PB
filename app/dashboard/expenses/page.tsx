@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { ExpenseRegisterPanel } from "@/components/dashboard/expense-register-panel";
+import { ExpenseDeleteButton } from "@/components/dashboard/expense-delete-button";
 import { ShiftExpenseRowActions } from "@/components/dashboard/shift-expense-row-actions";
 import { PaymentsExpensesComparison } from "@/components/dashboard/payments-expenses-comparison";
 import { Card } from "@/components/ui/card";
@@ -276,6 +277,12 @@ export default async function ExpensesPage({
         expense.notes ?? "—",
         photoCell,
         new Date(expense.recorded_at).toLocaleString("es-MX", { timeZone: "America/Mexico_City" }),
+        <ExpenseDeleteButton
+          key={`delete-${expense.id}`}
+          movementId={expense.id}
+          concept={detail}
+          amount={Number(expense.amount)}
+        />,
       ];
     }),
   );
@@ -317,7 +324,17 @@ export default async function ExpensesPage({
         <p className="mt-0.5 text-sm capitalize text-text-muted">{tableSubtitle}</p>
         <div className="mt-3">
           <ResponsiveTable
-            headers={["Fecha", "Concepto", "Monto", "Método", "Responsable", "Notas", "Foto", "Registrado"]}
+            headers={[
+              "Fecha",
+              "Concepto",
+              "Monto",
+              "Método",
+              "Responsable",
+              "Notas",
+              "Foto",
+              "Registrado",
+              "Acciones",
+            ]}
             rows={rows}
             filterMode="global"
             serverPagination={{

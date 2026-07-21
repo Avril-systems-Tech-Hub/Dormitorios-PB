@@ -1,5 +1,4 @@
 import { ReceptionCheckInWizard } from "@/components/dashboard/reception-check-in-wizard";
-import { ReceptionReservationPanel } from "@/components/dashboard/reception-reservation-panel";
 import {
   ReceptionGuestRosterContent,
   rosterParamsActive,
@@ -62,7 +61,6 @@ export async function ReceptionHome({
         initialReservationError={initialReservationError}
         consumeInitialReservationParam={shouldConsumeCheckInReservation}
       />
-      <ReceptionReservationPanel />
       <ReceptionGuestRosterPanel defaultExpanded={rosterExpanded}>
         <ReceptionGuestRosterContent
           searchParams={searchParams}

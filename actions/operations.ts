@@ -39,6 +39,10 @@ import {
 import { normalizeLockerCode } from "@/lib/locker";
 import { formatBedLabel } from "@/lib/beds";
 import { requireRole } from "@/lib/auth/guards";
+import {
+  type StayRegistrationMode,
+  validateStayDates,
+} from "@/lib/stay-registration";
 
 const BASE_NIGHTLY_RATE = 120;
 const LOCKER_DAILY_PRICE = 30;
@@ -1466,6 +1470,66 @@ export async function createExpenseResultAction(formData: FormData): Promise<Cre
   };
 }
 
+export type DeleteExpenseResult = {
+  status: "success" | "partial" | "error";
+  message: string;
+};
+
+export async function deleteExpenseAction(formData: FormData): Promise<DeleteExpenseResult> {
+  await requireRole(["admin"]);
+
+  const movementId = String(formData.get("movement_id") ?? "").trim();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(movementId)) {
+    return { status: "error", message: "Egreso no válido." };
+  }
+
+  const userSupabase = await createClient();
+  const { data, error } = await userSupabase.rpc("admin_delete_expense", {
+    p_movement_id: movementId,
+  });
+  if (error) {
+    console.error("[deleteExpenseAction] RPC failed:", error);
+    return { status: "error", message: error.message };
+  }
+
+  const result = (data ?? {}) as {
+    amount?: number;
+    receipt_image_path?: string | null;
+    cash_cut_recalculated?: boolean;
+  };
+  let evidenceCleanupFailed = false;
+  if (result.receipt_image_path) {
+    const adminSupabase = createAdminClient();
+    const { error: cleanupError } = await adminSupabase.storage
+      .from(EXPENSE_RECEIPTS_BUCKET)
+      .remove([result.receipt_image_path]);
+    if (cleanupError) {
+      evidenceCleanupFailed = true;
+      console.error("[deleteExpenseAction] receipt cleanup failed:", cleanupError);
+    }
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/expenses");
+  revalidatePath("/dashboard/cash-cuts");
+  revalidatePath("/dashboard/shifts");
+
+  const amount = Number(result.amount ?? 0);
+  const cutMessage = result.cash_cut_recalculated
+    ? " También se recalculó el corte relacionado."
+    : "";
+  if (evidenceCleanupFailed) {
+    return {
+      status: "partial",
+      message: `El egreso de $${amount.toFixed(2)} fue eliminado y ya no cuenta en las sumas.${cutMessage} No se pudo borrar su foto del almacenamiento.`,
+    };
+  }
+  return {
+    status: "success",
+    message: `El egreso de $${amount.toFixed(2)} fue eliminado definitivamente.${cutMessage}`,
+  };
+}
+
 export async function retryExpenseReceiptAction(formData: FormData): Promise<CreateExpenseResult> {
   const adminSupabase = createAdminClient();
   const actor = await getActorProfile();
@@ -2066,97 +2130,6 @@ export async function sendWhatsAppTicketAction(formData: FormData): Promise<void
     returnTo,
     "success",
     `Ticket registrado como enviado a WhatsApp para folio ${folio.folio_code}.`,
-  );
-}
-
-export async function createHistoricalStayAction(formData: FormData): Promise<void> {
-  const returnTo = String(formData.get("return_to") ?? "/dashboard/imported-records");
-  const actor = await getActorProfile();
-  if (!actor || !["admin", "reception"].includes(actor.role)) {
-    return redirectWithResult(
-      returnTo,
-      "error",
-      "Solo administración y recepción pueden capturar estancias históricas.",
-    );
-  }
-
-  const folioCode = String(formData.get("folio_code") ?? "").trim().toUpperCase();
-  const checkInDate = String(formData.get("check_in_date") ?? "");
-  const checkOutDate = String(formData.get("check_out_date") ?? "");
-  const totalAmount = Number(formData.get("total_amount") ?? 0);
-  const initialPayment = Number(formData.get("initial_payment") ?? 0);
-  const paymentMethod = String(formData.get("payment_method") ?? "cash") as PaymentMethod;
-  const effectiveDate = String(formData.get("effective_date") ?? "");
-  const notes = String(formData.get("notes") ?? "").trim();
-  const paymentNotes = String(formData.get("payment_notes") ?? "").trim();
-  const confirmed = String(formData.get("historical_confirmation") ?? "") === "on";
-
-  let guests: Array<{
-    full_name: string;
-    phone?: string;
-    email?: string;
-    sex?: string;
-    guest_id?: string;
-    match_decision?: "reuse" | "create_new";
-  }> = [];
-  try {
-    guests = JSON.parse(String(formData.get("guests_data") ?? "[]"));
-  } catch {
-    return redirectWithResult(returnTo, "error", "La lista de huéspedes no es válida.");
-  }
-
-  const today = getMexicoCityDateString();
-  if (!confirmed) {
-    return redirectWithResult(returnTo, "error", "Confirma que es una estancia histórica sin inventario.");
-  }
-  if (!folioCode || !checkInDate || !checkOutDate || checkOutDate <= checkInDate || checkOutDate > today) {
-    return redirectWithResult(returnTo, "error", "Revisa folio y fechas históricas; la salida debe haber ocurrido.");
-  }
-  if (!guests.length || guests.some((guest) => !String(guest.full_name ?? "").trim())) {
-    return redirectWithResult(returnTo, "error", "Captura al menos un huésped con nombre.");
-  }
-  if (guests.some((guest) => guest.phone?.trim() && !isCompleteMexicanPhone(guest.phone))) {
-    return redirectWithResult(returnTo, "error", "Los teléfonos históricos deben tener 10 dígitos.");
-  }
-  if (!Number.isFinite(totalAmount) || totalAmount < 0 || initialPayment < 0 || initialPayment > totalAmount) {
-    return redirectWithResult(returnTo, "error", "Los montos de la estancia no son válidos.");
-  }
-  if (initialPayment > 0 && (!effectiveDate || effectiveDate > today)) {
-    return redirectWithResult(returnTo, "error", "Indica una fecha efectiva válida para el pago.");
-  }
-
-  const userSupabase = await createClient();
-  const normalizedGuests = guests.map((guest) => ({
-    ...guest,
-    phone: guest.phone?.trim() ? normalizeMexicanPhone(guest.phone) : "",
-  }));
-  const { error } = await userSupabase.rpc("create_historical_stay", {
-    p_folio_code: folioCode,
-    p_check_in_date: checkInDate,
-    p_check_out_date: checkOutDate,
-    p_total_amount: totalAmount,
-    p_guests: normalizedGuests,
-    p_notes: notes || null,
-    p_initial_payment: initialPayment,
-    p_payment_method: paymentMethod,
-    p_effective_date: initialPayment > 0 ? effectiveDate : null,
-    p_payment_notes: paymentNotes || null,
-  });
-
-  if (error) {
-    console.error("[createHistoricalStayAction] RPC failed:", error);
-    const message = error.code === "23505" ? "Ese folio ya existe." : error.message;
-    return redirectWithResult(returnTo, "error", message);
-  }
-
-  revalidatePath("/dashboard/imported-records");
-  revalidatePath("/dashboard/reservations");
-  revalidatePath("/dashboard/payments");
-  revalidatePath("/dashboard/guests");
-  return redirectWithResult(
-    returnTo,
-    "success",
-    `Estancia histórica ${folioCode} guardada sin asignar cama ni bloquear inventario.`,
   );
 }
 
@@ -3378,6 +3351,188 @@ export async function validatePromoCodeAction(code: string) {
   "use server";
   const { validatePromoCode } = await import("@/lib/promo-codes");
   return validatePromoCode(code);
+}
+
+export async function getBedsForStayRangeAction(
+  checkInDate: string,
+  checkOutDate: string,
+) {
+  await requireRole(["admin", "reception"]);
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(checkInDate) ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(checkOutDate) ||
+    checkOutDate <= checkInDate
+  ) {
+    return [];
+  }
+
+  const supabase = createAdminClient();
+  const [{ data: beds }, { data: assignments }] = await Promise.all([
+    supabase
+      .from("beds")
+      .select("id, bed_number, zone, status, sort_order")
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("reservation_guests")
+      .select(
+        "bed_id, guests(full_name), reservations!inner(status, checked_out_at, check_in_date, check_out_date)",
+      )
+      .not("bed_id", "is", null),
+  ]);
+
+  const occupied = new Map<string, string>();
+  for (const assignment of assignments ?? []) {
+    if (!assignment.bed_id || occupied.has(assignment.bed_id)) continue;
+    const reservation = unwrapAssignmentRelation(assignment.reservations) as
+      | {
+          status?: string;
+          checked_out_at?: string | null;
+          check_in_date?: string;
+          check_out_date?: string;
+        }
+      | undefined;
+    if (
+      !reservation ||
+      reservation.checked_out_at ||
+      ["cancelled", "checked_out"].includes(reservation.status ?? "") ||
+      !reservation.check_in_date ||
+      !reservation.check_out_date ||
+      reservation.check_in_date >= checkOutDate ||
+      checkInDate >= reservation.check_out_date
+    ) {
+      continue;
+    }
+    const guest = unwrapAssignmentRelation(assignment.guests);
+    occupied.set(assignment.bed_id, guest?.full_name ?? "Ocupada");
+  }
+
+  return (beds ?? []).map((bed) => ({
+    id: bed.id,
+    bed_number: String(bed.bed_number),
+    zone: String(bed.zone ?? "mixta"),
+    status: String(bed.status),
+    occupied_by: occupied.get(bed.id) ?? null,
+  }));
+}
+
+export type RegisterStaffStayResult =
+  | {
+      ok: true;
+      message: string;
+      reservationId: string;
+      folioId: string;
+      folioCode: string;
+    }
+  | { ok: false; message: string };
+
+export async function registerStaffStayAction(
+  formData: FormData,
+): Promise<RegisterStaffStayResult> {
+  await requireRole(["admin", "reception"]);
+
+  const submissionId = String(formData.get("submission_id") ?? "").trim();
+  const mode = String(formData.get("mode") ?? "") as StayRegistrationMode;
+  const checkInDate = String(formData.get("check_in_date") ?? "");
+  const checkOutDate = String(formData.get("check_out_date") ?? "");
+  const today = getMexicoCityDateString();
+  const dateError = ["new", "current", "finished"].includes(mode)
+    ? validateStayDates(mode, checkInDate, checkOutDate, today)
+    : "Tipo de estancia no válido.";
+
+  if (!/^[0-9a-f-]{36}$/i.test(submissionId)) {
+    return { ok: false, message: "No se pudo identificar este registro. Recarga e intenta de nuevo." };
+  }
+  if (dateError) return { ok: false, message: dateError };
+
+  let guests: unknown;
+  try {
+    guests = JSON.parse(String(formData.get("guests_data") ?? "[]"));
+  } catch {
+    return { ok: false, message: "La lista de huéspedes no es válida." };
+  }
+  if (!Array.isArray(guests) || guests.length === 0) {
+    return { ok: false, message: "Captura al menos un huésped." };
+  }
+
+  const totalAmount = Number(formData.get("total_amount") ?? 0);
+  const paymentAmount = Number(formData.get("payment_amount") ?? 0);
+  const discountPercent = Number(formData.get("discount_percent") ?? 0);
+  if (
+    !Number.isFinite(totalAmount) ||
+    totalAmount < 0 ||
+    !Number.isFinite(paymentAmount) ||
+    paymentAmount < 0 ||
+    paymentAmount > totalAmount ||
+    !Number.isFinite(discountPercent) ||
+    discountPercent < 0 ||
+    discountPercent > 100
+  ) {
+    return { ok: false, message: "Revisa los totales, el descuento y el pago." };
+  }
+
+  const paymentDate = String(formData.get("payment_date") ?? "");
+  if (paymentAmount > 0 && (!paymentDate || paymentDate > today)) {
+    return { ok: false, message: "La fecha real del pago es obligatoria y no puede ser futura." };
+  }
+
+  const payload = {
+    check_in_date: checkInDate,
+    check_out_date: checkOutDate,
+    folio_code: String(formData.get("folio_code") ?? "").trim().toUpperCase() || null,
+    total_amount: totalAmount,
+    discount_percent: discountPercent,
+    payment_amount: paymentAmount,
+    payment_method: String(formData.get("payment_method") ?? "cash"),
+    payment_date: paymentAmount > 0 ? paymentDate : null,
+    payment_notes: String(formData.get("payment_notes") ?? "").trim() || null,
+    notes: String(formData.get("notes") ?? "").trim() || null,
+    guests,
+  };
+
+  const userSupabase = await createClient();
+  const { data, error } = await userSupabase.rpc("register_staff_stay", {
+    p_submission_id: submissionId,
+    p_mode: mode,
+    p_payload: payload,
+  });
+  if (error) {
+    console.error("[registerStaffStayAction] RPC failed:", error);
+    return {
+      ok: false,
+      message: error.code === "23505" ? "Ese folio ya existe." : error.message,
+    };
+  }
+
+  const result = (data ?? {}) as {
+    reservation_id?: string;
+    folio_id?: string;
+    folio_code?: string;
+  };
+  if (!result.reservation_id || !result.folio_id || !result.folio_code) {
+    return { ok: false, message: "La base de datos no confirmó el registro." };
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/register-stay");
+  revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/folios");
+  revalidatePath("/dashboard/payments");
+  revalidatePath("/dashboard/beds");
+  revalidatePath("/dashboard/guests");
+
+  const modeLabel =
+    mode === "new"
+      ? "Nueva estancia"
+      : mode === "current"
+        ? "Estancia en curso"
+        : "Estancia terminada";
+  return {
+    ok: true,
+    message: `${modeLabel} registrada con folio ${result.folio_code}.`,
+    reservationId: result.reservation_id,
+    folioId: result.folio_id,
+    folioCode: result.folio_code,
+  };
 }
 
 /**

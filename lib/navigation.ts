@@ -21,6 +21,7 @@ export type NavGroup = {
 
 const HREF_TO_KEY: Record<string, string> = {
   "/dashboard": "dashboard",
+  "/dashboard/register-stay": "register_stay",
   "/dashboard/reservations": "reservations",
   "/dashboard/beds": "beds",
   "/dashboard/guests": "guests",
@@ -51,7 +52,7 @@ function navLabel(key: string, label: string): string {
 export const NAV_GROUP_DEFS: { label: string; keys: string[] }[] = [
   {
     label: "Operación",
-    keys: ["dashboard", "reservations", "beds", "guests"],
+    keys: ["dashboard", "register_stay", "reservations", "beds", "guests"],
   },
   {
     label: "Finanzas",
@@ -67,12 +68,13 @@ export const NAV_GROUP_DEFS: { label: string; keys: string[] }[] = [
 export const RECEPTION_NAV_GROUP_DEFS: { label: string; keys: string[] }[] = [
   {
     label: "Operación",
-    keys: ["dashboard", "beds", "guests", "expenses"],
+    keys: ["dashboard", "register_stay", "beds", "guests", "expenses"],
   },
 ];
 
 export const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Inicio",
+  "/dashboard/register-stay": "Registrar estancia",
   "/dashboard/reservations": "Reservas",
   "/dashboard/folios": "Folios",
   "/dashboard/beds": "Camas",
@@ -90,6 +92,7 @@ export const PAGE_TITLES: Record<string, string> = {
 // Fallback estático para cuando no hay conexión a DB o para el modo bypass
 const staticDashboardLinks: DashboardLink[] = [
   { href: "/dashboard", label: "Resumen", roles: ["admin", "reception"] },
+  { href: "/dashboard/register-stay", label: "Registrar estancia", roles: ["admin", "reception"] },
   { href: "/dashboard/reservations", label: "Reservas", roles: ["admin", "reception"] },
   { href: "/dashboard/beds", label: "Camas", roles: ["admin", "reception"] },
   { href: "/dashboard/guests", label: "Huéspedes", roles: ["admin"] },
@@ -105,18 +108,19 @@ const staticDashboardLinks: DashboardLink[] = [
 
 const STATIC_SORT_ORDER: Record<string, number> = {
   dashboard: 1,
-  reservations: 2,
-  folios: 3,
-  beds: 4,
-  guests: 5,
-  payments: 6,
-  expenses: 7,
-  imported_records: 8,
-  shifts: 9,
-  cash_cuts: 10,
-  audit: 11,
-  users: 12,
-  settings: 13,
+  register_stay: 2,
+  reservations: 3,
+  folios: 4,
+  beds: 5,
+  guests: 6,
+  payments: 7,
+  expenses: 8,
+  imported_records: 9,
+  shifts: 10,
+  cash_cuts: 11,
+  audit: 12,
+  users: 13,
+  settings: 14,
 };
 
 /**
@@ -210,6 +214,7 @@ export function groupModules(modules: SystemModule[], role?: UserRole): NavGroup
     items = items.filter(
       (item) =>
         item.key === "dashboard" ||
+        item.key === "register_stay" ||
         item.key === "beds" ||
         item.key === "guests" ||
         item.key === "expenses",
@@ -225,6 +230,7 @@ export function groupDashboardLinks(role: UserRole): NavGroup[] {
     items = items.filter(
       (item) =>
         item.key === "dashboard" ||
+        item.key === "register_stay" ||
         item.key === "beds" ||
         item.key === "guests" ||
         item.key === "expenses",

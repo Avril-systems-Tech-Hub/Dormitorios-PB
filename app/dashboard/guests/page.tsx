@@ -12,13 +12,11 @@ import {
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModulePermission } from "@/lib/auth/guards";
 import { ReceptionGuestRosterPage } from "@/components/dashboard/reception-guest-roster-page";
-import { HistoricalStayCapture } from "@/components/dashboard/historical-stay-capture";
 import { GuestDeleteButton } from "@/components/dashboard/guest-delete-button";
 import {
   GuestsPeriodFilter,
   type GuestPeriod,
 } from "@/components/dashboard/guests-period-filter";
-import { createHistoricalStayAction } from "@/actions/operations";
 import { parsePagination, getRange } from "@/lib/pagination";
 import {
   financeMonthKeyToAnchorDate,
@@ -269,12 +267,6 @@ export default async function GuestsPage({
 
   return (
     <div className="space-y-4">
-      <HistoricalStayCapture
-        action={createHistoricalStayAction}
-        returnTo="/dashboard/guests"
-        defaultExpanded={false}
-      />
-
       <Card>
         <h2 className="text-lg font-semibold text-text-main">Huéspedes</h2>
         <p className="mt-1 text-sm text-text-muted">

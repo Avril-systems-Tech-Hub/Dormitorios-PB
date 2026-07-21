@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { groupDashboardLinks, groupModules } from "@/lib/navigation";
 import type { UserRole } from "@/types/domain";
 import type { SystemModule } from "@/lib/auth/permissions";
@@ -43,6 +44,12 @@ export function DashboardShell({
             <DashboardHeaderTitle fallback={title} branded />
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <Link
+              href="/dashboard/register-stay"
+              className="inline-flex h-8 items-center rounded-lg bg-mkt-terracotta px-2.5 text-xs font-semibold text-white transition hover:bg-mkt-terracotta-hover sm:h-9 sm:px-3 sm:text-sm"
+            >
+              Registrar estancia
+            </Link>
             {isReception ? <ReceptionSessionNav /> : null}
             {userName ? (
               <div className="min-w-0 max-w-[9.5rem] text-right sm:max-w-[14rem]">
