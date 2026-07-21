@@ -13,6 +13,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModulePermission } from "@/lib/auth/guards";
 import { ReceptionGuestRosterPage } from "@/components/dashboard/reception-guest-roster-page";
 import { HistoricalStayCapture } from "@/components/dashboard/historical-stay-capture";
+import { GuestDeleteButton } from "@/components/dashboard/guest-delete-button";
 import {
   GuestsPeriodFilter,
   type GuestPeriod,
@@ -254,6 +255,15 @@ export default async function GuestsPage({
         <GuestHistoryDetail key={`history-${guest.id}`} stays={stays} latest={latest} />,
       ),
       new Date(guest.created_at).toLocaleDateString("es-MX", { timeZone: "America/Mexico_City" }),
+      ft(
+        "eliminar",
+        <GuestDeleteButton
+          key={`delete-${guest.id}`}
+          guestId={guest.id}
+          guestName={guest.full_name}
+          stayCount={stays.length}
+        />,
+      ),
     ];
   });
 
@@ -269,7 +279,7 @@ export default async function GuestsPage({
         <h2 className="text-lg font-semibold text-text-main">Huéspedes</h2>
         <p className="mt-1 text-sm text-text-muted">
           Personas con al menos una estadía iniciada en el periodo. El resumen, folio y pago corresponden al
-          historial completo de cada huésped.
+          historial completo de cada huésped. Eliminar borra también folios y pagos de ese huésped.
         </p>
         <p className="mt-2 text-sm text-text-muted">
           <span className="font-medium text-text-main">{totalCount}</span> huéspedes en {periodLabel}.
@@ -291,7 +301,7 @@ export default async function GuestsPage({
       </Card>
 
       <ResponsiveTable
-        headers={["Huésped", "Teléfono", "Folio", "Pago", "Resumen", "Última visita", "Alta"]}
+        headers={["Huésped", "Teléfono", "Folio", "Pago", "Resumen", "Última visita", "Alta", ""]}
         rows={rows}
         filterMode="global"
         dense

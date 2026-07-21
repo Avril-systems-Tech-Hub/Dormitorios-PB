@@ -59,7 +59,7 @@ export function HistoricalStayCapture({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
-            Solo administración · Archivo histórico
+            Administración y recepción · Archivo histórico
           </p>
           <h2 className="mt-1 text-lg font-semibold text-text-main">Registrar estancia ya terminada</h2>
           <p className="mt-1 max-w-3xl text-sm text-text-muted">

@@ -38,6 +38,7 @@ import {
 } from "@/lib/reception-check-in";
 import { normalizeLockerCode } from "@/lib/locker";
 import { formatBedLabel } from "@/lib/beds";
+import { requireRole } from "@/lib/auth/guards";
 
 const BASE_NIGHTLY_RATE = 120;
 const LOCKER_DAILY_PRICE = 30;
@@ -2071,8 +2072,12 @@ export async function sendWhatsAppTicketAction(formData: FormData): Promise<void
 export async function createHistoricalStayAction(formData: FormData): Promise<void> {
   const returnTo = String(formData.get("return_to") ?? "/dashboard/imported-records");
   const actor = await getActorProfile();
-  if (!actor || actor.role !== "admin") {
-    return redirectWithResult(returnTo, "error", "Solo administración puede capturar estancias históricas.");
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return redirectWithResult(
+      returnTo,
+      "error",
+      "Solo administración y recepción pueden capturar estancias históricas.",
+    );
   }
 
   const folioCode = String(formData.get("folio_code") ?? "").trim().toUpperCase();
@@ -3373,4 +3378,49 @@ export async function validatePromoCodeAction(code: string) {
   "use server";
   const { validatePromoCode } = await import("@/lib/promo-codes");
   return validatePromoCode(code);
+}
+
+/**
+ * Hard-delete a guest and their exclusive stays/folios/payments (admin only).
+ * Used while loading real + test data so finance totals stay accurate.
+ */
+export async function deleteGuestAction(formData: FormData): Promise<void> {
+  await requireRole(["admin"]);
+
+  const guestId = String(formData.get("guest_id") ?? "").trim();
+  const returnTo = String(formData.get("return_to") ?? "/dashboard/guests");
+
+  if (!guestId) {
+    return redirectWithResult(returnTo, "error", "Huésped no especificado.");
+  }
+
+  const userSupabase = await createClient();
+  const { data, error } = await userSupabase.rpc("admin_delete_guest", {
+    p_guest_id: guestId,
+  });
+
+  if (error) {
+    return redirectWithResult(returnTo, "error", error.message);
+  }
+
+  const result = (data ?? {}) as {
+    full_name?: string;
+    folios_deleted?: number;
+    payments_deleted?: number;
+  };
+  const name = result.full_name?.trim() || "Huésped";
+  const folios = Number(result.folios_deleted ?? 0);
+  const payments = Number(result.payments_deleted ?? 0);
+  const detail =
+    folios > 0
+      ? ` Se eliminaron ${folios} folio(s) y ${payments} pago(s).`
+      : "";
+
+  revalidatePath("/dashboard/guests");
+  revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/folios");
+  revalidatePath("/dashboard/payments");
+  revalidatePath("/dashboard");
+
+  return redirectWithResult(returnTo, "success", `${name} eliminado.${detail}`);
 }
