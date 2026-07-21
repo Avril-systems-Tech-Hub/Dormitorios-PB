@@ -57,6 +57,7 @@ export function StayRegistrationEntry({ role }: { role: string }) {
   const [notes, setNotes] = useState("");
   const [assignBedsNow, setAssignBedsNow] = useState(false);
   const [beds, setBeds] = useState<BedMapItem[]>([]);
+  const [showConfirmation, setShowConfirmation] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const nights = Math.max(1, daysBetween(checkIn, checkOut));
@@ -76,6 +77,12 @@ export function StayRegistrationEntry({ role }: { role: string }) {
   const totalAmount = mode === "new" ? calculatedTotal : Number(totalInput) || 0;
   const requiresBeds = mode === "current" || (mode === "new" && assignBedsNow);
   const dateError = validateStayDates(mode, checkIn, checkOut, today);
+  const modeLabel =
+    mode === "new"
+      ? "Nueva estancia"
+      : mode === "current"
+        ? "Estancia en curso"
+        : "Estancia terminada";
 
   useEffect(() => {
     if (!requiresBeds || dateError) {
@@ -247,20 +254,11 @@ export function StayRegistrationEntry({ role }: { role: string }) {
     ) {
       return toast.error("Las estancias en curso requieren el código de cada locker utilizado.");
     }
-    const modeLabel =
-      mode === "new"
-        ? "Nueva estancia"
-        : mode === "current"
-          ? "Estancia en curso"
-          : "Estancia terminada";
-    if (
-      !window.confirm(
-        `¿Registrar “${modeLabel}” para ${guests.length} huésped(es)?\n\nEntrada: ${checkIn}\nSalida: ${checkOut}\nTotal: $${totalAmount.toFixed(2)}\nPago: $${payment.toFixed(2)}`,
-      )
-    ) {
-      return;
-    }
+    setShowConfirmation(true);
+  }
 
+  function confirmRegistration() {
+    const payment = Number(paymentAmount) || 0;
     const submissionId = crypto.randomUUID();
     const formData = new FormData();
     formData.set("submission_id", submissionId);
@@ -299,6 +297,7 @@ export function StayRegistrationEntry({ role }: { role: string }) {
         toast.error(result.message);
         return;
       }
+      setShowConfirmation(false);
       toast.success(result.message);
       if (mode === "new" && !requiresBeds && result.reservationId) {
         router.push(
@@ -591,6 +590,190 @@ export function StayRegistrationEntry({ role }: { role: string }) {
           {isPending ? "Registrando…" : "Registrar estancia"}
         </Button>
       </Card>
+
+      {showConfirmation ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isPending) {
+              setShowConfirmation(false);
+            }
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="stay-confirmation-title"
+            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-border-soft bg-white shadow-2xl"
+          >
+            <header className="sticky top-0 z-10 border-b border-border-soft bg-white px-5 py-4 sm:px-6">
+              <h2 id="stay-confirmation-title" className="text-lg font-semibold text-text-main">
+                Confirma los datos antes de registrar
+              </h2>
+              <p className="mt-1 text-sm text-text-muted">
+                Nada se guardará en la base de datos hasta que confirmes.
+              </p>
+            </header>
+
+            <div className="space-y-5 p-5 sm:p-6">
+              <div className="grid gap-3 rounded-xl border border-border-soft bg-surface-soft/50 p-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <p className="text-xs text-text-muted">Tipo de registro</p>
+                  <p className="mt-1 text-sm font-semibold text-text-main">{modeLabel}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-text-muted">Entrada</p>
+                  <p className="mt-1 text-sm font-semibold text-text-main">{checkIn}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-text-muted">Salida</p>
+                  <p className="mt-1 text-sm font-semibold text-text-main">{checkOut}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-text-muted">Duración</p>
+                  <p className="mt-1 text-sm font-semibold text-text-main">{nights} noche(s)</p>
+                </div>
+                {mode !== "new" ? (
+                  <div className="sm:col-span-2">
+                    <p className="text-xs text-text-muted">Folio original</p>
+                    <p className="mt-1 text-sm font-semibold text-text-main">{folioCode}</p>
+                  </div>
+                ) : null}
+              </div>
+
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-text-main">
+                  {guests.length === 1 ? "Huésped" : `Huéspedes (${guests.length})`}
+                </h3>
+                <div className="space-y-2">
+                  {guests.map((guest, index) => {
+                    const assignedBed = beds.find((bed) => bed.id === guest.bed_id);
+                    return (
+                      <div
+                        key={`${guest.full_name}-${index}`}
+                        className="rounded-xl border border-border-soft p-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="font-semibold text-text-main">{guest.full_name}</p>
+                            <p className="mt-0.5 text-xs text-text-muted">
+                              {guest.existing_guest_id
+                                ? "Huésped existente"
+                                : "Nuevo huésped"}
+                            </p>
+                          </div>
+                          {requiresBeds ? (
+                            <span className="rounded-full bg-brand-primary/10 px-2.5 py-1 text-xs font-semibold text-brand-primary">
+                              Cama {assignedBed?.bed_number ?? guest.bed_id}
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-surface-soft px-2.5 py-1 text-xs font-medium text-text-muted">
+                              Sin cama
+                            </span>
+                          )}
+                        </div>
+                        <dl className="mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-2">
+                          <div>
+                            <dt className="text-xs text-text-muted">Teléfono</dt>
+                            <dd className="text-text-main">{guest.phone || "No registrado"}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-text-muted">Correo</dt>
+                            <dd className="break-all text-text-main">
+                              {guest.email || "No registrado"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-text-muted">Sexo</dt>
+                            <dd className="text-text-main">
+                              {guest.sex === "male"
+                                ? "Hombre"
+                                : guest.sex === "female"
+                                  ? "Mujer"
+                                  : "No especificado"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-text-muted">Locker</dt>
+                            <dd className="text-text-main">
+                              {guest.add_locker === "yes"
+                                ? `${guest.locker_number || "Sin código"} · ${guest.locker_days} día(s)`
+                                : "Sin locker"}
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid gap-3 rounded-xl border border-border-soft p-4 sm:grid-cols-3">
+                <div>
+                  <p className="text-xs text-text-muted">Total de la estancia</p>
+                  <p className="mt-1 text-lg font-semibold text-text-main">
+                    ${totalAmount.toFixed(2)} MXN
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-text-muted">Pago registrado</p>
+                  <p className="mt-1 text-lg font-semibold text-text-main">
+                    ${(Number(paymentAmount) || 0).toFixed(2)} MXN
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-text-muted">Método y fecha</p>
+                  <p className="mt-1 text-sm font-semibold text-text-main">
+                    {Number(paymentAmount) > 0
+                      ? `${
+                          paymentMethod === "cash"
+                            ? "Efectivo"
+                            : paymentMethod === "transfer"
+                              ? "Transferencia"
+                              : "Tarjeta"
+                        } · ${paymentDate}`
+                      : "Sin pago"}
+                  </p>
+                </div>
+              </div>
+
+              {notes.trim() || paymentNotes.trim() ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {notes.trim() ? (
+                    <div className="rounded-xl border border-border-soft p-4">
+                      <p className="text-xs text-text-muted">Notas de estancia</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-text-main">{notes}</p>
+                    </div>
+                  ) : null}
+                  {paymentNotes.trim() ? (
+                    <div className="rounded-xl border border-border-soft p-4">
+                      <p className="text-xs text-text-muted">Notas de pago</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-text-main">
+                        {paymentNotes}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
+            <footer className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-border-soft bg-white px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isPending}
+                onClick={() => setShowConfirmation(false)}
+              >
+                Volver a editar
+              </Button>
+              <Button type="button" disabled={isPending} onClick={confirmRegistration}>
+                {isPending ? "Registrando…" : "Confirmar registro"}
+              </Button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
