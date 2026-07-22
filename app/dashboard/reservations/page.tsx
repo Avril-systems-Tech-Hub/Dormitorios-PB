@@ -52,19 +52,23 @@ export default async function ReservationsPage({
   let query = supabase
     .from("reservations")
     .select(
-      "id,created_at,status,checked_out_at,is_historical,reservation_source,check_in_date,check_out_date,nights,notes,profiles(full_name),folios!inner(id,folio_code,payment_status,balance_due,total_amount),reservation_guests(id,guest_id,locker_number,locker_days,guests(full_name,phone,email),beds(bed_number, zone))",
+      "id,created_at,status,checked_out_at,is_historical,reservation_source,check_in_date,check_out_date,nights,notes,profiles!reservations_created_by_fkey(full_name),folios!inner(id,folio_code,payment_status,balance_due,total_amount),reservation_guests(id,guest_id,locker_number,locker_days,guests(full_name,phone,email),beds(bed_number, zone))",
       { count: "exact" },
     )
-    .gte("created_at", periodBounds.startAt)
-    .lte("created_at", periodBounds.endAt);
+    .gte("check_in_date", periodBounds.start)
+    .lte("check_in_date", periodBounds.end);
 
   if (q) {
     query = query.ilike("folios.folio_code", `%${escapeIlike(q)}%`);
   }
 
-  const { data: reservations, count } = await query
+  const { data: reservations, count, error } = await query
     .order("created_at", { ascending: false })
     .range(from, to);
+
+  if (error) {
+    throw new Error(`No se pudieron cargar las reservaciones: ${error.message}`);
+  }
 
   const rows =
     reservations?.map((reservation) => {
