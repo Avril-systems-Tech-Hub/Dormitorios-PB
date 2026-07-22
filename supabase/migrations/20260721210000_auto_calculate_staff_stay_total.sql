@@ -260,13 +260,13 @@ begin
     raise exception 'El pago no puede exceder el total de la estancia.' using errcode = '22023';
   end if;
 
+  -- Folio is optional for imported stays (current/finished). If missing, assign
+  -- IMP-... so the business can register without a paper folio. New stays keep FPB-.
   v_folio_code := upper(nullif(btrim(p_payload->>'folio_code'), ''));
-  if p_mode in ('current', 'finished') and v_folio_code is null then
-    raise exception 'El folio original es obligatorio.' using errcode = '22023';
-  end if;
   if v_folio_code is null then
     v_folio_code :=
-      'FPB-' || to_char(now() at time zone 'America/Mexico_City', 'YYYYMMDDHH24MISS')
+      case when p_mode in ('current', 'finished') then 'IMP-' else 'FPB-' end
+      || to_char(now() at time zone 'America/Mexico_City', 'YYYYMMDDHH24MISS')
       || '-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6));
   end if;
 
@@ -519,4 +519,4 @@ end;
 $$;
 
 comment on function public.register_staff_stay(uuid,text,jsonb) is
-  'Atomic and idempotent registration for new, current and finished staff stays with auto-calculated totals.';
+  'Atomic and idempotent registration for new, current and finished staff stays with auto-calculated totals. Missing folio codes are assigned as FPB- (new) or IMP- (imported).';

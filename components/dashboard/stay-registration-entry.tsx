@@ -230,9 +230,6 @@ export function StayRegistrationEntry({ role }: { role: string }) {
     if (selectedBedIds.size !== guests.filter((guest) => guest.bed_id).length) {
       return toast.error("No puedes asignar la misma cama a dos huéspedes.");
     }
-    if (mode !== "new" && !folioCode.trim()) {
-      return toast.error("Captura el folio original.");
-    }
     if (!Number.isFinite(totalAmount) || totalAmount < 0) {
       return toast.error("El total de la estancia no es válido.");
     }
@@ -461,13 +458,16 @@ export function StayRegistrationEntry({ role }: { role: string }) {
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
           {mode !== "new" ? (
             <label className="grid gap-1 text-sm text-text-main">
-              Folio original
+              Folio original (opcional)
               <input
                 value={folioCode}
                 onChange={(event) => setFolioCode(event.target.value.toUpperCase())}
-                placeholder="Ej. FPB-2026-0012"
+                placeholder="Si no tienes, se asigna IMP-…"
                 className="h-10 rounded-lg border border-border-soft bg-white px-3"
               />
+              <span className="text-xs text-text-muted">
+                Déjalo vacío y el sistema asigna un folio IMP- automáticamente.
+              </span>
             </label>
           ) : (
             <label className="grid gap-1 text-sm text-text-main">
@@ -624,8 +624,10 @@ export function StayRegistrationEntry({ role }: { role: string }) {
                 </div>
                 {mode !== "new" ? (
                   <div className="sm:col-span-2">
-                    <p className="text-xs text-text-muted">Folio original</p>
-                    <p className="mt-1 text-sm font-semibold text-text-main">{folioCode}</p>
+                    <p className="text-xs text-text-muted">Folio</p>
+                    <p className="mt-1 text-sm font-semibold text-text-main">
+                      {folioCode.trim() || "Se asignará IMP- automáticamente"}
+                    </p>
                   </div>
                 ) : null}
               </div>
