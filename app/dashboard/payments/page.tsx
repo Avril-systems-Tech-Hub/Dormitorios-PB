@@ -3,8 +3,10 @@ import { registerPaymentAction } from "@/actions/operations";
 import { PaymentRegisterPanel } from "@/components/dashboard/payment-register-panel";
 import { PaymentsOverview } from "@/components/dashboard/payments-overview";
 import { Badge } from "@/components/ui/badge";
+import { FolioGuestCell } from "@/components/ui/folio-guest-cell";
 import { PaymentCorrectionButton } from "@/components/ui/payment-correction-button";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
+import { ft } from "@/components/ui/filterable-cell";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModulePermission } from "@/lib/auth/guards";
 import {
@@ -18,6 +20,7 @@ import {
   parseFinanceMonthKey,
   parseFinanceWeekAnchor,
 } from "@/lib/dates";
+import { summarizeFolioGuests } from "@/lib/folio-guests";
 import { parseFolioSummaryFilter } from "@/lib/folio-summary";
 import {
   aggregatePaymentStats,
@@ -36,12 +39,22 @@ import {
   sortOpenFolios,
   sortPaymentTransactions,
   sumOpenFolioBalances,
+  type OpenFolioRow,
+  type PaymentTransactionRow,
 } from "@/lib/payment-insights";
 import { parseTableSort } from "@/lib/table-controls";
 import { parsePagination } from "@/lib/pagination";
 import type { FolioPaymentStatus, PaymentMethod } from "@/types/domain";
 import type { TableColumnConfig } from "@/lib/table-controls";
-import type { ReactNode } from "react";
+import type { FilterableCell } from "@/components/ui/filterable-cell";
+
+const FOLIO_GUESTS_SELECT =
+  "reservations(id,nights,reservation_guests(id,guest_id,locker_number,locker_days,guests(full_name,phone,email),beds(bed_number,zone)))";
+
+function unwrapRelation<T>(value: T | T[] | null | undefined): T | undefined {
+  if (value == null) return undefined;
+  return Array.isArray(value) ? value[0] : value;
+}
 
 export default async function PaymentsPage({
   searchParams,
@@ -74,9 +87,9 @@ export default async function PaymentsPage({
     { data: periodPayments },
     { data: openFolios },
     { count: paidFolioCount },
-    { data: paymentsRaw },
+    { data: paymentsRaw, error: paymentsError },
     { data: paymentCorrections },
-    { data: pendingFoliosRaw },
+    { data: pendingFoliosRaw, error: pendingError },
   ] = await Promise.all([
     supabase
       .from("folios")
@@ -99,7 +112,9 @@ export default async function PaymentsPage({
       .eq("payment_status", "liquidated"),
     supabase
       .from("payments")
-      .select("id,amount,method,payment_type,effective_date,captured_at,balance_after,is_reversal,reversal_of_payment_id,reversal_reason,receiver:profiles!payments_received_by_fkey(full_name),folios!inner(folio_code,payment_status)")
+      .select(
+        `id,amount,method,payment_type,effective_date,captured_at,balance_after,is_reversal,reversal_of_payment_id,reversal_reason,receiver:profiles!payments_received_by_fkey(full_name),folios!inner(folio_code,payment_status,${FOLIO_GUESTS_SELECT})`,
+      )
       .gte("effective_date", periodBounds.start)
       .lte("effective_date", periodBounds.end)
       .order("effective_date", { ascending: false })
@@ -110,20 +125,27 @@ export default async function PaymentsPage({
       .eq("is_reversal", true),
     supabase
       .from("folios")
-      .select("id,folio_code,total_amount,paid_amount,balance_due,payment_status")
+      .select(`id,folio_code,total_amount,paid_amount,balance_due,payment_status,${FOLIO_GUESTS_SELECT}`)
       .neq("payment_status", "liquidated")
       .order("balance_due", { ascending: false }),
   ]);
+
+  if (paymentsError) {
+    throw new Error(`No se pudieron cargar los pagos: ${paymentsError.message}`);
+  }
+  if (pendingError) {
+    throw new Error(`No se pudieron cargar los folios por pagar: ${pendingError.message}`);
+  }
 
   const periodStats = aggregatePaymentStats(periodPayments);
   const openFolioStats = sumOpenFolioBalances(openFolios);
 
   let tableColumns: TableColumnConfig[];
-  let tableRows: ReactNode[][];
+  let tableRows: FilterableCell[][];
   let totalCount: number;
   let sortColumn: string;
   let sortDirection: "asc" | "desc";
-  let searchPlaceholder = "Buscar por folio…";
+  let searchPlaceholder = "Buscar por huésped o folio…";
   let visibleAmountTotal: number | undefined;
   let visibleAmountLabel: string | undefined;
 
@@ -136,11 +158,11 @@ export default async function PaymentsPage({
     ));
     tableColumns = OPEN_FOLIOS_TABLE_COLUMNS;
 
-    let pendingFolios = pendingFoliosRaw ?? [];
+    let pendingFolios = (pendingFoliosRaw ?? []) as OpenFolioRow[];
     if (q) {
       const needle = q.toLowerCase();
       pendingFolios = pendingFolios.filter((folio) =>
-        folio.folio_code.toLowerCase().includes(needle),
+        summarizeFolioGuests(folio).searchText.toLowerCase().includes(needle),
       );
     }
 
@@ -152,8 +174,19 @@ export default async function PaymentsPage({
 
     tableRows = paged.rows.map((folio) => {
       const status = folio.payment_status as FolioPaymentStatus;
+      const guestSummary = summarizeFolioGuests(folio);
       return [
-        folio.folio_code,
+        ft(
+          guestSummary.searchText,
+          <FolioGuestCell
+            key={`${folio.id}-guest`}
+            primaryName={guestSummary.primaryName}
+            folioCode={guestSummary.folioCode}
+            guests={guestSummary.guests}
+            reservationId={guestSummary.reservationId}
+            nights={guestSummary.nights}
+          />,
+        ),
         `$${Number(folio.total_amount).toFixed(2)}`,
         `$${Number(folio.paid_amount).toFixed(2)}`,
         `$${Number(folio.balance_due).toFixed(2)}`,
@@ -166,7 +199,7 @@ export default async function PaymentsPage({
       ];
     });
     totalCount = paged.totalCount;
-    searchPlaceholder = "Buscar folio con saldo…";
+    searchPlaceholder = "Buscar huésped o folio con saldo…";
     visibleAmountTotal = Number(
       paged.rows.reduce((sum, folio) => sum + Number(folio.balance_due), 0).toFixed(2),
     );
@@ -180,17 +213,16 @@ export default async function PaymentsPage({
     ));
     tableColumns = PAYMENTS_TABLE_COLUMNS;
 
-    let payments = filterPaymentsByFolioStatus(paymentsRaw, folioFilter);
+    let payments = filterPaymentsByFolioStatus(
+      paymentsRaw as PaymentTransactionRow[] | null,
+      folioFilter,
+    );
 
     if (q) {
       const needle = q.toLowerCase();
       payments = payments.filter((payment) => {
-        const folio = payment.folios as
-          | { folio_code?: string }
-          | { folio_code?: string }[]
-          | undefined;
-        const folioCode = Array.isArray(folio) ? folio[0]?.folio_code : folio?.folio_code;
-        return (folioCode ?? "").toLowerCase().includes(needle);
+        const folio = unwrapRelation(payment.folios);
+        return summarizeFolioGuests(folio).searchText.toLowerCase().includes(needle);
       });
     }
 
@@ -211,19 +243,28 @@ export default async function PaymentsPage({
     }
 
     tableRows = paged.rows.map((payment) => {
-      const folio = payment.folios as
-        | { folio_code?: string; payment_status?: string }
-        | undefined;
+      const folio = unwrapRelation(payment.folios);
       const method = payment.method as PaymentMethod;
       const status = (folio?.payment_status ?? "pending") as FolioPaymentStatus;
-      const receiver = Array.isArray(payment.receiver) ? payment.receiver[0] : payment.receiver;
+      const receiver = unwrapRelation(payment.receiver);
       const isReversal = Boolean(payment.is_reversal);
       const availableAmount = Math.max(
         0,
         Number(payment.amount) - (reversedByPayment.get(payment.id) ?? 0),
       );
+      const guestSummary = summarizeFolioGuests(folio);
       return [
-        folio?.folio_code ?? "Sin folio",
+        ft(
+          guestSummary.searchText,
+          <FolioGuestCell
+            key={`${payment.id}-guest`}
+            primaryName={guestSummary.primaryName}
+            folioCode={guestSummary.folioCode}
+            guests={guestSummary.guests}
+            reservationId={guestSummary.reservationId}
+            nights={guestSummary.nights}
+          />,
+        ),
         <span key={`${payment.id}-amount`} className={isReversal ? "font-semibold text-red-700" : undefined}>
           {isReversal ? "−" : ""}${Math.abs(Number(payment.amount)).toFixed(2)}
         </span>,

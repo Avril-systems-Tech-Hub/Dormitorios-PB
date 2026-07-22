@@ -45,7 +45,7 @@ export const FOLIO_STATUS_LABELS: Record<FolioPaymentStatus, string> = {
 };
 
 export const PAYMENTS_TABLE_COLUMNS: TableColumnConfig[] = [
-  { key: "folio", label: "Folio", sortable: true },
+  { key: "folio", label: "Huésped", sortable: true },
   { key: "monto", label: "Monto", sortable: true },
   { key: "metodo", label: "Método", sortable: true },
   { key: "tipo", label: "Tipo", sortable: true },
@@ -62,7 +62,7 @@ export const PAYMENTS_TABLE_SORT_KEYS = PAYMENTS_TABLE_COLUMNS.filter((column) =
 );
 
 export const OPEN_FOLIOS_TABLE_COLUMNS: TableColumnConfig[] = [
-  { key: "folio", label: "Folio", sortable: true },
+  { key: "folio", label: "Huésped", sortable: true },
   { key: "total", label: "Total", sortable: true },
   { key: "pagado", label: "Pagado", sortable: true },
   { key: "saldo", label: "Saldo", sortable: true },
@@ -136,6 +136,33 @@ function unwrap<T>(value: T | T[] | null | undefined): T | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
+export type FolioGuestReservationEmbed = {
+  id?: string;
+  nights?: number;
+  reservation_guests?:
+    | {
+        id?: string;
+        guest_id?: string;
+        locker_number?: string | number | null;
+        locker_days?: number | null;
+        guests?:
+          | { full_name?: string; phone?: string | null; email?: string | null }
+          | { full_name?: string; phone?: string | null; email?: string | null }[]
+          | null;
+        beds?:
+          | { bed_number?: string | number; zone?: string }
+          | { bed_number?: string | number; zone?: string }[]
+          | null;
+      }[]
+    | null;
+};
+
+export type FolioGuestEmbed = {
+  folio_code?: string;
+  payment_status?: string;
+  reservations?: FolioGuestReservationEmbed | FolioGuestReservationEmbed[] | null;
+};
+
 export type PaymentTransactionRow = {
   id: string;
   amount: number | string;
@@ -148,10 +175,7 @@ export type PaymentTransactionRow = {
   reversal_of_payment_id?: string | null;
   reversal_reason?: string | null;
   receiver?: { full_name?: string } | { full_name?: string }[] | null;
-  folios?:
-    | { folio_code?: string; payment_status?: string }
-    | { folio_code?: string; payment_status?: string }[]
-    | null;
+  folios?: FolioGuestEmbed | FolioGuestEmbed[] | null;
 };
 
 export function filterPaymentsByFolioStatus(
@@ -169,7 +193,7 @@ export function filterPaymentsByFolioStatus(
   });
 }
 
-export type OpenFolioRow = {
+export type OpenFolioRow = FolioGuestEmbed & {
   id: string;
   folio_code: string;
   total_amount: number | string;
@@ -177,6 +201,22 @@ export type OpenFolioRow = {
   balance_due: number | string;
   payment_status: string;
 };
+
+function primaryGuestNameFromFolio(folio: FolioGuestEmbed | null | undefined): string {
+  const reservations = Array.isArray(folio?.reservations)
+    ? folio.reservations
+    : folio?.reservations
+      ? [folio.reservations]
+      : [];
+  for (const reservation of reservations) {
+    for (const row of reservation.reservation_guests ?? []) {
+      const guest = unwrap(row.guests);
+      const name = guest?.full_name?.trim();
+      if (name) return name;
+    }
+  }
+  return "";
+}
 
 export function sortOpenFolios(
   folios: OpenFolioRow[],
@@ -186,8 +226,13 @@ export function sortOpenFolios(
   const mult = direction === "asc" ? 1 : -1;
   return [...folios].sort((a, b) => {
     switch (column) {
-      case "folio":
-        return mult * a.folio_code.localeCompare(b.folio_code, "es");
+      case "folio": {
+        const byName = primaryGuestNameFromFolio(a).localeCompare(
+          primaryGuestNameFromFolio(b),
+          "es",
+        );
+        return mult * (byName || a.folio_code.localeCompare(b.folio_code, "es"));
+      }
       case "total":
         return mult * (Number(a.total_amount) - Number(b.total_amount));
       case "pagado":
@@ -213,8 +258,17 @@ export function sortPaymentTransactions(
     const folioB = unwrap(b.folios);
 
     switch (column) {
-      case "folio":
-        return mult * (folioA?.folio_code ?? "").localeCompare(folioB?.folio_code ?? "", "es");
+      case "folio": {
+        const byName = primaryGuestNameFromFolio(folioA).localeCompare(
+          primaryGuestNameFromFolio(folioB),
+          "es",
+        );
+        return (
+          mult *
+          (byName ||
+            (folioA?.folio_code ?? "").localeCompare(folioB?.folio_code ?? "", "es"))
+        );
+      }
       case "monto":
         return mult * (Number(a.amount) - Number(b.amount));
       case "metodo":
