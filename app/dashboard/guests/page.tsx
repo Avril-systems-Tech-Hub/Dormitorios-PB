@@ -30,48 +30,59 @@ import {
   parseFinanceWeekAnchor,
 } from "@/lib/dates";
 
-type ReservationInfo = {
-  check_in_date?: string;
-  check_out_date?: string;
-  nights?: number;
-  status?: string;
-  reservation_source?: string;
-  notes?: string | null;
-  folios?:
-    | {
-        folio_code?: string;
-        payment_status?: string;
-        total_amount?: number;
-        paid_amount?: number;
-        balance_due?: number;
-      }
-    | {
-        folio_code?: string;
-        payment_status?: string;
-        total_amount?: number;
-        paid_amount?: number;
-        balance_due?: number;
-      }[]
-    | null;
+type FolioFields = {
+  folio_code?: string;
+  payment_status?: string;
+  total_amount?: number;
+  paid_amount?: number;
+  balance_due?: number;
+};
+
+type GuestFields = {
+  id?: string;
+  full_name?: string;
+  phone?: string | null;
+  email?: string | null;
+  created_at?: string;
 };
 
 type ReservationGuestRow = {
+  locker_number?: string | number | null;
+  locker_days?: number | null;
+  guests?: GuestFields | GuestFields[] | null;
   beds?:
     | { bed_number?: string | number; zone?: string }
     | { bed_number?: string | number; zone?: string }[]
     | null;
-  locker_number?: string | number | null;
-  locker_days?: number | null;
-  reservations?: ReservationInfo | ReservationInfo[] | null;
+  reservations?:
+    | {
+        check_in_date?: string;
+        check_out_date?: string;
+        nights?: number;
+        status?: string;
+        reservation_source?: string;
+        notes?: string | null;
+        folios?: FolioFields | FolioFields[] | null;
+      }
+    | {
+        check_in_date?: string;
+        check_out_date?: string;
+        nights?: number;
+        status?: string;
+        reservation_source?: string;
+        notes?: string | null;
+        folios?: FolioFields | FolioFields[] | null;
+      }[]
+    | null;
 };
 
-type GuestRecord = {
+type GuestAggregate = {
   id: string;
   full_name: string;
   phone: string | null;
   email: string | null;
   created_at: string;
-  reservation_guests?: ReservationGuestRow[] | null;
+  stays: GuestStaySummary[];
 };
 
 function parseGuestPeriod(value: string | string[] | undefined): GuestPeriod {
@@ -85,32 +96,60 @@ function unwrap<T>(value: T | T[] | null | undefined): T | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function getStays(guest: GuestRecord): GuestStaySummary[] {
-  const rows = Array.isArray(guest.reservation_guests) ? guest.reservation_guests : [];
-  return rows.flatMap((row): GuestStaySummary[] => {
-    const reservation = unwrap(row.reservations);
-    if (!reservation?.check_in_date) return [];
-    const bed = unwrap(row.beds);
-    const folio = unwrap(reservation.folios);
-    const stay: GuestStaySummary = {
-      checkIn: reservation.check_in_date,
-      checkOut: reservation.check_out_date ?? "—",
-      nights: reservation.nights ?? 0,
-      source: reservation.reservation_source ?? "guest_app",
-      reservationNotes: reservation.notes?.trim() || null,
-    };
-    if (bed?.bed_number != null) stay.bedNumber = bed.bed_number;
-    if (bed?.zone != null) stay.bedZone = bed.zone;
-    if (row.locker_number !== undefined) stay.lockerNumber = row.locker_number;
-    const lockerDays = Number(row.locker_days ?? 0);
-    if (lockerDays > 0) stay.lockerDays = lockerDays;
-    if (folio?.folio_code) stay.folioCode = folio.folio_code;
-    if (folio?.payment_status) stay.paymentStatus = folio.payment_status;
-    if (folio?.total_amount != null) stay.totalAmount = Number(folio.total_amount);
-    if (folio?.paid_amount != null) stay.paidAmount = Number(folio.paid_amount);
-    if (folio?.balance_due != null) stay.balanceDue = Number(folio.balance_due);
-    return [stay];
-  });
+function toStay(row: ReservationGuestRow): GuestStaySummary | null {
+  const reservation = unwrap(row.reservations);
+  if (!reservation?.check_in_date) return null;
+
+  const bed = unwrap(row.beds);
+  const folio = unwrap(reservation.folios);
+  const stay: GuestStaySummary = {
+    checkIn: reservation.check_in_date,
+    checkOut: reservation.check_out_date ?? "—",
+    nights: reservation.nights ?? 0,
+    source: reservation.reservation_source ?? "guest_app",
+    reservationNotes: reservation.notes?.trim() || null,
+  };
+
+  if (bed?.bed_number != null) stay.bedNumber = bed.bed_number;
+  if (bed?.zone != null) stay.bedZone = bed.zone;
+  if (row.locker_number !== undefined) stay.lockerNumber = row.locker_number;
+  const lockerDays = Number(row.locker_days ?? 0);
+  if (lockerDays > 0) stay.lockerDays = lockerDays;
+  if (folio?.folio_code) stay.folioCode = folio.folio_code;
+  if (folio?.payment_status) stay.paymentStatus = folio.payment_status;
+  if (folio?.total_amount != null) stay.totalAmount = Number(folio.total_amount);
+  if (folio?.paid_amount != null) stay.paidAmount = Number(folio.paid_amount);
+  if (folio?.balance_due != null) stay.balanceDue = Number(folio.balance_due);
+  return stay;
+}
+
+function aggregateGuests(rows: ReservationGuestRow[]): GuestAggregate[] {
+  const byGuest = new Map<string, GuestAggregate>();
+
+  for (const row of rows) {
+    const guest = unwrap(row.guests);
+    if (!guest?.id || !guest.full_name || !guest.created_at) continue;
+
+    const stay = toStay(row);
+    if (!stay) continue;
+
+    const existing = byGuest.get(guest.id);
+    if (existing) {
+      existing.stays.push(stay);
+      continue;
+    }
+
+    byGuest.set(guest.id, {
+      id: guest.id,
+      full_name: guest.full_name,
+      phone: guest.phone ?? null,
+      email: guest.email ?? null,
+      created_at: guest.created_at,
+      stays: [stay],
+    });
+  }
+
+  return Array.from(byGuest.values());
 }
 
 export default async function GuestsPage({
@@ -144,21 +183,34 @@ export default async function GuestsPage({
 
   const supabase = createAdminClient();
 
-  const { data: guestsRaw } = await supabase
-    .from("guests")
+  // Misma forma de join que el listado de recepción (reservation_guests → guests/reservations),
+  // que sí resuelve nombres. Filtramos periodo en JS para conservar el historial completo.
+  const { data: guestRows, error } = await supabase
+    .from("reservation_guests")
     .select(
-      "id,full_name,phone,email,created_at,reservation_guests!inner(beds(bed_number, zone),locker_number,locker_days,reservations(check_in_date,check_out_date,nights,status,reservation_source,notes,folios(folio_code,payment_status,total_amount,paid_amount,balance_due)))",
+      `locker_number, locker_days,
+      guests!inner(id, full_name, phone, email, created_at),
+      beds(bed_number, zone),
+      reservations!inner(
+        check_in_date, check_out_date, nights, status, reservation_source, notes,
+        folios(folio_code, payment_status, total_amount, paid_amount, balance_due)
+      )`,
     )
-    .limit(1000);
+    .neq("reservations.status", "cancelled")
+    .order("check_in_date", { ascending: false, foreignTable: "reservations" })
+    .limit(5000);
 
-  const guestsWithStays = ((guestsRaw ?? []) as GuestRecord[])
-    .map((guest) => ({ guest, stays: getStays(guest) }))
+  if (error) {
+    throw new Error(`No se pudo cargar el listado de huéspedes: ${error.message}`);
+  }
+
+  const guestsWithStays = aggregateGuests((guestRows ?? []) as ReservationGuestRow[])
+    .map((guest) => ({ guest, stays: guest.stays }))
     .filter(({ stays }) =>
       periodBounds
         ? stays.some(
             (stay) =>
-              stay.checkIn >= periodBounds.start &&
-              stay.checkIn <= periodBounds.end,
+              stay.checkIn >= periodBounds.start && stay.checkIn <= periodBounds.end,
           )
         : stays.length > 0,
     )

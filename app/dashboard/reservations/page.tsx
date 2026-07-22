@@ -25,6 +25,11 @@ import {
 import { requireModulePermission } from "@/lib/auth/guards";
 import { formatBedLabel } from "@/lib/beds";
 
+function unwrapRelation<T>(value: T | T[] | null | undefined): T | undefined {
+  if (value == null) return undefined;
+  return Array.isArray(value) ? value[0] : value;
+}
+
 export default async function ReservationsPage({
   searchParams,
 }: {
@@ -65,16 +70,39 @@ export default async function ReservationsPage({
     reservations?.map((reservation) => {
       const allGuests = Array.isArray(reservation.reservation_guests) ? reservation.reservation_guests : [];
       const assignment = allGuests[0] ?? null;
-      const guest = assignment?.guests as { full_name?: string; phone?: string } | undefined;
-      const folio = reservation.folios as {
-        id?: string;
-        folio_code?: string;
-        payment_status?: string;
-        balance_due?: number;
-        total_amount?: number;
-      } | undefined;
-
-      const profile = reservation.profiles as { full_name?: string } | undefined;
+      const guest = unwrapRelation(
+        assignment?.guests as
+          | { full_name?: string; phone?: string }
+          | { full_name?: string; phone?: string }[]
+          | null
+          | undefined,
+      );
+      const folio = unwrapRelation(
+        reservation.folios as
+          | {
+              id?: string;
+              folio_code?: string;
+              payment_status?: string;
+              balance_due?: number;
+              total_amount?: number;
+            }
+          | {
+              id?: string;
+              folio_code?: string;
+              payment_status?: string;
+              balance_due?: number;
+              total_amount?: number;
+            }[]
+          | null
+          | undefined,
+      );
+      const profile = unwrapRelation(
+        reservation.profiles as
+          | { full_name?: string }
+          | { full_name?: string }[]
+          | null
+          | undefined,
+      );
       const lockerDays = sumLockerDays(allGuests);
       const nightsLabel = `${reservation.nights} noche(s)`;
       const nightsFilterText =
@@ -107,9 +135,13 @@ export default async function ReservationsPage({
         guest?.phone ?? "-",
         ft(
           allGuests.map((g) => {
-            const bed = (Array.isArray(g.beds) ? g.beds[0] : g.beds) as
-              | { bed_number?: string | number; zone?: string }
-              | undefined;
+            const bed = unwrapRelation(
+              g.beds as
+                | { bed_number?: string | number; zone?: string }
+                | { bed_number?: string | number; zone?: string }[]
+                | null
+                | undefined,
+            );
             return formatBedLabel(bed?.bed_number, bed?.zone) ?? "Pendiente";
           }).join(" "),
           <GuestAssignmentCell
