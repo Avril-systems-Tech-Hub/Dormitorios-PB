@@ -48,7 +48,6 @@ export function StayRegistrationEntry({ role }: { role: string }) {
   const [checkOut, setCheckOut] = useState("");
   const [guests, setGuests] = useState<StayGuestDraft[]>([emptyStayGuest()]);
   const [folioCode, setFolioCode] = useState("");
-  const [totalInput, setTotalInput] = useState("");
   const [discountPercent, setDiscountPercent] = useState("0");
   const [paymentAmount, setPaymentAmount] = useState("0");
   const [paymentMethod, setPaymentMethod] = useState("cash");
@@ -69,12 +68,10 @@ export function StayRegistrationEntry({ role }: { role: string }) {
         : 0),
     0,
   );
-  const discount = Math.min(100, Math.max(0, Number(discountPercent) || 0));
-  const calculatedTotal =
-    Math.round(
-      (guests.length * nights * NIGHTLY_RATE * (100 - discount) / 100 + lockerTotal) * 100,
-    ) / 100;
-  const totalAmount = mode === "new" ? calculatedTotal : Number(totalInput) || 0;
+  const discount = mode === "new" ? Math.min(100, Math.max(0, Number(discountPercent) || 0)) : 0;
+  const nightsTotal =
+    Math.round((guests.length * nights * NIGHTLY_RATE * (100 - discount) / 100) * 100) / 100;
+  const totalAmount = Math.round((nightsTotal + lockerTotal) * 100) / 100;
   const requiresBeds = mode === "current" || (mode === "new" && assignBedsNow);
   const dateError = validateStayDates(mode, checkIn, checkOut, today);
   const modeLabel =
@@ -196,7 +193,6 @@ export function StayRegistrationEntry({ role }: { role: string }) {
     setCheckOut("");
     setGuests([emptyStayGuest()]);
     setFolioCode("");
-    setTotalInput("");
     setDiscountPercent("0");
     setPaymentAmount("0");
     setPaymentMethod("cash");
@@ -404,8 +400,8 @@ export function StayRegistrationEntry({ role }: { role: string }) {
                 variant="dashboard"
                 contactRequired={false}
                 enablePhoneMatching
-                showLockerFields={mode !== "finished"}
-                showLockerNumberField
+                showLockerFields
+                showLockerNumberField={mode !== "finished"}
                 onLookupPhone={() => void lookupGuest(index)}
                 onMatchDecision={(decision) => decideGuestMatch(index, decision)}
                 onChange={(field, value) => updateGuest(index, field, value)}
@@ -490,24 +486,16 @@ export function StayRegistrationEntry({ role }: { role: string }) {
               </span>
             </label>
           )}
-          {mode !== "new" ? (
-            <label className="grid gap-1 text-sm text-text-main">
-              Total real de la estancia
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={totalInput}
-                onChange={(event) => setTotalInput(event.target.value)}
-                className="h-10 rounded-lg border border-border-soft bg-white px-3"
-              />
-            </label>
-          ) : (
-            <div className="rounded-lg border border-border-soft bg-surface-soft p-3 text-sm">
-              <span className="text-text-muted">Total calculado</span>
-              <strong className="mt-1 block text-lg text-text-main">${totalAmount.toFixed(2)} MXN</strong>
-            </div>
-          )}
+          <div className="rounded-lg border border-border-soft bg-surface-soft p-3 text-sm">
+            <span className="text-text-muted">Total calculado</span>
+            <strong className="mt-1 block text-lg text-text-main">
+              ${totalAmount.toFixed(2)} MXN
+            </strong>
+            <span className="mt-1 block text-xs text-text-muted">
+              Noches ${nightsTotal.toFixed(2)}
+              {lockerTotal > 0 ? ` + lockers $${lockerTotal.toFixed(2)}` : ""}
+            </span>
+          </div>
         </div>
 
         <div className="mt-5 rounded-xl border border-border-soft bg-surface-soft/40 p-4">
