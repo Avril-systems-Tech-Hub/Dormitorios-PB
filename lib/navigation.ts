@@ -30,6 +30,7 @@ const HREF_TO_KEY: Record<string, string> = {
   "/dashboard/imported-records": "imported_records",
   "/dashboard/shifts": "shifts",
   "/dashboard/cash-cuts": "cash_cuts",
+  "/dashboard/reports": "reports",
   "/dashboard/audit": "audit",
   "/dashboard/users": "users",
   "/dashboard/settings": "settings",
@@ -56,7 +57,7 @@ export const NAV_GROUP_DEFS: { label: string; keys: string[] }[] = [
   },
   {
     label: "Finanzas",
-    keys: ["payments", "expenses", "cash_cuts"],
+    keys: ["payments", "expenses", "cash_cuts", "reports"],
   },
   {
     label: "Administración",
@@ -84,6 +85,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/dashboard/imported-records": "Importados",
   "/dashboard/shifts": "Turnos",
   "/dashboard/cash-cuts": "Cortes",
+  "/dashboard/reports": "Reportes",
   "/dashboard/audit": "Auditoría",
   "/dashboard/users": "Usuarios",
   "/dashboard/settings": "Ajustes",
@@ -101,6 +103,7 @@ const staticDashboardLinks: DashboardLink[] = [
   { href: "/dashboard/imported-records", label: "Importados", roles: ["admin"] },
   { href: "/dashboard/shifts", label: "Turnos", roles: ["admin", "reception"] },
   { href: "/dashboard/cash-cuts", label: "Cortes", roles: ["admin", "reception"] },
+  { href: "/dashboard/reports", label: "Reportes", roles: ["admin"] },
   { href: "/dashboard/audit", label: "Auditoría", roles: ["admin"] },
   { href: "/dashboard/users", label: "Usuarios", roles: ["admin"] },
   { href: "/dashboard/settings", label: "Ajustes", roles: ["admin"] },
@@ -118,9 +121,10 @@ const STATIC_SORT_ORDER: Record<string, number> = {
   imported_records: 9,
   shifts: 10,
   cash_cuts: 11,
-  audit: 12,
-  users: 13,
-  settings: 14,
+  reports: 12,
+  audit: 13,
+  users: 14,
+  settings: 15,
 };
 
 /**

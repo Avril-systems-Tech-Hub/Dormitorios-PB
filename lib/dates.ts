@@ -1,5 +1,7 @@
+export const MEXICO_CITY_TZ = "America/Mexico_City";
+
 export function getMexicoCityDateString(date = new Date()) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City" }).format(date);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: MEXICO_CITY_TZ }).format(date);
 }
 
 /** CDMX is UTC−6 year-round (no DST since 2022). */
@@ -8,6 +10,26 @@ const CDMX_OFFSET = "-06:00";
 /** Parse YYYY-MM-DD as noon CDMX so labels/weekdays match on UTC servers (e.g. Vercel). */
 export function mexicoCityCalendarDate(dateString: string) {
   return new Date(`${dateString}T12:00:00.000${CDMX_OFFSET}`);
+}
+
+/** Wall-clock time in CDMX as an ISO timestamptz string (for DB inserts). */
+export function mexicoCityDateTime(dateString: string, time: string) {
+  const normalized = time.length === 5 ? `${time}:00` : time;
+  return `${dateString}T${normalized}${CDMX_OFFSET}`;
+}
+
+/** Format an instant (timestamptz / ISO) for display in Mexico City. */
+export function formatMexicoCityDateTime(
+  value: string | Date,
+  options: Intl.DateTimeFormatOptions = {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  },
+) {
+  return new Date(value).toLocaleString("es-MX", { ...options, timeZone: MEXICO_CITY_TZ });
 }
 
 function daysInCalendarMonth(year: number, month: number) {
