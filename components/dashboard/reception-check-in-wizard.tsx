@@ -98,7 +98,15 @@ export function ReceptionCheckInWizard({
   );
   const [pendingReservationId, setPendingReservationId] = useState<string | null>(null);
 
-  if (initialReservation && initialReservation.reservationId !== appliedInitialReservationId) {
+  const initialReservationMatchesUrl =
+    !!initialReservation &&
+    !!reservationParam &&
+    initialReservation.reservationId === reservationParam;
+
+  if (
+    initialReservationMatchesUrl &&
+    initialReservation.reservationId !== appliedInitialReservationId
+  ) {
     setAppliedInitialReservationId(initialReservation.reservationId);
     setSelected(initialReservation);
     setPaymentAmount(
@@ -111,7 +119,11 @@ export function ReceptionCheckInWizard({
     setStepIndex(1);
   }
 
-  if (initialReservationError && initialReservationError !== appliedInitialReservationError) {
+  if (
+    reservationParam &&
+    initialReservationError &&
+    initialReservationError !== appliedInitialReservationError
+  ) {
     setAppliedInitialReservationError(initialReservationError);
     setStepError(initialReservationError);
   }

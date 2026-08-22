@@ -10,6 +10,7 @@ import {
   DashboardNav,
   DashboardNavMobileBar,
 } from "@/components/layout/dashboard-nav";
+import { DashboardScrollRestoration } from "@/components/layout/dashboard-scroll-restoration";
 
 export function DashboardShell({
   title,
@@ -70,6 +71,9 @@ export function DashboardShell({
 
   return (
     <div className="dashboard-canvas min-h-screen overflow-x-hidden">
+      <Suspense fallback={null}>
+        <DashboardScrollRestoration />
+      </Suspense>
       <div className="sticky top-0 z-30">
         <header className="dashboard-brand-header safe-area-pt-header shadow-sm">
           {isReception ? (
