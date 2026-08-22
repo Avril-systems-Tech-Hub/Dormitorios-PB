@@ -84,7 +84,7 @@ export function BedCardAccordion({ detail }: { detail: ReservationDetail | null 
           </div>
           {detail.pending_checkout ? (
             <div className="rounded-md bg-amber-100 px-2 py-1.5 font-semibold text-amber-900">
-              Salida pendiente de confirmar
+              Estancia terminada con saldo. Revisa el cobro.
             </div>
           ) : null}
           <div className="flex justify-between">

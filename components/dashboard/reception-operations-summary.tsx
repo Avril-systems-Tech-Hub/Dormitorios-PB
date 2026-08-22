@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { autoCloseLiquidatedStays } from "@/lib/auto-checkout";
 import { buildBedOccupancyMap } from "@/lib/bed-occupancy";
 import { computeBedSummaryCounts } from "@/lib/bed-summary";
 import { getMexicoCityDateString, hasStayPeriodEnded } from "@/lib/dates";
@@ -36,18 +37,20 @@ function StatCard({ label, value, hint, badge, href }: StatCardProps) {
 
 export async function ReceptionOperationsSummary() {
   const supabase = createAdminClient();
+  await autoCloseLiquidatedStays();
   const now = new Date();
   const today = getMexicoCityDateString(now);
-  // Pending = stay period ended at 11:00 CDMX without formal checkout.
+  // Pending = stay period ended at 11:00 CDMX with an unpaid folio.
   const pendingCheckoutFilter = hasStayPeriodEnded(today, now)
     ? ("lte" as const)
     : ("lt" as const);
 
   const pendingCheckoutsQuery = supabase
     .from("reservations")
-    .select("id", { count: "exact", head: true })
+    .select("id, folios!inner(payment_status)", { count: "exact", head: true })
     .not("status", "in", '("cancelled","checked_out")')
-    .is("checked_out_at", null);
+    .is("checked_out_at", null)
+    .neq("folios.payment_status", "liquidated");
 
   const [
     { count: activeReservations },
@@ -105,10 +108,10 @@ export async function ReceptionOperationsSummary() {
         <StatCard
           label="Salidas pendientes"
           value={pendingCheckouts ?? 0}
-          hint="Periodo 11:00 terminado, falta confirmar"
+          hint="Periodo 11:00 terminado con saldo"
           badge={
             (pendingCheckouts ?? 0) > 0
-              ? { text: "Registrar salida", variant: "warning" }
+              ? { text: "Revisar cobro", variant: "warning" }
               : undefined
           }
           href="/dashboard/beds"

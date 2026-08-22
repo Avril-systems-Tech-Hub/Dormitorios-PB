@@ -4,6 +4,7 @@ import { ReceptionHome } from "@/components/dashboard/reception-home";
 import { ReceptionShiftGate } from "@/components/dashboard/reception-shift-gate";
 import { BedSummaryCard } from "@/components/dashboard/bed-summary-card";
 import { FolioSummaryCard } from "@/components/dashboard/folio-summary-card";
+import { autoCloseLiquidatedStays } from "@/lib/auto-checkout";
 import { buildBedOccupancyMap } from "@/lib/bed-occupancy";
 import { computeBedSummaryCounts, parseBedSummaryFilter } from "@/lib/bed-summary";
 import { FinanceResultCard } from "@/components/dashboard/finance-result-card";
@@ -46,6 +47,7 @@ export default async function DashboardPage({
   const profile = await getSessionProfile();
   const params = await searchParams;
   const today = getMexicoCityDateString();
+  await autoCloseLiquidatedStays();
   const selectedMonth = parseFinanceMonthKey(params.financeMonth, today);
   const monthAnchor = financeMonthKeyToAnchorDate(selectedMonth);
   const monthOptions = getFinanceMonthOptions(24, today);

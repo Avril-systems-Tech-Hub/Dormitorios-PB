@@ -22,7 +22,8 @@ import {
   parseFinanceMonthKey,
   parseReservationPeriod,
 } from "@/lib/dates";
-import { reservationHasPendingCheckout } from "@/lib/bed-occupancy";
+import { reservationHasPendingCheckout, reservationIsInHouseNow } from "@/lib/bed-occupancy";
+import { autoCloseLiquidatedStays } from "@/lib/auto-checkout";
 import { requireModulePermission } from "@/lib/auth/guards";
 import { formatBedLabel } from "@/lib/beds";
 
@@ -49,6 +50,7 @@ export default async function ReservationsPage({
   const periodBounds = getReservationPeriodBounds(period, periodAnchor);
 
   const supabase = createAdminClient();
+  await autoCloseLiquidatedStays();
 
   let query = supabase
     .from("reservations")
@@ -113,11 +115,17 @@ export default async function ReservationsPage({
       const nightsFilterText =
         lockerDays > 0 ? `${nightsLabel} Locker ${lockerDays} día(s)` : nightsLabel;
       const isCheckedOut = Boolean(reservation.checked_out_at) || reservation.status === "checked_out";
-      const pendingCheckout = reservationHasPendingCheckout(reservation);
+      const pendingCheckout = reservationHasPendingCheckout({
+        status: reservation.status,
+        checked_out_at: reservation.checked_out_at,
+        check_out_date: reservation.check_out_date,
+        payment_status: folio?.payment_status,
+      });
       const canCheckout =
         !isCheckedOut &&
         reservation.status !== "cancelled" &&
-        reservation.check_in_date <= today;
+        reservation.check_in_date <= today &&
+        (pendingCheckout || reservationIsInHouseNow(reservation));
 
       return [
         ft(
@@ -165,11 +173,11 @@ export default async function ReservationsPage({
           </div>,
         ),
         ft(
-          `${reservation.status} ${pendingCheckout ? "salida pendiente" : ""}`,
+          `${reservation.status} ${pendingCheckout ? "saldo pendiente" : ""}`,
           isCheckedOut ? (
             <Badge key={`${reservation.id}-stay`} variant="success">Salida registrada</Badge>
           ) : pendingCheckout ? (
-            <Badge key={`${reservation.id}-stay`} variant="warning">Salida pendiente</Badge>
+            <Badge key={`${reservation.id}-stay`} variant="warning">Saldo pendiente</Badge>
           ) : reservation.status === "cancelled" ? (
             <Badge key={`${reservation.id}-stay`} variant="danger">Cancelada</Badge>
           ) : (

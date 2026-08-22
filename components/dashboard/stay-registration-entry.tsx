@@ -291,7 +291,7 @@ export function StayRegistrationEntry({ role }: { role: string }) {
       if (mode === "new" && !requiresBeds && result.reservationId) {
         router.push(
           role === "reception"
-            ? `/dashboard?checkin_reservation=${result.reservationId}`
+            ? `/dashboard?reception=recent&checkin_reservation=${result.reservationId}`
             : "/dashboard/reservations",
         );
         return;

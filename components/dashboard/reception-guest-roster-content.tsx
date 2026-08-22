@@ -11,6 +11,8 @@ import {
   formatRosterDate,
   formatRosterDay,
   formatRosterTime,
+  GUEST_ROSTER_COLUMNS,
+  GUEST_ROSTER_SORT_KEYS,
 } from "@/lib/reception-guest-roster";
 import {
   financeMonthKeyToAnchorDate,
@@ -21,8 +23,10 @@ import {
   parseReservationPeriod,
   type ReservationPeriod,
 } from "@/lib/dates";
-import { reservationHasPendingCheckout } from "@/lib/bed-occupancy";
-import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
+import { reservationHasPendingCheckout, reservationIsInHouseNow } from "@/lib/bed-occupancy";
+import { parsePagination, getRange } from "@/lib/pagination";
+import { compareByDirection, parseTableSort } from "@/lib/table-controls";
+import { autoCloseLiquidatedStays } from "@/lib/auto-checkout";
 import { RegisterCheckoutButton } from "@/components/ui/register-checkout-button";
 import { ReservationPaymentInline } from "@/components/ui/reservation-payment-inline";
 import { ReceptionGuestEditButton } from "@/components/dashboard/reception-guest-edit-button";
@@ -81,6 +85,17 @@ function unwrap<T>(value: T | T[] | null | undefined): T | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
+/** Newest reservation first. `foreignTable` order does not sort parent rows. */
+function compareRosterRows(a: ReservationGuestRow, b: ReservationGuestRow) {
+  const resA = unwrap(a.reservations);
+  const resB = unwrap(b.reservations);
+  const created = (resB?.created_at ?? "").localeCompare(resA?.created_at ?? "");
+  if (created !== 0) return created;
+  const reservationId = (resB?.id ?? "").localeCompare(resA?.id ?? "");
+  if (reservationId !== 0) return reservationId;
+  return String(b.id).localeCompare(String(a.id));
+}
+
 function pickFirst(value: string | string[] | undefined): string {
   if (Array.isArray(value)) return value[0] ?? "";
   return value ?? "";
@@ -110,13 +125,7 @@ export function rosterParamsActive(
   paramPrefix = "roster",
 ): boolean {
   const p = `${paramPrefix}_`;
-  return Boolean(
-    params[`${p}page`] ||
-      params[`${p}q`] ||
-      params[`${p}period`] ||
-      params[`${p}financeMonth`] ||
-      params[`${p}pageSize`],
-  );
+  return Object.keys(params).some((key) => key.startsWith(p));
 }
 
 type ReceptionGuestRosterContentProps = {
@@ -132,7 +141,7 @@ export async function ReceptionGuestRosterContent({
   paramPrefix,
   embedded = false,
 }: ReceptionGuestRosterContentProps) {
-  const { page, pageSize, q } = parsePagination(searchParams, paramPrefix);
+  const { page, pageSize } = parsePagination(searchParams, paramPrefix);
   const [from, to] = getRange(page, pageSize);
   const period = parseRosterPeriod(searchParams, paramPrefix);
   const today = getMexicoCityDateString();
@@ -143,33 +152,31 @@ export async function ReceptionGuestRosterContent({
   const periodBounds = getReservationPeriodBounds(period, periodAnchor);
 
   const supabase = createAdminClient();
+  await autoCloseLiquidatedStays();
 
-  let query = supabase
+  const query = supabase
     .from("reservation_guests")
     .select(
       `id, guest_id, bed_id, locker_number, locker_days, final_rate, locker_amount,
       guests!inner(id, full_name, phone, sex),
       beds(bed_number, zone),
       reservations!inner(id, created_at, check_in_date, check_out_date, nights, status, checked_out_at, notes, folios!inner(id, folio_code, total_amount, paid_amount, balance_due, payment_status))`,
-      { count: "exact" },
     )
     .neq("reservations.status", "cancelled")
     .gte("reservations.check_in_date", periodBounds.start)
     .lte("reservations.check_in_date", periodBounds.end);
 
-  if (q) {
-    const safe = escapeIlike(q);
-    query = query.or(
-      `guests.full_name.ilike.%${safe}%,reservations.folios.folio_code.ilike.%${safe}%`,
-    );
-  }
+  const { data: guestRows } = await query.limit(5000);
+  const sortPrefix = paramPrefix ?? "";
+  const { column: sortColumn, direction: sortDirection } = parseTableSort(
+    searchParams,
+    GUEST_ROSTER_SORT_KEYS,
+    "hora",
+    "desc",
+    sortPrefix,
+  );
 
-  const { data: guestRows, count } = await query
-    .order("created_at", { ascending: false, foreignTable: "reservations" })
-    .order("id", { ascending: false })
-    .range(from, to);
-
-  const rows = ((guestRows ?? []) as ReservationGuestRow[]).map((row) => {
+  const mappedRows = ((guestRows ?? []) as ReservationGuestRow[]).map((row) => {
     const guest = unwrap(row.guests);
     const bed = unwrap(row.beds);
     const reservation = unwrap(row.reservations);
@@ -198,32 +205,128 @@ export async function ReceptionGuestRosterContent({
     const reservationNotes = reservation?.notes?.trim() || null;
     const isCheckedOut = Boolean(reservation?.checked_out_at) || reservation?.status === "checked_out";
     const pendingCheckout = reservation
-      ? reservationHasPendingCheckout(reservation)
+      ? reservationHasPendingCheckout({
+          status: reservation.status,
+          checked_out_at: reservation.checked_out_at,
+          check_out_date: reservation.check_out_date,
+          payment_status: paymentStatus,
+        })
       : false;
+    const stayState = isCheckedOut ? "cerrada" : pendingCheckout ? "saldo" : "vigente";
+    const stayStateLabel = isCheckedOut
+      ? "salida registrada"
+      : pendingCheckout
+        ? "saldo pendiente"
+        : "vigente";
     const canCheckout =
       !isCheckedOut &&
       reservation?.status !== "cancelled" &&
-      Boolean(checkIn && checkIn <= today && reservation?.id);
+      Boolean(checkIn && checkIn <= today && reservation?.id) &&
+      (pendingCheckout || Boolean(reservation && reservationIsInHouseNow(reservation)));
 
-    const filterText = [
-      dayLabel,
+    return {
+      row,
+      guest,
+      folio,
+      reservation,
       guestName,
       folioCode,
       sexLabel,
       bedNumber,
       lockerNumber,
+      dayLabel,
+      checkIn,
       checkInLabel,
-      timeLabel,
+      checkOut,
       checkOutLabel,
-      String(nights),
+      createdAt,
+      timeLabel,
+      nights,
+      lineTotal,
       totalLabel,
+      balanceDue,
+      paidAmount,
+      folioTotal,
       paymentStatus,
-      String(balanceDue),
-      reservationNotes ?? "",
-    ].join(" ");
+      reservationNotes,
+      isCheckedOut,
+      pendingCheckout,
+      stayState,
+      stayStateLabel,
+      canCheckout,
+    };
+  });
+
+  const sortedRows = mappedRows.slice().sort((a, b) => {
+    const byColumn = (() => {
+      switch (sortColumn) {
+        case "dia":
+        case "ingreso":
+          return compareByDirection(a.checkIn, b.checkIn, sortDirection);
+        case "nombre":
+          return compareByDirection(a.guestName, b.guestName, sortDirection);
+        case "folio":
+          return compareByDirection(a.folioCode, b.folioCode, sortDirection);
+        case "sexo":
+          return compareByDirection(a.sexLabel, b.sexLabel, sortDirection);
+        case "cama":
+          return compareByDirection(a.bedNumber, b.bedNumber, sortDirection);
+        case "locker":
+          return compareByDirection(a.lockerNumber, b.lockerNumber, sortDirection);
+        case "hora":
+          return compareByDirection(a.createdAt, b.createdAt, sortDirection);
+        case "salida":
+          return compareByDirection(a.checkOut, b.checkOut, sortDirection);
+        case "noches":
+          return compareByDirection(a.nights, b.nights, sortDirection);
+        case "total":
+          return compareByDirection(a.lineTotal, b.lineTotal, sortDirection);
+        case "pago":
+          return compareByDirection(a.paymentStatus, b.paymentStatus, sortDirection);
+        case "nota":
+          return compareByDirection(a.reservationNotes ?? "", b.reservationNotes ?? "", sortDirection);
+        case "estado":
+          return compareByDirection(a.stayStateLabel, b.stayStateLabel, sortDirection);
+        default:
+          return compareByDirection(a.createdAt, b.createdAt, sortDirection);
+      }
+    })();
+    if (byColumn !== 0) return byColumn;
+    return compareRosterRows(a.row, b.row);
+  });
+
+  const pagedRows = sortedRows.slice(from, to + 1);
+
+  const rows = pagedRows.map((item) => {
+    const {
+      row,
+      guest,
+      folio,
+      reservation,
+      guestName,
+      folioCode,
+      sexLabel,
+      bedNumber,
+      lockerNumber,
+      dayLabel,
+      checkInLabel,
+      checkOutLabel,
+      timeLabel,
+      nights,
+      totalLabel,
+      balanceDue,
+      paidAmount,
+      folioTotal,
+      paymentStatus,
+      reservationNotes,
+      isCheckedOut,
+      pendingCheckout,
+      stayStateLabel,
+      canCheckout,
+    } = item;
 
     return [
-      ft(filterText, <span className="tabular-nums">{dayLabel}</span>),
+      ft(dayLabel, <span className="tabular-nums">{dayLabel}</span>),
       ft(guestName, <span className="font-medium text-text-main">{guestName}</span>),
       ft(folioCode, <span className="whitespace-nowrap">{folioCode}</span>),
       ft(sexLabel, sexLabel),
@@ -256,12 +359,12 @@ export async function ReceptionGuestRosterContent({
         </span>,
       ),
       ft(
-        `${isCheckedOut ? "salida registrada" : pendingCheckout ? "salida pendiente" : "vigente"}`,
+        stayStateLabel,
         <span className="inline-flex flex-col items-start gap-1.5">
           {isCheckedOut ? (
             <Badge variant="success">Salida registrada</Badge>
           ) : pendingCheckout ? (
-            <Badge variant="warning">Salida pendiente</Badge>
+            <Badge variant="warning">Saldo pendiente</Badge>
           ) : (
             <Badge>Vigente</Badge>
           )}
@@ -317,39 +420,23 @@ export async function ReceptionGuestRosterContent({
       </Suspense>
 
       <p className="text-sm text-text-muted">
-        <span className="font-medium text-text-main">{count ?? 0}</span> registros ·{" "}
+        <span className="font-medium text-text-main">{sortedRows.length}</span> registros ·{" "}
         {periodBounds.label}
       </p>
 
       <ResponsiveTable
-        headers={[
-          "Día",
-          "Nombre",
-          "Folio",
-          "Sexo",
-          "No. Cama",
-          "No. Locker",
-          "Fecha ingreso",
-          "Hora",
-          "Fecha salida",
-          "Noches",
-          "Total",
-          "Pago / saldo",
-          "Nota de reservación",
-          "Estado / salida",
-          "Editar",
-        ]}
+        columns={GUEST_ROSTER_COLUMNS}
         rows={rows}
-        filterMode="global"
         dense
         serverPagination={{
           page,
           pageSize,
-          totalCount: count ?? 0,
-          searchQuery: q,
-          searchPlaceholder: "Buscar por nombre o folio…",
+          totalCount: sortedRows.length,
           paramPrefix,
         }}
+        serverSort={{ column: sortColumn, direction: sortDirection }}
+        sortParamKey={paramPrefix ? `${paramPrefix}_sort` : "sort"}
+        dirParamKey={paramPrefix ? `${paramPrefix}_dir` : "dir"}
       />
     </div>
   );

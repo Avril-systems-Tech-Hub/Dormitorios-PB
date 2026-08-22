@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { groupDashboardLinks, groupModules } from "@/lib/navigation";
 import type { UserRole } from "@/types/domain";
@@ -109,7 +110,9 @@ export function DashboardShell({
                 >
                   Registrar estancia
                 </Link>
-                <ReceptionSessionNav />
+                <Suspense fallback={null}>
+                  <ReceptionSessionNav />
+                </Suspense>
               </div>
             </div>
           ) : (

@@ -31,9 +31,8 @@ import { deliverWhatsAppReservationReceipt } from "@/lib/whatsapp-payment-receip
 import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
 import { isCompleteMexicanPhone, normalizeMexicanPhone } from "@/lib/phone";
 import { escapeIlike } from "@/lib/pagination";
-import {
-  reservationBlocksDate,
-} from "@/lib/bed-occupancy";
+import { reservationBlocksDate } from "@/lib/bed-occupancy";
+import { autoCloseLiquidatedStays } from "@/lib/auto-checkout";
 import {
   mapReservationToReceptionSearch,
   normalizeRecentReservationLimit,
@@ -873,6 +872,10 @@ async function registerPaymentCore(input: PaymentCoreInput): Promise<PaymentCore
     }
   }
 
+  if (newStatus === "liquidated") {
+    await autoCloseLiquidatedStays();
+  }
+
   const successMessage =
     newStatus === "liquidated"
       ? whatsappSent
@@ -918,6 +921,7 @@ export async function registerPaymentResultAction(formData: FormData): Promise<O
   revalidatePath("/dashboard/folios");
   revalidatePath("/dashboard/reservations");
   revalidatePath("/dashboard/guests");
+  revalidatePath("/dashboard/beds");
   revalidatePath("/dashboard");
 
   return actionResult("success", result.message);
@@ -2563,8 +2567,8 @@ export async function registerCheckoutAction(formData: FormData): Promise<Operat
   return actionResult(
     "success",
     balanceDue > 0
-      ? `Salida registrada y cama liberada. El saldo de $${balanceDue.toFixed(2)} permanece en el folio.`
-      : "Salida registrada y cama liberada.",
+      ? `Estancia cerrada. El saldo de $${balanceDue.toFixed(2)} permanece en el folio.`
+      : "Estancia cerrada.",
   );
 }
 

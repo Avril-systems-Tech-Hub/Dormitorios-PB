@@ -59,7 +59,6 @@ export async function ReceptionHome({
         initialRecentReservations={recentReservations}
         initialReservation={initialReservation}
         initialReservationError={initialReservationError}
-        consumeInitialReservationParam={shouldConsumeCheckInReservation}
       />
       <ReceptionGuestRosterPanel defaultExpanded={rosterExpanded}>
         <ReceptionGuestRosterContent

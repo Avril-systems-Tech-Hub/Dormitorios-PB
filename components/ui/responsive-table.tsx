@@ -366,11 +366,16 @@ export function ResponsiveTable({
               <tr>
                 {tableColumns.map((column, i) => {
                   const isSorted = serverSort?.column === column.key;
-                  const sortIndicator = isSorted
-                    ? serverSort?.direction === "asc"
-                      ? " ↑"
-                      : " ↓"
-                    : "";
+                  const sortIndicator = (
+                    <span className="inline-flex flex-col leading-[0.65] text-[8px]" aria-hidden>
+                      <span className={isSorted && serverSort?.direction === "asc" ? "text-text-main" : "text-text-muted/40"}>
+                        ▲
+                      </span>
+                      <span className={isSorted && serverSort?.direction === "desc" ? "text-text-main" : "text-text-muted/40"}>
+                        ▼
+                      </span>
+                    </span>
+                  );
                   return (
                     <th key={column.key} className={thClass}>
                       {column.sortable && hasServerColumnControls ? (
@@ -384,7 +389,7 @@ export function ResponsiveTable({
                           aria-label={`Ordenar por ${column.label}`}
                         >
                           {column.label}
-                          <span className="text-[10px]">{sortIndicator}</span>
+                          {sortIndicator}
                         </button>
                       ) : (
                         <div>{column.label}</div>

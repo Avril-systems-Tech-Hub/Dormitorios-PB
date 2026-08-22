@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   assignLockerAction,
   completeReceptionCheckInAction,
@@ -26,8 +26,11 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
+  buildReceptionDashboardPath,
   DEFAULT_RECENT_RESERVATION_LIMIT,
   getReceptionLockerTotal,
+  parseReceptionListMode,
+  RECEPTION_RESERVATION_PARAM,
   RECEPTION_STEP_LABELS,
   RECEPTION_WIZARD_STEPS,
   type RecentReservationLimit,
@@ -48,21 +51,20 @@ type ReceptionCheckInWizardProps = {
   initialRecentReservations?: ReceptionSearchResult[];
   initialReservation?: ReceptionSearchResult;
   initialReservationError?: string;
-  consumeInitialReservationParam?: boolean;
 };
 
 export function ReceptionCheckInWizard({
   initialRecentReservations = [],
   initialReservation,
   initialReservationError,
-  consumeInitialReservationParam = false,
 }: ReceptionCheckInWizardProps) {
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const urlListMode = parseReceptionListMode(searchParams.get("reception"));
+  const reservationParam = searchParams.get(RECEPTION_RESERVATION_PARAM);
   const [stepIndex, setStepIndex] = useState(initialReservation ? 1 : 0);
   const [stepError, setStepError] = useState<string | null>(initialReservationError ?? null);
-  const [searchMode, setSearchMode] = useState<ReceptionSearchMode>("search");
+  const [searchMode, setSearchMode] = useState<ReceptionSearchMode>(urlListMode);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<ReceptionSearchResult[]>([]);
   const [recentReservations, setRecentReservations] = useState(initialRecentReservations);
@@ -94,6 +96,7 @@ export function ReceptionCheckInWizard({
   const [appliedInitialReservationError, setAppliedInitialReservationError] = useState(
     initialReservationError ?? null,
   );
+  const [pendingReservationId, setPendingReservationId] = useState<string | null>(null);
 
   if (initialReservation && initialReservation.reservationId !== appliedInitialReservationId) {
     setAppliedInitialReservationId(initialReservation.reservationId);
@@ -113,6 +116,25 @@ export function ReceptionCheckInWizard({
     setStepError(initialReservationError);
   }
 
+  if (reservationParam && pendingReservationId && reservationParam === pendingReservationId) {
+    setPendingReservationId(null);
+  }
+
+  if (
+    !reservationParam &&
+    !pendingReservationId &&
+    (selected || appliedInitialReservationId || stepIndex > 0 || successState)
+  ) {
+    setSelected(null);
+    setAppliedInitialReservationId(null);
+    setStepIndex(0);
+    setSuccessState(null);
+    setCashReceived(false);
+    setPaymentAmount("");
+    setAssignmentDrafts({});
+    setStepError(null);
+  }
+
   const currentStep: WizardStepId = successState ? "success" : STEP_ORDER[stepIndex] ?? "search";
   const progressStep = successState ? STEP_ORDER.length : stepIndex + 1;
   const lockerTotal = selected ? getReceptionLockerTotal(selected.guests) : 0;
@@ -121,13 +143,8 @@ export function ReceptionCheckInWizard({
     : 0;
 
   useEffect(() => {
-    if (!consumeInitialReservationParam || !searchParams.has("checkin_reservation")) return;
-
-    const nextParams = new URLSearchParams(searchParams.toString());
-    nextParams.delete("checkin_reservation");
-    const nextQuery = nextParams.toString();
-    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
-  }, [consumeInitialReservationParam, pathname, router, searchParams]);
+    setSearchMode(urlListMode);
+  }, [urlListMode]);
 
   async function refreshRecentReservations(limit = recentLimit) {
     const response = await listRecentReservationsForReceptionAction(limit);
@@ -144,6 +161,13 @@ export function ReceptionCheckInWizard({
     });
   }
 
+  function pushReceptionView(patch: {
+    listMode?: ReceptionSearchMode | null;
+    reservationId?: string | null;
+  }) {
+    router.push(buildReceptionDashboardPath(searchParams, patch), { scroll: false });
+  }
+
   function resetWizard() {
     setStepIndex(0);
     setStepError(null);
@@ -155,24 +179,43 @@ export function ReceptionCheckInWizard({
     setPaymentMethod("cash");
     setAssignmentDrafts({});
     setSuccessState(null);
+    setPendingReservationId(null);
     void refreshRecentReservations();
+    pushReceptionView({ listMode: searchMode, reservationId: null });
   }
 
   function handleSearchModeChange(mode: ReceptionSearchMode) {
+    if (mode === searchMode) return;
     setSearchMode(mode);
     setStepError(null);
+    pushReceptionView({ listMode: mode, reservationId: null });
     if (mode === "recent") {
       void refreshRecentReservations();
     }
   }
 
   function selectReservation(reservation: ReceptionSearchResult) {
+    setPendingReservationId(reservation.reservationId);
+    setAppliedInitialReservationId(reservation.reservationId);
     setSelected(reservation);
     setPaymentAmount(reservation.balanceDue > 0 ? String(reservation.balanceDue) : "");
     setCashReceived(reservation.balanceDue <= 0);
     setAssignmentDrafts(buildGuestAssignmentDrafts(reservation.guests));
     setStepError(null);
     setStepIndex(1);
+    pushReceptionView({
+      listMode: searchMode,
+      reservationId: reservation.reservationId,
+    });
+  }
+
+  function returnToReservationList() {
+    setPendingReservationId(null);
+    setSelected(null);
+    setSearchResults([]);
+    setStepIndex(0);
+    setStepError(null);
+    pushReceptionView({ reservationId: null });
   }
 
   function updateAssignmentDraft(guestId: string, patch: Partial<GuestAssignmentDraft>) {
@@ -249,6 +292,10 @@ export function ReceptionCheckInWizard({
   function goBack() {
     setStepError(null);
     if (stepIndex <= 0) return;
+    if (stepIndex === 1) {
+      returnToReservationList();
+      return;
+    }
     setStepIndex((i) => i - 1);
   }
 
@@ -501,12 +548,7 @@ export function ReceptionCheckInWizard({
                 type="button"
                 variant="outline"
                 className="w-full sm:w-auto"
-                onClick={() => {
-                  setSelected(null);
-                  setSearchResults([]);
-                  setStepIndex(0);
-                  setStepError(null);
-                }}
+                onClick={returnToReservationList}
               >
                 Buscar otra
               </Button>

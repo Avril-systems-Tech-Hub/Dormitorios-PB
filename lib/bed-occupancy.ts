@@ -24,7 +24,7 @@ export type BedOccupancyDetail = {
   locker_days?: number;
   /** true when the 11:00–11:00 stay period includes now */
   in_house_today?: boolean;
-  /** true when period ended at 11:00 but reception has not confirmed checkout */
+  /** true when period ended at 11:00 and the folio still has a balance */
   pending_checkout?: boolean;
 };
 
@@ -106,26 +106,33 @@ export function reservationBlocksDate(
 }
 
 export function reservationHasPendingCheckout(
-  reservation: Pick<ReservationRow, "status" | "checked_out_at" | "check_out_date">,
+  reservation: Pick<ReservationRow, "status" | "checked_out_at" | "check_out_date" | "folios"> & {
+    payment_status?: string | null;
+  },
   now = new Date(),
 ) {
   if (reservation.checked_out_at || NON_BLOCKING_STATUSES.has(reservation.status ?? "")) return false;
+  const paymentStatus =
+    reservation.payment_status ?? unwrap(reservation.folios)?.payment_status ?? "";
+  if (paymentStatus === "liquidated") return false;
   return Boolean(reservation.check_out_date && hasStayPeriodEnded(reservation.check_out_date, now));
 }
 
 function assignmentRank(reservation: ReservationRow, now: Date) {
   if (reservation.checked_out_at || NON_BLOCKING_STATUSES.has(reservation.status ?? "")) return -1;
 
-  const folio = unwrap(reservation.folios);
-  if (!PAID_FOLIO_STATUSES.has(folio?.payment_status ?? "")) return -1;
-
   const checkIn = reservation.check_in_date ?? "";
   const checkOut = reservation.check_out_date ?? "";
   if (!checkIn || !checkOut) return -1;
 
+  const folio = unwrap(reservation.folios);
   const statusBoost = STATUS_PRIORITY[reservation.status ?? ""] ?? 5;
-  if (reservationIsInHouseNow(reservation, now)) return 1000 + statusBoost;
-  // Keep pending checkouts visible on the bed card so reception can confirm salida.
+  if (reservationIsInHouseNow(reservation, now)) {
+    // Occupancy still requires a paid folio; unpaid in-house stays are a cobro gap, not a bed hold.
+    if (!PAID_FOLIO_STATUSES.has(folio?.payment_status ?? "")) return -1;
+    return 1000 + statusBoost;
+  }
+  // Amber = stay ended with saldo. Liquidated stays auto-close and do not occupy the map.
   if (reservationHasPendingCheckout(reservation, now)) return 100 + statusBoost;
 
   return -1;
@@ -179,9 +186,9 @@ function isBetterCandidate(
 
 /**
  * One assignment per bed from reservation_guests (same source as Reservas).
- * Includes guests in the live 11:00–11:00 window, plus pending checkouts
- * (bed already free, salida still needs reception confirmation).
- * Unpaid, future, checked-out, cancelled and historical rows are excluded.
+ * Includes guests in the live 11:00–11:00 window, plus unpaid stays whose
+ * period already ended (amber = saldo, not a bed hold).
+ * Liquidated, future, checked-out, cancelled and historical rows are excluded.
  */
 export function buildBedOccupancyMap(
   rows: ReservationGuestRow[],

@@ -19,6 +19,8 @@ export type GuestStaySummary = {
   balanceDue?: number;
   source?: string;
   reservationNotes?: string | null;
+  createdAt?: string;
+  reservationId?: string;
 };
 
 function formatShortDate(isoDate: string) {
@@ -42,7 +44,11 @@ export function GuestHistoryDetail({
   latest: GuestStaySummary;
 }) {
   const [open, setOpen] = useState(false);
-  const sorted = [...stays].sort((a, b) => b.checkIn.localeCompare(a.checkIn));
+  const sorted = [...stays].sort((a, b) => {
+    const created = (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
+    if (created !== 0) return created;
+    return b.checkIn.localeCompare(a.checkIn);
+  });
   const history = sorted.filter(
     (stay) =>
       stay.checkIn !== latest.checkIn ||

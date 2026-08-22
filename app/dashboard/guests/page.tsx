@@ -19,6 +19,12 @@ import {
 } from "@/components/dashboard/guests-period-filter";
 import { parsePagination, getRange } from "@/lib/pagination";
 import {
+  ADMIN_GUESTS_COLUMNS,
+  ADMIN_GUESTS_SORT_KEYS,
+  formatRosterDateTime,
+} from "@/lib/reception-guest-roster";
+import { compareByDirection, parseTableSort } from "@/lib/table-controls";
+import {
   financeMonthKeyToAnchorDate,
   getFinanceDayOptions,
   getFinanceMonthOptions,
@@ -56,6 +62,8 @@ type ReservationGuestRow = {
     | null;
   reservations?:
     | {
+        id?: string;
+        created_at?: string;
         check_in_date?: string;
         check_out_date?: string;
         nights?: number;
@@ -65,6 +73,8 @@ type ReservationGuestRow = {
         folios?: FolioFields | FolioFields[] | null;
       }
     | {
+        id?: string;
+        created_at?: string;
         check_in_date?: string;
         check_out_date?: string;
         nights?: number;
@@ -108,6 +118,8 @@ function toStay(row: ReservationGuestRow): GuestStaySummary | null {
     nights: reservation.nights ?? 0,
     source: reservation.reservation_source ?? "guest_app",
     reservationNotes: reservation.notes?.trim() || null,
+    createdAt: reservation.created_at,
+    reservationId: reservation.id,
   };
 
   if (bed?.bed_number != null) stay.bedNumber = bed.bed_number;
@@ -164,7 +176,7 @@ export default async function GuestsPage({
   }
 
   const params = await searchParams;
-  const { page, pageSize, q } = parsePagination(params);
+  const { page, pageSize } = parsePagination(params);
   const [from, to] = getRange(page, pageSize);
   const today = getMexicoCityDateString();
   const period = parseGuestPeriod(params.guestPeriod);
@@ -182,6 +194,12 @@ export default async function GuestsPage({
   const weekOptions = getFinanceWeekOptions(selectedMonth);
 
   const supabase = createAdminClient();
+  const { column: sortColumn, direction: sortDirection } = parseTableSort(
+    params,
+    ADMIN_GUESTS_SORT_KEYS,
+    "alta",
+    "desc",
+  );
 
   // Misma forma de join que el listado de recepción (reservation_guests → guests/reservations),
   // que sí resuelve nombres. Filtramos periodo en JS para conservar el historial completo.
@@ -192,12 +210,11 @@ export default async function GuestsPage({
       guests!inner(id, full_name, phone, email, created_at),
       beds(bed_number, zone),
       reservations!inner(
-        check_in_date, check_out_date, nights, status, reservation_source, notes,
+        id, created_at, check_in_date, check_out_date, nights, status, reservation_source, notes,
         folios(folio_code, payment_status, total_amount, paid_amount, balance_due)
       )`,
     )
     .neq("reservations.status", "cancelled")
-    .order("check_in_date", { ascending: false, foreignTable: "reservations" })
     .limit(5000);
 
   if (error) {
@@ -217,29 +234,42 @@ export default async function GuestsPage({
     .map(({ guest, stays }) => ({
       guest,
       stays,
-      latest: stays.reduce((best, stay) => (stay.checkIn > best.checkIn ? stay : best), stays[0]),
+      latest: stays.reduce((best, stay) => {
+        const byCreated = (stay.createdAt ?? "").localeCompare(best.createdAt ?? "");
+        if (byCreated !== 0) return byCreated > 0 ? stay : best;
+        const byReservation = (stay.reservationId ?? "").localeCompare(best.reservationId ?? "");
+        if (byReservation !== 0) return byReservation > 0 ? stay : best;
+        return stay.checkIn > best.checkIn ? stay : best;
+      }, stays[0]),
     }))
-    .filter(({ guest, stays, latest }) => {
-      if (!q) return true;
-      const needle = q.toLocaleLowerCase("es-MX");
-      return [
-        guest.full_name,
-        guest.phone,
-        guest.email,
-        ...stays.flatMap((stay) => [
-          stay.folioCode,
-          stay.paymentStatus,
-          stay.checkIn,
-          stay.checkOut,
-        ]),
-        latest.folioCode,
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLocaleLowerCase("es-MX").includes(needle));
-    })
     .sort((a, b) => {
-      const byLatestStay = b.latest.checkIn.localeCompare(a.latest.checkIn);
-      return byLatestStay || a.guest.full_name.localeCompare(b.guest.full_name, "es-MX");
+      const byColumn = (() => {
+        switch (sortColumn) {
+          case "huesped":
+            return compareByDirection(a.guest.full_name, b.guest.full_name, sortDirection);
+          case "telefono":
+            return compareByDirection(a.guest.phone ?? "", b.guest.phone ?? "", sortDirection);
+          case "folio":
+            return compareByDirection(a.latest.folioCode ?? "", b.latest.folioCode ?? "", sortDirection);
+          case "pago":
+            return compareByDirection(
+              a.latest.paymentStatus ?? "",
+              b.latest.paymentStatus ?? "",
+              sortDirection,
+            );
+          case "resumen":
+            return compareByDirection(a.stays.length, b.stays.length, sortDirection);
+          case "visita":
+            return compareByDirection(a.latest.checkIn, b.latest.checkIn, sortDirection);
+          case "alta":
+          default:
+            return compareByDirection(a.latest.createdAt ?? "", b.latest.createdAt ?? "", sortDirection);
+        }
+      })();
+      if (byColumn !== 0) return byColumn;
+      const byReservation = (b.latest.reservationId ?? "").localeCompare(a.latest.reservationId ?? "");
+      if (byReservation !== 0) return byReservation;
+      return a.guest.full_name.localeCompare(b.guest.full_name, "es-MX");
     });
 
   const totalCount = guestsWithStays.length;
@@ -304,7 +334,14 @@ export default async function GuestsPage({
         `${latest.checkIn} ${latest.checkOut} ${latest.folioCode ?? ""}`,
         <GuestHistoryDetail key={`history-${guest.id}`} stays={stays} latest={latest} />,
       ),
-      new Date(guest.created_at).toLocaleDateString("es-MX", { timeZone: "America/Mexico_City" }),
+      ft(
+        latest.createdAt ? formatRosterDateTime(latest.createdAt) : guest.created_at,
+        <span className="whitespace-nowrap tabular-nums">
+          {latest.createdAt
+            ? formatRosterDateTime(latest.createdAt)
+            : new Date(guest.created_at).toLocaleDateString("es-MX", { timeZone: "America/Mexico_City" })}
+        </span>,
+      ),
       ft(
         "eliminar",
         <GuestDeleteButton
@@ -345,17 +382,15 @@ export default async function GuestsPage({
       </Card>
 
       <ResponsiveTable
-        headers={["Huésped", "Teléfono", "Folio", "Pago", "Resumen", "Última visita", "Alta", ""]}
+        columns={ADMIN_GUESTS_COLUMNS}
         rows={rows}
-        filterMode="global"
         dense
         serverPagination={{
           page,
           pageSize,
           totalCount,
-          searchQuery: q,
-          searchPlaceholder: "Buscar por nombre, teléfono, email o folio…",
         }}
+        serverSort={{ column: sortColumn, direction: sortDirection }}
       />
     </div>
   );

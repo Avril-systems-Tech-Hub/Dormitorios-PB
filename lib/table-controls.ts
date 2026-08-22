@@ -89,6 +89,39 @@ export function matchesNumericRange(amount: number, value: string): boolean {
   return true;
 }
 
+export function matchesTextFilter(haystack: string, filter: string): boolean {
+  const needle = filter.trim().toLowerCase();
+  if (!needle) return true;
+  return haystack.toLowerCase().includes(needle);
+}
+
+export const PAID_STATUS_FILTER_OPTIONS: TableColumnFilterOption[] = [
+  ALL_FILTER_OPTION,
+  { value: "liquidated", label: "Pagado" },
+  { value: "unpaid", label: "No pagado" },
+];
+
+export function matchesPaidStatusFilter(paymentStatus: string | undefined, filter: string): boolean {
+  if (!filter) return true;
+  const status = (paymentStatus ?? "pending").toLowerCase();
+  if (filter === "liquidated") return status === "liquidated";
+  if (filter === "unpaid") return status !== "liquidated";
+  return status === filter.toLowerCase();
+}
+
+export function compareByDirection(
+  a: string | number,
+  b: string | number,
+  direction: SortDirection,
+): number {
+  const mul = direction === "asc" ? 1 : -1;
+  if (typeof a === "number" && typeof b === "number") {
+    if (a === b) return 0;
+    return (a < b ? -1 : 1) * mul;
+  }
+  return String(a).localeCompare(String(b), "es-MX", { numeric: true }) * mul;
+}
+
 export function nextSortState(
   currentColumn: string | null,
   currentDirection: SortDirection,

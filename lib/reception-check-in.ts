@@ -63,6 +63,63 @@ export const RECENT_RESERVATION_LIMIT_OPTIONS = [5, 10, 15, 20] as const;
 export type RecentReservationLimit = (typeof RECENT_RESERVATION_LIMIT_OPTIONS)[number];
 export const DEFAULT_RECENT_RESERVATION_LIMIT: RecentReservationLimit = 20;
 
+export const RECEPTION_LIST_PARAM = "reception";
+export const RECEPTION_RESERVATION_PARAM = "checkin_reservation";
+export type ReceptionListMode = "search" | "recent";
+
+export function parseReceptionListMode(value: string | null | undefined): ReceptionListMode {
+  return value === "recent" ? "recent" : "search";
+}
+
+export function buildReceptionDashboardPath(
+  currentSearch: URLSearchParams | string,
+  patch: {
+    listMode?: ReceptionListMode | null;
+    reservationId?: string | null;
+  },
+): string {
+  const params = new URLSearchParams(
+    typeof currentSearch === "string" ? currentSearch : currentSearch.toString(),
+  );
+
+  if (patch.listMode === "recent") {
+    params.set(RECEPTION_LIST_PARAM, "recent");
+  } else if (patch.listMode === "search" || patch.listMode === null) {
+    params.delete(RECEPTION_LIST_PARAM);
+  }
+
+  if (patch.reservationId) {
+    params.set(RECEPTION_RESERVATION_PARAM, patch.reservationId);
+  } else if (patch.reservationId === null) {
+    params.delete(RECEPTION_RESERVATION_PARAM);
+  }
+
+  const qs = params.toString();
+  return qs ? `/dashboard?${qs}` : "/dashboard";
+}
+
+/** Explicit parent for the reception back control; never uses browser history. */
+export function getReceptionSessionBackHref(
+  pathname: string,
+  search: URLSearchParams | string,
+): string | null {
+  const params = typeof search === "string" ? new URLSearchParams(search) : search;
+
+  if (pathname !== "/dashboard") {
+    return "/dashboard";
+  }
+
+  if (params.get(RECEPTION_RESERVATION_PARAM)) {
+    return buildReceptionDashboardPath(params, { reservationId: null });
+  }
+
+  if (parseReceptionListMode(params.get(RECEPTION_LIST_PARAM)) === "recent") {
+    return buildReceptionDashboardPath(params, { listMode: "search" });
+  }
+
+  return null;
+}
+
 export function normalizeRecentReservationLimit(value: number): RecentReservationLimit {
   if (RECENT_RESERVATION_LIMIT_OPTIONS.includes(value as RecentReservationLimit)) {
     return value as RecentReservationLimit;

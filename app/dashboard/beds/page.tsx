@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSessionProfile } from "@/lib/auth/guards";
+import { autoCloseLiquidatedStays } from "@/lib/auto-checkout";
 import { buildBedOccupancyMap, matchesBedOccupancySearch } from "@/lib/bed-occupancy";
 import { BED_TOTAL_COUNT, BED_ZONE_LABELS, formatBedLabel, groupBedsByZone } from "@/lib/beds";
 import { Card } from "@/components/ui/card";
@@ -87,7 +88,7 @@ function BedZoneSection({
                       ) : isOccupied ? (
                         <Badge variant="warning">Ocupada</Badge>
                       ) : pendingCheckout ? (
-                        <Badge variant="warning">Salida pendiente</Badge>
+                        <Badge variant="warning">Saldo pendiente</Badge>
                       ) : (
                         <Badge variant="success">Libre</Badge>
                       )}
@@ -141,6 +142,7 @@ export default async function BedsPage({
   const canManageBedStatus = profile.role === "admin" || profile.role === "reception";
 
   const admin = createAdminClient();
+  await autoCloseLiquidatedStays();
 
   const { data: beds } = await admin
     .from("beds")
@@ -179,6 +181,7 @@ export default async function BedsPage({
         <h2 className="text-lg font-semibold text-text-main">Mapa de {BED_TOTAL_COUNT} camas</h2>
         <p className="mt-1 text-sm text-text-muted">
           Zona mixta (1a–15c) y zona solo mujeres (1a–7c). Ocupada = estancia vigente hoy con pago parcial o liquidado.
+          Salida pendiente = el periodo ya terminó y el folio aún tiene saldo. Las liquidadas se cierran solas a las 11:00.
           {canManageBedStatus ? " Puedes bloquear o desbloquear camas en cada tarjeta." : null}
         </p>
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 rounded-lg border border-border-soft bg-surface-soft/40 px-3 py-2 text-xs font-medium text-text-muted">
@@ -189,6 +192,10 @@ export default async function BedsPage({
           <span className="inline-flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-full border border-red-400 bg-red-100" />
             Ocupada
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full border border-amber-400 bg-amber-100" />
+            Saldo al salir
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-full border border-slate-400 bg-slate-200" />

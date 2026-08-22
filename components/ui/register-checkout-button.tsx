@@ -22,7 +22,7 @@ export function RegisterCheckoutButton({
       balanceDue > 0
         ? ` El saldo pendiente de $${balanceDue.toFixed(2)} permanecerá en el folio.`
         : "";
-    if (!window.confirm(`¿Registrar la salida y liberar la cama?${debtNotice}`)) return;
+    if (!window.confirm(`¿Cerrar la estancia?${debtNotice}`)) return;
 
     startTransition(async () => {
       const formData = new FormData();
@@ -48,7 +48,7 @@ export function RegisterCheckoutButton({
           : "mt-2 inline-flex w-full items-center justify-center rounded-md bg-mkt-slate px-3 py-2 text-xs font-semibold text-white transition hover:bg-mkt-slate-deep disabled:opacity-50"
       }
     >
-      {pending ? "Registrando salida…" : "Registrar salida y liberar cama"}
+      {pending ? "Cerrando estancia…" : "Cerrar estancia"}
     </button>
   );
 }
