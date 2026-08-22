@@ -142,7 +142,11 @@ export function ReservationPaymentInline({
         disabled={isPending || !numAmount || numAmount <= 0 || exceedsMax || !effectiveDate}
         className="w-full rounded bg-brand-primary px-2 py-1 text-xs font-medium text-white hover:bg-brand-secondary disabled:opacity-40"
       >
-        {isPending ? "Registrando..." : "Registrar pago"}
+        {isPending
+          ? "Registrando..."
+          : numAmount > 0 && numAmount >= maxPayable
+            ? "Registrar pago y WhatsApp"
+            : "Registrar pago"}
       </button>
 
       {message && (

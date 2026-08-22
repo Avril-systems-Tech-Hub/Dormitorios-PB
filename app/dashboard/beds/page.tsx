@@ -60,6 +60,7 @@ function BedZoneSection({
                 const isBlocked = bed.status === "blocked";
                 const detail = bedDetailMap.get(bed.id) ?? null;
                 const isOccupied = detail?.in_house_today ?? false;
+                const pendingCheckout = detail?.pending_checkout ?? false;
                 const lockerLabel = detail
                   ? formatLockerLabel(detail.locker_number, detail.locker_days)
                   : null;
@@ -74,7 +75,9 @@ function BedZoneSection({
                         ? "border-slate-300 bg-slate-200/80"
                         : isOccupied
                           ? "border-red-300 bg-red-50"
-                          : "border-emerald-300 bg-emerald-50"
+                          : pendingCheckout
+                            ? "border-amber-300 bg-amber-50"
+                            : "border-emerald-300 bg-emerald-50"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -83,6 +86,8 @@ function BedZoneSection({
                         <Badge variant="danger">Bloqueada</Badge>
                       ) : isOccupied ? (
                         <Badge variant="warning">Ocupada</Badge>
+                      ) : pendingCheckout ? (
+                        <Badge variant="warning">Salida pendiente</Badge>
                       ) : (
                         <Badge variant="success">Libre</Badge>
                       )}

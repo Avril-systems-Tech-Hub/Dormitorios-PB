@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import crypto from "crypto";
-import QRCode from "qrcode";
-import fs from "fs";
-import path from "path";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizeMexicanPhone } from "@/lib/phone";
-import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import {
+  mexicoCityDateTime,
+  STAY_PERIOD_END_TIME,
+  STAY_PERIOD_START_TIME,
+} from "@/lib/dates";
+import { generateWhatsAppReservationPdf } from "@/lib/whatsapp-reservation-pdf";
 
 // Función para validar que la petición realmente viene de Ycloud
 function verifySignature(bodyText: string, headerValue: string | null, secret: string) {
@@ -198,8 +200,8 @@ export async function POST(req: Request) {
           created_by: null, // Sistema automatizado
           check_in_date: checkInStr,
           check_out_date: checkOutStr,
-          check_in_at: `${checkInStr}T15:00:00`,
-          check_out_at: `${checkOutStr}T12:00:00`,
+          check_in_at: mexicoCityDateTime(checkInStr, STAY_PERIOD_START_TIME),
+          check_out_at: mexicoCityDateTime(checkOutStr, STAY_PERIOD_END_TIME),
           nights: nights,
           notes: notes,
           reservation_source: "guest_app"
@@ -221,96 +223,15 @@ export async function POST(req: Request) {
         }));
         await supabase.from("reservation_guests").insert(guestInserts);
 
-        // --- 7. GENERAR EL PDF ---
-        const pdfDoc = await PDFDocument.create();
-        const page = pdfDoc.addPage([400, 600]);
-        const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-        const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
-
-        // Colores
-        const primaryColor = rgb(0.09, 0.13, 0.20); // Oscuro mkt-slate
-        const secondaryColor = rgb(0.85, 0.35, 0.25); // Terracotta aprox
-        const grayText = rgb(0.4, 0.4, 0.4);
-        const lightGray = rgb(0.95, 0.95, 0.95);
-        const white = rgb(1, 1, 1);
-
-        // Cabecera oscura
-        page.drawRectangle({ x: 0, y: 500, width: 400, height: 100, color: primaryColor });
-
-        // Logo
-        let image;
-        try {
-          const imagePath = path.join(process.cwd(), "public", "logo-dorm.png");
-          const imageBytes = fs.readFileSync(imagePath);
-          image = await pdfDoc.embedJpg(imageBytes);
-        } catch (e) {
-          console.error("No se pudo cargar el logo:", e);
-        }
-
-        if (image) {
-          const dims = image.scaleToFit(60, 60);
-          page.drawImage(image, { x: 30, y: 520, width: dims.width, height: dims.height });
-          page.drawText('Dormitorios Plaza Basilica', { x: 105, y: 555, size: 16, font: boldFont, color: white });
-          page.drawText('CONFIRMACIÓN DE RESERVACIÓN', { x: 105, y: 535, size: 9, font: regularFont, color: rgb(0.8, 0.8, 0.8) });
-        } else {
-          page.drawText('Dormitorios Plaza Basilica', { x: 40, y: 555, size: 16, font: boldFont, color: white });
-          page.drawText('CONFIRMACIÓN DE RESERVACIÓN', { x: 40, y: 535, size: 9, font: regularFont, color: rgb(0.8, 0.8, 0.8) });
-        }
-
-        // Folio Badge
-        page.drawRectangle({ x: 40, y: 440, width: 320, height: 35, color: lightGray, borderColor: rgb(0.8, 0.8, 0.8), borderWidth: 1 });
-        page.drawText('Folio de Reserva:', { x: 55, y: 452, size: 11, font: regularFont, color: grayText });
-        page.drawText(folioCode, { x: 155, y: 452, size: 14, font: boldFont, color: primaryColor });
-
-        // Datos del huésped y estancia
-        const startY = 390;
-
-        // Columna 1
-        page.drawText('Titular:', { x: 40, y: startY, size: 10, font: regularFont, color: grayText });
-        page.drawText(guests[0].full_name, { x: 40, y: startY - 14, size: 12, font: boldFont, color: primaryColor });
-
-        page.drawText('Entrada:', { x: 40, y: startY - 45, size: 10, font: regularFont, color: grayText });
-        page.drawText(checkInStr, { x: 40, y: startY - 59, size: 12, font: boldFont, color: primaryColor });
-
-        page.drawText('Noches:', { x: 40, y: startY - 90, size: 10, font: regularFont, color: grayText });
-        page.drawText(nights.toString(), { x: 40, y: startY - 104, size: 12, font: boldFont, color: primaryColor });
-
-        // Columna 2
-        page.drawText('Personas:', { x: 220, y: startY, size: 10, font: regularFont, color: grayText });
-        page.drawText(guests.length.toString(), { x: 220, y: startY - 14, size: 12, font: boldFont, color: primaryColor });
-
-        page.drawText('Salida:', { x: 220, y: startY - 45, size: 10, font: regularFont, color: grayText });
-        page.drawText(checkOutStr, { x: 220, y: startY - 59, size: 12, font: boldFont, color: primaryColor });
-
-        // Linea separadora
-        page.drawLine({ start: { x: 40, y: startY - 130 }, end: { x: 360, y: startY - 130 }, thickness: 1, color: rgb(0.9, 0.9, 0.9) });
-
-        // Caja de Total
-        page.drawRectangle({ x: 40, y: startY - 185, width: 320, height: 40, color: rgb(0.96, 0.98, 1) });
-        page.drawText('Total a Pagar en Caja:', { x: 55, y: startY - 171, size: 12, font: boldFont, color: primaryColor });
-        page.drawText(`$${totalAmount.toFixed(2)} MXN`, { x: 220, y: startY - 171, size: 14, font: boldFont, color: secondaryColor });
-
-        // --- GENERAR QR ---
-        try {
-          const qrText = `Folio: ${folioCode}\nTitular: ${guests[0].full_name}\nPersonas: ${guests.length}\nEntrada: ${checkInStr}\nSalida: ${checkOutStr}\nTotal a Pagar: $${totalAmount.toFixed(2)} MXN`;
-          const qrBuffer = await QRCode.toBuffer(qrText, { errorCorrectionLevel: 'M', margin: 1 });
-          const qrImage = await pdfDoc.embedPng(qrBuffer);
-          
-          page.drawImage(qrImage, { x: 270, y: 65, width: 90, height: 90 });
-          
-          page.drawText('¡Gracias por elegirnos!', { x: 40, y: 130, size: 14, font: boldFont, color: primaryColor });
-          page.drawText('Escanea este código QR', { x: 40, y: 110, size: 10, font: regularFont, color: grayText });
-          page.drawText('en recepción para agilizar', { x: 40, y: 95, size: 10, font: regularFont, color: grayText });
-          page.drawText('tu asignación de camas.', { x: 40, y: 80, size: 10, font: regularFont, color: grayText });
-        } catch (qrError) {
-          console.error("Error generando el QR:", qrError);
-        }
-
-        // Pie de página
-        page.drawLine({ start: { x: 40, y: 40 }, end: { x: 360, y: 40 }, thickness: 1, color: rgb(0.9, 0.9, 0.9) });
-        page.drawText('Dormitorios Plaza Basílica • Check-in rápido, control en caja.', { x: 65, y: 20, size: 9, font: regularFont, color: grayText });
-
-        const pdfBytes = await pdfDoc.save();
+        const pdfBytes = await generateWhatsAppReservationPdf({
+          guestName: guests[0].full_name,
+          folioCode,
+          checkInDate: checkInStr,
+          checkOutDate: checkOutStr,
+          nights,
+          guestCount: guests.length,
+          totalAmount,
+        });
 
         // --- 8. SUBIR PDF A SUPABASE STORAGE ---
         const bucketName = "whatsapp-pdfs";

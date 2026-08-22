@@ -1,5 +1,9 @@
 export const MEXICO_CITY_TZ = "America/Mexico_City";
 
+/** Business stay period: $120 covers 11:00 → 11:00 (America/Mexico_City). */
+export const STAY_PERIOD_START_TIME = "11:00";
+export const STAY_PERIOD_END_TIME = "11:00";
+
 export function getMexicoCityDateString(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: MEXICO_CITY_TZ }).format(date);
 }
@@ -16,6 +20,42 @@ export function mexicoCityCalendarDate(dateString: string) {
 export function mexicoCityDateTime(dateString: string, time: string) {
   const normalized = time.length === 5 ? `${time}:00` : time;
   return `${dateString}T${normalized}${CDMX_OFFSET}`;
+}
+
+/** Instant when a stay period starts (check-in date at 11:00 CDMX). */
+export function stayPeriodStartAt(checkInDate: string) {
+  return mexicoCityDateTime(checkInDate, STAY_PERIOD_START_TIME);
+}
+
+/** Instant when a stay period ends and the bed frees (check-out date at 11:00 CDMX). */
+export function stayPeriodEndAt(checkOutDate: string) {
+  return mexicoCityDateTime(checkOutDate, STAY_PERIOD_END_TIME);
+}
+
+/**
+ * Live bed hold for the 11:00–11:00 policy:
+ * - occupied from the check-in calendar day (early arrivals still hold the bed)
+ * - frees at check-out date 11:00 CDMX
+ */
+export function isWithinStayPeriod(
+  checkInDate: string,
+  checkOutDate: string,
+  now = new Date(),
+) {
+  if (!checkInDate || !checkOutDate) return false;
+  const today = getMexicoCityDateString(now);
+  if (checkInDate > today) return false;
+  const endMs = Date.parse(stayPeriodEndAt(checkOutDate));
+  if (!Number.isFinite(endMs)) return false;
+  return now.getTime() < endMs;
+}
+
+/** True once the bed has freed by schedule (now >= check-out 11:00). */
+export function hasStayPeriodEnded(checkOutDate: string, now = new Date()) {
+  if (!checkOutDate) return false;
+  const endMs = Date.parse(stayPeriodEndAt(checkOutDate));
+  if (!Number.isFinite(endMs)) return false;
+  return now.getTime() >= endMs;
 }
 
 /** Format an instant (timestamptz / ISO) for display in Mexico City. */

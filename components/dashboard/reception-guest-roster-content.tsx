@@ -21,9 +21,11 @@ import {
   parseReservationPeriod,
   type ReservationPeriod,
 } from "@/lib/dates";
+import { reservationHasPendingCheckout } from "@/lib/bed-occupancy";
 import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 import { RegisterCheckoutButton } from "@/components/ui/register-checkout-button";
 import { ReservationPaymentInline } from "@/components/ui/reservation-payment-inline";
+import { ReceptionGuestEditButton } from "@/components/dashboard/reception-guest-edit-button";
 import { Badge } from "@/components/ui/badge";
 
 type FolioFields = {
@@ -37,10 +39,16 @@ type FolioFields = {
 
 type ReservationGuestRow = {
   id: string;
+  guest_id: string;
+  bed_id: string | null;
   locker_number: string | number | null;
+  locker_days: number | null;
   final_rate: number | null;
   locker_amount: number | null;
-  guests: { full_name?: string; sex?: string } | { full_name?: string; sex?: string }[] | null;
+  guests:
+    | { id?: string; full_name?: string; phone?: string | null; sex?: string }
+    | { id?: string; full_name?: string; phone?: string | null; sex?: string }[]
+    | null;
   beds: { bed_number?: string | number; zone?: string } | { bed_number?: string | number; zone?: string }[] | null;
   reservations:
     | {
@@ -139,8 +147,8 @@ export async function ReceptionGuestRosterContent({
   let query = supabase
     .from("reservation_guests")
     .select(
-      `id, locker_number, final_rate, locker_amount,
-      guests!inner(full_name, sex),
+      `id, guest_id, bed_id, locker_number, locker_days, final_rate, locker_amount,
+      guests!inner(id, full_name, phone, sex),
       beds(bed_number, zone),
       reservations!inner(id, created_at, check_in_date, check_out_date, nights, status, checked_out_at, notes, folios!inner(id, folio_code, total_amount, paid_amount, balance_due, payment_status))`,
       { count: "exact" },
@@ -157,8 +165,8 @@ export async function ReceptionGuestRosterContent({
   }
 
   const { data: guestRows, count } = await query
-    .order("check_in_date", { ascending: false, foreignTable: "reservations" })
-    .order("full_name", { ascending: true, foreignTable: "guests" })
+    .order("created_at", { ascending: false, foreignTable: "reservations" })
+    .order("id", { ascending: false })
     .range(from, to);
 
   const rows = ((guestRows ?? []) as ReservationGuestRow[]).map((row) => {
@@ -189,10 +197,9 @@ export async function ReceptionGuestRosterContent({
     const paymentStatus = folio?.payment_status ?? "pending";
     const reservationNotes = reservation?.notes?.trim() || null;
     const isCheckedOut = Boolean(reservation?.checked_out_at) || reservation?.status === "checked_out";
-    const pendingCheckout =
-      !isCheckedOut &&
-      reservation?.status !== "cancelled" &&
-      Boolean(checkOut && checkOut <= today);
+    const pendingCheckout = reservation
+      ? reservationHasPendingCheckout(reservation)
+      : false;
     const canCheckout =
       !isCheckedOut &&
       reservation?.status !== "cancelled" &&
@@ -267,6 +274,22 @@ export async function ReceptionGuestRosterContent({
           ) : null}
         </span>,
       ),
+      ft(
+        "editar",
+        guest?.id && reservation?.id && row.guest_id ? (
+          <ReceptionGuestEditButton
+            reservationId={reservation.id}
+            guestId={row.guest_id}
+            fullName={guestName === "—" ? "" : guestName}
+            phone={guest.phone ?? null}
+            bedId={row.bed_id}
+            lockerNumber={normalizeLockerCode(row.locker_number)}
+            canEditAssignments={!isCheckedOut}
+          />
+        ) : (
+          <span className="text-xs text-text-muted">—</span>
+        ),
+      ),
     ];
   });
 
@@ -314,6 +337,7 @@ export async function ReceptionGuestRosterContent({
           "Pago / saldo",
           "Nota de reservación",
           "Estado / salida",
+          "Editar",
         ]}
         rows={rows}
         filterMode="global"

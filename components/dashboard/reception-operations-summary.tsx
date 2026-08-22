@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { buildBedOccupancyMap } from "@/lib/bed-occupancy";
 import { computeBedSummaryCounts } from "@/lib/bed-summary";
-import { getMexicoCityDateString } from "@/lib/dates";
+import { getMexicoCityDateString, hasStayPeriodEnded } from "@/lib/dates";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -36,7 +36,18 @@ function StatCard({ label, value, hint, badge, href }: StatCardProps) {
 
 export async function ReceptionOperationsSummary() {
   const supabase = createAdminClient();
-  const today = getMexicoCityDateString();
+  const now = new Date();
+  const today = getMexicoCityDateString(now);
+  // Pending = stay period ended at 11:00 CDMX without formal checkout.
+  const pendingCheckoutFilter = hasStayPeriodEnded(today, now)
+    ? ("lte" as const)
+    : ("lt" as const);
+
+  const pendingCheckoutsQuery = supabase
+    .from("reservations")
+    .select("id", { count: "exact", head: true })
+    .not("status", "in", '("cancelled","checked_out")')
+    .is("checked_out_at", null);
 
   const [
     { count: activeReservations },
@@ -52,12 +63,9 @@ export async function ReceptionOperationsSummary() {
       .select("id", { count: "exact", head: true })
       .not("status", "in", '("cancelled","checked_out")')
       .is("checked_out_at", null),
-    supabase
-      .from("reservations")
-      .select("id", { count: "exact", head: true })
-      .not("status", "in", '("cancelled","checked_out")')
-      .is("checked_out_at", null)
-      .lte("check_out_date", today),
+    pendingCheckoutFilter === "lte"
+      ? pendingCheckoutsQuery.lte("check_out_date", today)
+      : pendingCheckoutsQuery.lt("check_out_date", today),
     supabase
       .from("folios")
       .select("id", { count: "exact", head: true })
@@ -88,7 +96,7 @@ export async function ReceptionOperationsSummary() {
       .not("bed_id", "is", null),
   ]);
 
-  const bedOccupancyMap = buildBedOccupancyMap(rgRows ?? [], today);
+  const bedOccupancyMap = buildBedOccupancyMap(rgRows ?? [], now);
   const bedCounts = computeBedSummaryCounts(beds ?? [], bedOccupancyMap);
 
   return (
@@ -97,7 +105,7 @@ export async function ReceptionOperationsSummary() {
         <StatCard
           label="Salidas pendientes"
           value={pendingCheckouts ?? 0}
-          hint="Vencidas por confirmar"
+          hint="Periodo 11:00 terminado, falta confirmar"
           badge={
             (pendingCheckouts ?? 0) > 0
               ? { text: "Registrar salida", variant: "warning" }

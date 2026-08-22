@@ -1,4 +1,8 @@
-import { getMexicoCityDateString } from "@/lib/dates";
+import {
+  getMexicoCityDateString,
+  hasStayPeriodEnded,
+  isWithinStayPeriod,
+} from "@/lib/dates";
 import { normalizeLockerCode } from "@/lib/locker";
 
 export type BedOccupancyDetail = {
@@ -18,8 +22,10 @@ export type BedOccupancyDetail = {
   notes?: string;
   locker_number?: string | null;
   locker_days?: number;
-  /** true when check-in/out includes today (in-house) */
+  /** true when the 11:00–11:00 stay period includes now */
   in_house_today?: boolean;
+  /** true when period ended at 11:00 but reception has not confirmed checkout */
+  pending_checkout?: boolean;
 };
 
 type ReservationGuestRow = {
@@ -33,7 +39,7 @@ type ReservationGuestRow = {
 };
 
 type ReservationRow = {
-  id: string;
+  id?: string;
   status?: string;
   checked_out_at?: string | null;
   reservation_source?: string;
@@ -58,34 +64,56 @@ function unwrap<T>(value: T | T[] | null | undefined): T | undefined {
 const NON_BLOCKING_STATUSES = new Set(["cancelled", "checked_out"]);
 const PAID_FOLIO_STATUSES = new Set(["partial", "liquidated"]);
 
-/** Guest occupies the bed on calendar day `today` using [check-in, check-out). */
+/** Guest occupies the bed on calendar day `date` using [check-in, check-out). */
 export function reservationInHouseOnDate(
   checkIn: string,
   checkOut: string,
-  today = getMexicoCityDateString(),
+  date = getMexicoCityDateString(),
 ) {
-  return checkIn <= today && today < checkOut;
+  return checkIn <= date && date < checkOut;
 }
 
-export function reservationBlocksDate(
+/** True while the guest still holds the bed under the 11:00–11:00 period. */
+export function reservationIsInHouseNow(
   reservation: Pick<ReservationRow, "status" | "checked_out_at" | "check_in_date" | "check_out_date">,
-  date = getMexicoCityDateString(),
+  now = new Date(),
 ) {
   if (reservation.checked_out_at || NON_BLOCKING_STATUSES.has(reservation.status ?? "")) return false;
   const checkIn = reservation.check_in_date ?? "";
   const checkOut = reservation.check_out_date ?? "";
-  return Boolean(checkIn && checkOut && reservationInHouseOnDate(checkIn, checkOut, date));
+  return Boolean(checkIn && checkOut && isWithinStayPeriod(checkIn, checkOut, now));
+}
+
+/**
+ * Whether the reservation blocks a calendar planning date.
+ * For "today", uses the live 11:00–11:00 window; for other dates, [check-in, check-out).
+ */
+export function reservationBlocksDate(
+  reservation: Pick<ReservationRow, "status" | "checked_out_at" | "check_in_date" | "check_out_date">,
+  date = getMexicoCityDateString(),
+  now = new Date(),
+) {
+  if (reservation.checked_out_at || NON_BLOCKING_STATUSES.has(reservation.status ?? "")) return false;
+  const checkIn = reservation.check_in_date ?? "";
+  const checkOut = reservation.check_out_date ?? "";
+  if (!checkIn || !checkOut) return false;
+
+  const today = getMexicoCityDateString(now);
+  if (date === today) {
+    return isWithinStayPeriod(checkIn, checkOut, now);
+  }
+  return reservationInHouseOnDate(checkIn, checkOut, date);
 }
 
 export function reservationHasPendingCheckout(
   reservation: Pick<ReservationRow, "status" | "checked_out_at" | "check_out_date">,
-  today = getMexicoCityDateString(),
+  now = new Date(),
 ) {
   if (reservation.checked_out_at || NON_BLOCKING_STATUSES.has(reservation.status ?? "")) return false;
-  return Boolean(reservation.check_out_date && reservation.check_out_date <= today);
+  return Boolean(reservation.check_out_date && hasStayPeriodEnded(reservation.check_out_date, now));
 }
 
-function assignmentRank(reservation: ReservationRow, today: string) {
+function assignmentRank(reservation: ReservationRow, now: Date) {
   if (reservation.checked_out_at || NON_BLOCKING_STATUSES.has(reservation.status ?? "")) return -1;
 
   const folio = unwrap(reservation.folios);
@@ -96,14 +124,14 @@ function assignmentRank(reservation: ReservationRow, today: string) {
   if (!checkIn || !checkOut) return -1;
 
   const statusBoost = STATUS_PRIORITY[reservation.status ?? ""] ?? 5;
-  const inHouse = reservationBlocksDate(reservation, today);
-
-  if (inHouse) return 1000 + statusBoost;
+  if (reservationIsInHouseNow(reservation, now)) return 1000 + statusBoost;
+  // Keep pending checkouts visible on the bed card so reception can confirm salida.
+  if (reservationHasPendingCheckout(reservation, now)) return 100 + statusBoost;
 
   return -1;
 }
 
-function rowToDetail(row: ReservationGuestRow, today: string): BedOccupancyDetail | null {
+function rowToDetail(row: ReservationGuestRow, now: Date): BedOccupancyDetail | null {
   if (!row.bed_id) return null;
 
   const reservation = unwrap(row.reservations);
@@ -113,6 +141,8 @@ function rowToDetail(row: ReservationGuestRow, today: string): BedOccupancyDetai
   const folio = unwrap(reservation.folios);
   const checkIn = reservation.check_in_date ?? "";
   const checkOut = reservation.check_out_date ?? "";
+  const inHouse = reservationIsInHouseNow(reservation, now);
+  const pendingCheckout = reservationHasPendingCheckout(reservation, now);
 
   return {
     reservation_id: row.reservation_id,
@@ -131,7 +161,8 @@ function rowToDetail(row: ReservationGuestRow, today: string): BedOccupancyDetai
     notes: reservation.notes ?? undefined,
     locker_number: normalizeLockerCode(row.locker_number),
     locker_days: Number(row.locker_days ?? 0),
-    in_house_today: reservationBlocksDate(reservation, today),
+    in_house_today: inHouse,
+    pending_checkout: pendingCheckout,
   };
 }
 
@@ -148,13 +179,15 @@ function isBetterCandidate(
 
 /**
  * One assignment per bed from reservation_guests (same source as Reservas).
- * Includes only guests in-house today whose folio is partially or fully paid.
- * Unpaid, future, expired, checked-out, cancelled and historical rows are excluded.
+ * Includes guests in the live 11:00–11:00 window, plus pending checkouts
+ * (bed already free, salida still needs reception confirmation).
+ * Unpaid, future, checked-out, cancelled and historical rows are excluded.
  */
 export function buildBedOccupancyMap(
   rows: ReservationGuestRow[],
-  today = getMexicoCityDateString(),
+  todayOrNow: string | Date = new Date(),
 ) {
+  const now = todayOrNow instanceof Date ? todayOrNow : new Date();
   const map = new Map<string, BedOccupancyDetail>();
   const metaByBed = new Map<string, { rank: number; checkOut: string; createdAt: string }>();
 
@@ -164,7 +197,7 @@ export function buildBedOccupancyMap(
     const reservation = unwrap(row.reservations);
     if (!reservation) continue;
 
-    const rank = assignmentRank(reservation, today);
+    const rank = assignmentRank(reservation, now);
     if (rank < 0) continue;
 
     const checkOut = reservation.check_out_date ?? "";
@@ -175,7 +208,7 @@ export function buildBedOccupancyMap(
       continue;
     }
 
-    const detail = rowToDetail(row, today);
+    const detail = rowToDetail(row, now);
     if (!detail) continue;
 
     map.set(row.bed_id, detail);

@@ -19,11 +19,15 @@ import {
   MAX_EXPENSE_RECEIPT_BYTES,
   resolveExpenseReceiptMime,
 } from "@/lib/expense-receipt";
-import { getMexicoCityDateString } from "@/lib/dates";
+import {
+  getMexicoCityDateString,
+  mexicoCityDateTime,
+  STAY_PERIOD_END_TIME,
+  STAY_PERIOD_START_TIME,
+} from "@/lib/dates";
 import { getOpenShift } from "@/lib/open-shift";
 import { parseTsvToRows } from "@/lib/imports/tsv";
-import { sendWhatsAppTemplateMessage, buildPaymentConfirmationMessage } from "@/lib/ycloud";
-import { generatePaymentConfirmationPdf } from "@/lib/payment-pdf";
+import { deliverWhatsAppReservationReceipt } from "@/lib/whatsapp-payment-receipt";
 import type { CreateGuestReservationResult, GuestConfirmationPayload } from "@/lib/guest-reservation-confirmation";
 import { isCompleteMexicanPhone, normalizeMexicanPhone } from "@/lib/phone";
 import { escapeIlike } from "@/lib/pagination";
@@ -82,6 +86,18 @@ type ReservationGuestAssignmentRow = {
 function unwrapAssignmentRelation<T>(value: T | T[] | null | undefined): T | undefined {
   if (value == null) return undefined;
   return Array.isArray(value) ? value[0] : value;
+}
+
+function pickWhatsAppRecipient(rows: ReservationGuestAssignmentRow[]) {
+  for (const row of rows) {
+    const guest = unwrapAssignmentRelation(row.guests);
+    if (!guest?.phone || !isCompleteMexicanPhone(guest.phone)) continue;
+    return {
+      guest,
+      phone: normalizePhone(guest.phone),
+    };
+  }
+  return null;
 }
 
 function parseReservationGuestAssignments(rows: ReservationGuestAssignmentRow[]) {
@@ -520,8 +536,8 @@ export async function createReservationAction(
       created_by: actorId,
       check_in_date: checkInDate,
       check_out_date: checkOutDate,
-      check_in_at: `${checkInDate}T15:00:00`,
-      check_out_at: `${checkOutDate}T12:00:00`,
+      check_in_at: mexicoCityDateTime(checkInDate, STAY_PERIOD_START_TIME),
+      check_out_at: mexicoCityDateTime(checkOutDate, STAY_PERIOD_END_TIME),
       nights,
       status: "active",
       reservation_source: reservationSource,
@@ -801,114 +817,67 @@ async function registerPaymentCore(input: PaymentCoreInput): Promise<PaymentCore
   const newBalance = Number(paymentResult.balance_due);
   const newStatus = String(paymentResult.payment_status) as "liquidated" | "partial";
 
-  // --- Generar PDF y enviar WhatsApp automático al huésped (solo al liquidar) ---
+  // WhatsApp al titular con teléfono, solo cuando el folio queda liquidado.
   let whatsappSent = false;
-  if (newStatus === "liquidated") {
-  try {
-    if (reservationForPayment) {
-      const guestRows = guestRowsForPayment as Array<{
-          locker_days?: number | null;
-          guests?: { id?: string; full_name?: string; phone?: string };
-        }>;
-      const mainGuestRow = guestRows[0];
-      const mainGuest = unwrapAssignmentRelation(mainGuestRow?.guests);
-      const discPercent = Number(reservationForPayment.discount_percent ?? 0) || 0;
-      const totalLockerDays = guestRows.reduce((sum, row) => sum + Number(row.locker_days ?? 0), 0);
-      const bedDiscount = BASE_NIGHTLY_RATE * discPercent / 100 * guestRows.length * reservationForPayment.nights;
-      const lockerDiscount = LOCKER_DAILY_PRICE * discPercent / 100 * totalLockerDays;
-      const discAmount = discPercent > 0 ? Math.round((bedDiscount + lockerDiscount) * 100) / 100 : 0;
-
-      if (mainGuest?.phone) {
-        const guestPhone = normalizePhone(mainGuest.phone);
-        if (guestPhone) {
-          // 1. Generar PDF de confirmación de pago
-          const pdfBytes = await generatePaymentConfirmationPdf({
-            guestName: mainGuest.full_name ?? "Huésped",
+  if (newStatus === "liquidated" && reservationForPayment) {
+    try {
+      const recipient = pickWhatsAppRecipient(guestRowsForPayment);
+      if (recipient) {
+        const guestName = recipient.guest.full_name ?? "Huésped";
+        const waResult = await deliverWhatsAppReservationReceipt({
+          guestPhone: recipient.phone,
+          guestName,
+          pdf: {
+            guestName,
             folioCode: folio.folio_code,
-            amount,
+            checkInDate: reservationForPayment.check_in_date,
+            checkOutDate: reservationForPayment.check_out_date,
+            nights: reservationForPayment.nights,
+            guestCount: guestRowsForPayment.length,
+            totalAmount: expectedTotal,
+            paid: true,
+            assignments: paymentAssignments,
+          },
+          fallback: {
+            folioCode: folio.folio_code,
+            amount: expectedTotal,
             method,
             balanceDue: newBalance,
             paymentStatus: newStatus,
             checkInDate: reservationForPayment.check_in_date,
             checkOutDate: reservationForPayment.check_out_date,
             nights: reservationForPayment.nights,
-            guestCount: guestRows.length,
-            totalAmount: expectedTotal,
-            discountPercent: discPercent || undefined,
-            discountAmount: discAmount || undefined,
-            originalTotal: discPercent > 0 ? expectedTotal + discAmount : undefined,
             assignments: paymentAssignments,
-          });
+          },
+        });
 
-          // 2. Subir PDF a Supabase Storage
-          const bucketName = "whatsapp-pdfs";
-          await supabase.storage.createBucket(bucketName, { public: true }).catch(() => {});
-          const pdfFileName = `pago-${folio.folio_code}.pdf`;
-          const { error: uploadError } = await supabase.storage
-            .from(bucketName)
-            .upload(pdfFileName, pdfBytes, { contentType: "application/pdf", upsert: true });
-
-          let waResult;
-          if (!uploadError) {
-            const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(pdfFileName);
-            const pdfPublicUrl = publicUrlData.publicUrl;
-
-            waResult = await sendWhatsAppTemplateMessage(
-              guestPhone,
-              process.env.YCLOUD_TEMPLATE_NAME || "payment_confirmation",
-              process.env.YCLOUD_TEMPLATE_LANGUAGE || "es",
-              [mainGuest.full_name ?? "Huésped", folio.folio_code, `$${amount.toFixed(2)} MXN`],
-              undefined,
-              { pdfUrl: pdfPublicUrl, filename: `comprobante-${folio.folio_code}.pdf` },
-            );
-          } else {
-            // Fallback: enviar solo texto si falla la subida del PDF
-            console.error("[registerPaymentAction] Error subiendo PDF:", uploadError);
-            const whatsappMessage = buildPaymentConfirmationMessage({
-              guestName: mainGuest.full_name ?? "Huésped",
-              folioCode: folio.folio_code,
-              amount,
-              method,
-              balanceDue: newBalance,
-              paymentStatus: newStatus,
-              checkInDate: reservationForPayment.check_in_date,
-              checkOutDate: reservationForPayment.check_out_date,
-              nights: reservationForPayment.nights,
-              assignments: paymentAssignments,
-            });
-            const { sendWhatsAppTextMessage } = await import("@/lib/ycloud");
-            waResult = await sendWhatsAppTextMessage(guestPhone, whatsappMessage);
-          }
-
-          // Registrar el mensaje en whatsapp_messages
-          await supabase.from("whatsapp_messages").insert({
-            guest_id: mainGuest.id ?? null,
-            reservation_id: reservationForPayment.id,
-            folio_id: folioId,
-            status: waResult.success ? "sent" : "failed",
-            phone: guestPhone,
-            payload: {
-              folio_code: folio.folio_code,
-              amount,
-              method,
-              ycloud_result: waResult,
-            },
-            delivered_at: waResult.success ? new Date().toISOString() : null,
-            error_message: waResult.error ?? null,
-          });
-          whatsappSent = Boolean(waResult.success);
-        }
+        await supabase.from("whatsapp_messages").insert({
+          guest_id: recipient.guest.id ?? null,
+          reservation_id: reservationForPayment.id,
+          folio_id: folioId,
+          status: waResult.success ? "sent" : "failed",
+          phone: recipient.phone,
+          payload: {
+            folio_code: folio.folio_code,
+            amount: expectedTotal,
+            method,
+            ycloud_result: waResult,
+          },
+          delivered_at: waResult.success ? new Date().toISOString() : null,
+          error_message: waResult.error ?? null,
+        });
+        whatsappSent = Boolean(waResult.success);
       }
+    } catch (waError) {
+      console.error("[registerPaymentCore] Error enviando WhatsApp:", waError);
     }
-  } catch (waError) {
-    // No bloquear el flujo principal si falla WhatsApp
-    console.error("[registerPaymentCore] Error enviando WhatsApp:", waError);
   }
-  } // fin if liquidated
 
   const successMessage =
     newStatus === "liquidated"
-      ? `Pago completo aplicado al folio ${folio.folio_code}.`
+      ? whatsappSent
+        ? `Pago completo aplicado al folio ${folio.folio_code}. WhatsApp enviado.`
+        : `Pago completo aplicado al folio ${folio.folio_code}. WhatsApp no enviado.`
       : `Pago parcial aplicado al folio ${folio.folio_code}.`;
 
   return {
@@ -2303,70 +2272,30 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
     );
   }
 
-  const mainGuestRow = guestRows[0];
-  const mainGuest = unwrapAssignmentRelation(mainGuestRow?.guests);
-
-  if (!mainGuest?.phone) {
+  const recipient = pickWhatsAppRecipient(guestRows);
+  if (!recipient) {
     return redirectWithResult(returnTo, "error", "No hay teléfono válido para enviar el comprobante.");
   }
 
-  const guestPhone = normalizePhone(mainGuest.phone);
-  if (!guestPhone) {
-    return redirectWithResult(returnTo, "error", "Teléfono inválido.");
-  }
+  const guestName = recipient.guest.full_name ?? "Huésped";
+  const amount = Number(folio.total_amount ?? folio.paid_amount ?? 0);
+  const paid = folio.payment_status === "liquidated";
 
-  const amount = Number(folio.paid_amount ?? 0);
-  const discPercent = Number(reservationForFolio.discount_percent ?? 0) || 0;
-  const totalLockerDays = guestRows.reduce((sum, row) => sum + Number(row.locker_days ?? 0), 0);
-  const bedDiscount = BASE_NIGHTLY_RATE * discPercent / 100 * guestRows.length * reservationForFolio.nights;
-  const lockerDiscount = LOCKER_DAILY_PRICE * discPercent / 100 * totalLockerDays;
-  const discAmount = discPercent > 0 ? Math.round((bedDiscount + lockerDiscount) * 100) / 100 : 0;
-  const originalTotal = discPercent > 0 ? Number(folio.total_amount ?? 0) + discAmount : 0;
-
-  // Generate PDF
-  const pdfBytes = await generatePaymentConfirmationPdf({
-    guestName: mainGuest.full_name ?? "Huésped",
-    folioCode: folio.folio_code,
-    amount,
-    method: "cash",
-    balanceDue: Number(folio.balance_due ?? 0),
-    paymentStatus: folio.payment_status,
-    checkInDate: reservationForFolio.check_in_date,
-    checkOutDate: reservationForFolio.check_out_date,
-    nights: reservationForFolio.nights,
-    guestCount: guestRows.length,
-    totalAmount: Number(folio.total_amount ?? 0),
-    discountPercent: discPercent || undefined,
-    discountAmount: discAmount || undefined,
-    originalTotal: originalTotal || undefined,
-    assignments: paymentAssignments,
-  });
-
-  // Upload PDF
-  const bucketName = "whatsapp-pdfs";
-  await supabase.storage.createBucket(bucketName, { public: true }).catch(() => {});
-  const pdfFileName = `pago-${folio.folio_code}.pdf`;
-  const { error: uploadError } = await supabase.storage
-    .from(bucketName)
-    .upload(pdfFileName, pdfBytes, { contentType: "application/pdf", upsert: true });
-
-  let waResult;
-  if (!uploadError) {
-    const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(pdfFileName);
-    const pdfPublicUrl = publicUrlData.publicUrl;
-
-    waResult = await sendWhatsAppTemplateMessage(
-      guestPhone,
-      process.env.YCLOUD_TEMPLATE_NAME || "payment_confirmation",
-      process.env.YCLOUD_TEMPLATE_LANGUAGE || "es",
-      [mainGuest.full_name ?? "Huésped", folio.folio_code, `$${amount.toFixed(2)} MXN`],
-      undefined,
-      { pdfUrl: pdfPublicUrl, filename: `comprobante-${folio.folio_code}.pdf` },
-    );
-  } else {
-    console.error("[resendPaymentReceipt] Error subiendo PDF:", uploadError);
-    const whatsappMessage = buildPaymentConfirmationMessage({
-      guestName: mainGuest.full_name ?? "Huésped",
+  const waResult = await deliverWhatsAppReservationReceipt({
+    guestPhone: recipient.phone,
+    guestName,
+    pdf: {
+      guestName,
+      folioCode: folio.folio_code,
+      checkInDate: reservationForFolio.check_in_date,
+      checkOutDate: reservationForFolio.check_out_date,
+      nights: reservationForFolio.nights,
+      guestCount: guestRows.length,
+      totalAmount: amount,
+      paid,
+      assignments: paymentAssignments,
+    },
+    fallback: {
       folioCode: folio.folio_code,
       amount,
       method: "cash",
@@ -2376,17 +2305,15 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
       checkOutDate: reservationForFolio.check_out_date,
       nights: reservationForFolio.nights,
       assignments: paymentAssignments,
-    });
-    const { sendWhatsAppTextMessage } = await import("@/lib/ycloud");
-    waResult = await sendWhatsAppTextMessage(guestPhone, whatsappMessage);
-  }
+    },
+  });
 
   await supabase.from("whatsapp_messages").insert({
-    guest_id: mainGuest.id ?? null,
+    guest_id: recipient.guest.id ?? null,
     reservation_id: reservationForFolio.id,
     folio_id: folioId,
     status: waResult.success ? "sent" : "failed",
-    phone: guestPhone,
+    phone: recipient.phone,
     payload: {
       folio_code: folio.folio_code,
       amount,
@@ -2402,7 +2329,7 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
     action: "payment_receipt_resent",
     entity_type: "folio",
     entity_id: folioId,
-    metadata: { folio_code: folio.folio_code, phone: guestPhone, success: waResult.success },
+    metadata: { folio_code: folio.folio_code, phone: recipient.phone, success: waResult.success },
   });
 
   revalidatePath("/dashboard");
@@ -2412,7 +2339,7 @@ export async function resendPaymentReceiptAction(formData: FormData): Promise<vo
     returnTo,
     waResult.success ? "success" : "error",
     waResult.success
-      ? `Comprobante reenviado a ${guestPhone} para folio ${folio.folio_code}.`
+      ? `Comprobante reenviado a ${recipient.phone} para folio ${folio.folio_code}.`
       : `Error al reenviar comprobante: ${waResult.error ?? "desconocido"}`,
   );
 }
@@ -2880,6 +2807,163 @@ export async function assignLockerAction(formData: FormData): Promise<OperationR
     : "Locker removido de la reservación.";
 
   return actionResult("success", successMessage);
+}
+
+export async function updateReceptionGuestAction(formData: FormData): Promise<OperationResult> {
+  const actor = await getActorProfile();
+  if (!actor || !["admin", "reception"].includes(actor.role)) {
+    return actionResult("error", "No autorizado.");
+  }
+
+  const reservationId = String(formData.get("reservation_id") ?? "").trim();
+  const guestId = String(formData.get("guest_id") ?? "").trim();
+  const fullName = String(formData.get("full_name") ?? "").trim();
+  const phoneRaw = String(formData.get("phone") ?? "").trim();
+  const newBedId = String(formData.get("bed_id") ?? "").trim();
+  const lockerNumberRaw = String(formData.get("locker_number") ?? "").trim();
+
+  if (!reservationId || !guestId) {
+    return actionResult("error", "Faltan datos del huésped.");
+  }
+  if (!fullName) {
+    return actionResult("error", "El nombre es obligatorio.");
+  }
+  if (phoneRaw && !isCompleteMexicanPhone(phoneRaw)) {
+    return actionResult("error", "El teléfono debe tener 10 dígitos o quedar vacío.");
+  }
+
+  const supabase = createAdminClient();
+  const { data: reservation } = await supabase
+    .from("reservations")
+    .select("id, folio_id, status, checked_out_at, check_in_date, check_out_date")
+    .eq("id", reservationId)
+    .maybeSingle();
+
+  if (!reservation) {
+    return actionResult("error", "Reservación no encontrada.");
+  }
+  if (reservation.status === "cancelled") {
+    return actionResult("error", "No se puede editar una reservación cancelada.");
+  }
+
+  const { data: currentRg } = await supabase
+    .from("reservation_guests")
+    .select("id, bed_id, locker_number, locker_days")
+    .eq("reservation_id", reservationId)
+    .eq("guest_id", guestId)
+    .maybeSingle();
+
+  if (!currentRg) {
+    return actionResult("error", "Huésped no encontrado en la reservación.");
+  }
+
+  const stayClosed = Boolean(reservation.checked_out_at) || reservation.status === "checked_out";
+  const messages: string[] = [];
+
+  if (!stayClosed) {
+    if (newBedId && newBedId !== String(currentRg.bed_id ?? "")) {
+      formData.set("new_bed_id", newBedId);
+      const bedResult = await reassignBedAction(formData);
+      if (bedResult.status === "error") {
+        return bedResult;
+      }
+      messages.push(bedResult.message);
+    }
+
+    const nextLocker = lockerNumberRaw ? normalizeLockerCode(lockerNumberRaw) : null;
+    if (lockerNumberRaw && !nextLocker) {
+      return actionResult(
+        "error",
+        "Código de locker inválido. Usa letras y/o números (ej. 12, A1, B-3).",
+      );
+    }
+
+    const currentLocker = normalizeLockerCode(currentRg.locker_number);
+    if (nextLocker !== currentLocker) {
+      if (nextLocker) {
+        const { data: conflicting } = await supabase
+          .from("reservation_guests")
+          .select(
+            "id, reservations!inner(check_in_date, check_out_date, status, checked_out_at)",
+          )
+          .eq("locker_number", nextLocker)
+          .neq("id", currentRg.id);
+
+        for (const row of conflicting ?? []) {
+          const overlap = unwrapAssignmentRelation(row.reservations) as
+            | {
+                check_in_date?: string;
+                check_out_date?: string;
+                status?: string;
+                checked_out_at?: string | null;
+              }
+            | undefined;
+          if (
+            !overlap ||
+            overlap.checked_out_at ||
+            ["cancelled", "checked_out"].includes(overlap.status ?? "")
+          ) {
+            continue;
+          }
+          if (
+            overlap.check_in_date &&
+            overlap.check_out_date &&
+            overlap.check_in_date < reservation.check_out_date &&
+            overlap.check_out_date > reservation.check_in_date
+          ) {
+            return actionResult("error", `El locker ${nextLocker} ya está asignado en esas fechas.`);
+          }
+        }
+      }
+
+      const { error: lockerError } = await supabase
+        .from("reservation_guests")
+        .update({ locker_number: nextLocker })
+        .eq("id", currentRg.id);
+
+      if (lockerError) {
+        return actionResult("error", "No se pudo actualizar el locker.");
+      }
+      messages.push(nextLocker ? `Locker ${nextLocker} asignado.` : "Locker quitado.");
+    }
+  }
+
+  const phone = phoneRaw ? normalizePhone(phoneRaw) : "";
+  const { error: guestError } = await supabase
+    .from("guests")
+    .update({
+      full_name: fullName,
+      phone: phone || null,
+      normalized_name: normalizeName(fullName),
+      normalized_phone: phone || null,
+    })
+    .eq("id", guestId);
+
+  if (guestError) {
+    return actionResult("error", "No se pudo actualizar el nombre o teléfono.");
+  }
+  messages.unshift("Datos del huésped actualizados.");
+
+  await supabase.from("audit_logs").insert({
+    actor_user_id: actor.id,
+    action: "reception_guest_updated",
+    entity_type: "guest",
+    entity_id: guestId,
+    metadata: {
+      reservation_id: reservationId,
+      full_name: fullName,
+      phone: phone || null,
+      bed_id: newBedId || currentRg.bed_id,
+      locker_number: lockerNumberRaw || null,
+    },
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/guests");
+  revalidatePath("/dashboard/beds");
+
+  return actionResult("success", messages.join(" "));
 }
 
 function deriveAnomalyFlagsForRecord(record: {

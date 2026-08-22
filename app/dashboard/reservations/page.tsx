@@ -22,6 +22,7 @@ import {
   parseFinanceMonthKey,
   parseReservationPeriod,
 } from "@/lib/dates";
+import { reservationHasPendingCheckout } from "@/lib/bed-occupancy";
 import { requireModulePermission } from "@/lib/auth/guards";
 import { formatBedLabel } from "@/lib/beds";
 
@@ -112,10 +113,7 @@ export default async function ReservationsPage({
       const nightsFilterText =
         lockerDays > 0 ? `${nightsLabel} Locker ${lockerDays} día(s)` : nightsLabel;
       const isCheckedOut = Boolean(reservation.checked_out_at) || reservation.status === "checked_out";
-      const pendingCheckout =
-        !isCheckedOut &&
-        reservation.status !== "cancelled" &&
-        reservation.check_out_date <= today;
+      const pendingCheckout = reservationHasPendingCheckout(reservation);
       const canCheckout =
         !isCheckedOut &&
         reservation.status !== "cancelled" &&

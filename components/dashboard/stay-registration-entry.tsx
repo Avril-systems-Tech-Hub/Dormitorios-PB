@@ -211,16 +211,6 @@ export function StayRegistrationEntry({ role }: { role: string }) {
 
     if (dateError) return toast.error(dateError);
     if (firstGuestError) return toast.error(firstGuestError);
-    if (
-      guests.some(
-        (guest) =>
-          guest.phone.trim() &&
-          guest.phone_lookup_status === "matched" &&
-          !guest.match_decision,
-      )
-    ) {
-      return toast.error("Confirma si reutilizarás cada huésped encontrado.");
-    }
     if (requiresBeds && guests.some((guest) => !guest.bed_id)) {
       return toast.error("Asigna una cama para cada huésped.");
     }
@@ -274,8 +264,14 @@ export function StayRegistrationEntry({ role }: { role: string }) {
           phone: guest.phone,
           email: guest.email,
           sex: guest.sex,
-          existing_guest_id: guest.existing_guest_id || null,
-          match_decision: guest.match_decision || null,
+          existing_guest_id:
+            guest.match_decision === "reuse" ? guest.existing_guest_id || null : null,
+          match_decision:
+            guest.match_decision === "reuse"
+              ? "reuse"
+              : guest.phone.trim()
+                ? "create_new"
+                : null,
           bed_id: requiresBeds ? guest.bed_id : null,
           locker_days: guest.add_locker === "yes" ? guest.locker_days : 0,
           locker_number:
