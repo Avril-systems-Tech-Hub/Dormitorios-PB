@@ -13,6 +13,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModulePermission } from "@/lib/auth/guards";
 import { ReceptionGuestRosterPage } from "@/components/dashboard/reception-guest-roster-page";
 import { GuestDeleteButton } from "@/components/dashboard/guest-delete-button";
+import { VisitorSalesSection } from "@/components/dashboard/visitor-sales-section";
 import {
   GuestsPeriodFilter,
   type GuestPeriod,
@@ -241,41 +242,46 @@ export default async function GuestsPage({
         if (byReservation !== 0) return byReservation > 0 ? stay : best;
         return stay.checkIn > best.checkIn ? stay : best;
       }, stays[0]),
-    }))
-    .sort((a, b) => {
-      const byColumn = (() => {
-        switch (sortColumn) {
-          case "huesped":
-            return compareByDirection(a.guest.full_name, b.guest.full_name, sortDirection);
-          case "telefono":
-            return compareByDirection(a.guest.phone ?? "", b.guest.phone ?? "", sortDirection);
-          case "folio":
-            return compareByDirection(a.latest.folioCode ?? "", b.latest.folioCode ?? "", sortDirection);
-          case "pago":
-            return compareByDirection(
-              a.latest.paymentStatus ?? "",
-              b.latest.paymentStatus ?? "",
-              sortDirection,
-            );
-          case "resumen":
-            return compareByDirection(a.stays.length, b.stays.length, sortDirection);
-          case "visita":
-            return compareByDirection(a.latest.checkIn, b.latest.checkIn, sortDirection);
-          case "alta":
-          default:
-            return compareByDirection(a.latest.createdAt ?? "", b.latest.createdAt ?? "", sortDirection);
-        }
-      })();
-      if (byColumn !== 0) return byColumn;
-      const byReservation = (b.latest.reservationId ?? "").localeCompare(a.latest.reservationId ?? "");
-      if (byReservation !== 0) return byReservation;
-      return a.guest.full_name.localeCompare(b.guest.full_name, "es-MX");
-    });
+    }));
 
-  const totalCount = guestsWithStays.length;
-  const pagedGuests = guestsWithStays.slice(from, to + 1);
+  const sortedGuests = [...guestsWithStays].sort((a, b) => {
+    const nameOf = (item: (typeof guestsWithStays)[number]) => item.guest.full_name;
+    const phoneOf = (item: (typeof guestsWithStays)[number]) => item.guest.phone ?? "";
+    const folioOf = (item: (typeof guestsWithStays)[number]) => item.latest.folioCode ?? "";
+    const paymentOf = (item: (typeof guestsWithStays)[number]) => item.latest.paymentStatus ?? "";
+    const resumenOf = (item: (typeof guestsWithStays)[number]) => item.stays.length;
+    const visitOf = (item: (typeof guestsWithStays)[number]) => item.latest.checkIn;
+    const altaOf = (item: (typeof guestsWithStays)[number]) =>
+      item.latest.createdAt ?? item.guest.created_at;
 
-  const rows = pagedGuests.map(({ guest, stays, latest }) => {
+    const byColumn = (() => {
+      switch (sortColumn) {
+        case "huesped":
+          return compareByDirection(nameOf(a), nameOf(b), sortDirection);
+        case "telefono":
+          return compareByDirection(phoneOf(a), phoneOf(b), sortDirection);
+        case "folio":
+          return compareByDirection(folioOf(a), folioOf(b), sortDirection);
+        case "pago":
+          return compareByDirection(paymentOf(a), paymentOf(b), sortDirection);
+        case "resumen":
+          return compareByDirection(resumenOf(a), resumenOf(b), sortDirection);
+        case "visita":
+          return compareByDirection(visitOf(a), visitOf(b), sortDirection);
+        case "alta":
+        default:
+          return compareByDirection(altaOf(a), altaOf(b), sortDirection);
+      }
+    })();
+    if (byColumn !== 0) return byColumn;
+    return nameOf(a).localeCompare(nameOf(b), "es-MX");
+  });
+
+  const totalCount = sortedGuests.length;
+  const pagedItems = sortedGuests.slice(from, to + 1);
+
+  const rows = pagedItems.map((item) => {
+    const { guest, stays, latest } = item;
     const totalNights = stays.reduce((sum, stay) => sum + stay.nights, 0);
     const totalLockerDays = stays.reduce((sum, stay) => sum + (stay.lockerDays ?? 0), 0);
 
@@ -359,11 +365,11 @@ export default async function GuestsPage({
       <Card>
         <h2 className="text-lg font-semibold text-text-main">Huéspedes</h2>
         <p className="mt-1 text-sm text-text-muted">
-          Personas con al menos una estadía iniciada en el periodo. El resumen, folio y pago corresponden al
-          historial completo de cada huésped. Eliminar borra también folios y pagos de ese huésped.
+          Personas con cama y folio de estancia en el periodo.
         </p>
         <p className="mt-2 text-sm text-text-muted">
-          <span className="font-medium text-text-main">{totalCount}</span> huéspedes en {periodLabel}.
+          <span className="font-medium text-text-main">{totalCount}</span> huésped
+          {totalCount === 1 ? "" : "es"} en {periodLabel}.
         </p>
         <div className="mt-4 border-t border-border-soft pt-4">
           <Suspense fallback={<p className="text-sm text-text-muted">Cargando filtro…</p>}>
@@ -379,18 +385,27 @@ export default async function GuestsPage({
             />
           </Suspense>
         </div>
+        <div className="mt-4 border-t border-border-soft pt-4">
+          <ResponsiveTable
+            columns={ADMIN_GUESTS_COLUMNS}
+            rows={rows}
+            dense
+            serverPagination={{
+              page,
+              pageSize,
+              totalCount,
+            }}
+            serverSort={{ column: sortColumn, direction: sortDirection }}
+          />
+        </div>
       </Card>
 
-      <ResponsiveTable
-        columns={ADMIN_GUESTS_COLUMNS}
-        rows={rows}
-        dense
-        serverPagination={{
-          page,
-          pageSize,
-          totalCount,
-        }}
-        serverSort={{ column: sortColumn, direction: sortDirection }}
+      <VisitorSalesSection
+        startDate={periodBounds?.start ?? null}
+        endDate={periodBounds?.end ?? null}
+        periodLabel={periodLabel}
+        searchParams={params}
+        canDelete
       />
     </div>
   );

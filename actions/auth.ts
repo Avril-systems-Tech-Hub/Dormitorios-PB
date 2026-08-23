@@ -201,6 +201,8 @@ const PROFILE_REFERENCE_COLUMNS: Array<{ table: string; column: string }> = [
   { table: "import_batches", column: "uploaded_by" },
   { table: "folio_extra_services", column: "created_by" },
   { table: "imported_record_extra_services", column: "created_by" },
+  { table: "visitor_shower_sales", column: "sold_by" },
+  { table: "visitor_locker_sales", column: "sold_by" },
 ];
 
 async function detachProfileReferences(

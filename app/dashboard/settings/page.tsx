@@ -4,15 +4,18 @@ import { DiscountRulesPanel } from "@/components/dashboard/discount-rules-panel"
 import { PromoCodesPanel } from "@/components/dashboard/promo-codes-panel";
 import { PromotionsSummaryPanel } from "@/components/dashboard/promotions-summary-panel";
 import { CreateUserPanel } from "@/components/dashboard/create-user-panel";
+import { ServicePricesPanel } from "@/components/dashboard/service-prices-panel";
 import { requireRole } from "@/lib/auth/guards";
 import { getAllRoles } from "@/lib/auth/permissions";
 import { getAllDiscountRules } from "@/lib/discount-rules";
 import { getAllPromoCodes } from "@/lib/promo-codes";
+import { getServicePriceCatalog } from "@/lib/service-prices";
 
 export default async function SettingsPage() {
   await requireRole(["admin"]);
   const discountRules = await getAllDiscountRules();
   const promoCodes = await getAllPromoCodes();
+  const servicePrices = await getServicePriceCatalog();
   const roles = await getAllRoles();
   const roleOptions = roles.map((role) => ({
     id: role.id,
@@ -44,6 +47,7 @@ export default async function SettingsPage() {
           </div>
           <CreateUserPanel roles={roleOptions} returnTo="/dashboard/settings" />
         </section>
+        <ServicePricesPanel initialPrices={servicePrices} />
         <PromotionsSummaryPanel initialCodes={promoCodes} initialRules={discountRules} />
         <PromoCodesPanel initialCodes={promoCodes} />
         <DiscountRulesPanel initialRules={discountRules} />

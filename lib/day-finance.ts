@@ -4,6 +4,7 @@ import {
   getMexicoCityMonthBounds,
   getMexicoCityWeekBounds,
 } from "@/lib/dates";
+import { getVisitorSalesTotalsForDates } from "@/lib/visitor-sales";
 
 export type DayFinanceSummary = {
   totalGuestIncome: number;
@@ -34,8 +35,10 @@ function unwrap<T>(value: T | T[] | null | undefined): T | undefined {
 function sumFinance(
   payments: { amount: number | string }[] | null,
   expenses: { amount: number | string }[] | null,
+  visitorIncome = 0,
 ): DayFinanceSummary {
-  const totalGuestIncome = (payments ?? []).reduce((sum, row) => sum + Number(row.amount), 0);
+  const totalGuestIncome =
+    (payments ?? []).reduce((sum, row) => sum + Number(row.amount), 0) + visitorIncome;
   const totalExpenses = (expenses ?? []).reduce((sum, row) => sum + Number(row.amount), 0);
   const netResult = Number((totalGuestIncome - totalExpenses).toFixed(2));
 
@@ -46,7 +49,7 @@ export async function getDayFinanceSummary(
   supabase: SupabaseClient,
   dateString: string,
 ): Promise<DayFinanceSummary> {
-  const [{ data: payments }, { data: expenses }] = await Promise.all([
+  const [{ data: payments }, { data: expenses }, visitorIncome] = await Promise.all([
     supabase
       .from("payments")
       .select("amount")
@@ -56,9 +59,10 @@ export async function getDayFinanceSummary(
       .select("amount")
       .eq("direction", "expense")
       .eq("movement_date", dateString),
+    getVisitorSalesTotalsForDates(supabase, dateString, dateString),
   ]);
 
-  return sumFinance(payments, expenses);
+  return sumFinance(payments, expenses, visitorIncome);
 }
 
 export async function getWeekFinanceSummary(
@@ -67,7 +71,7 @@ export async function getWeekFinanceSummary(
 ): Promise<DayFinanceSummary> {
   const { start, end } = getMexicoCityWeekBounds(dateString);
 
-  const [{ data: payments }, { data: expenses }] = await Promise.all([
+  const [{ data: payments }, { data: expenses }, visitorIncome] = await Promise.all([
     supabase
       .from("payments")
       .select("amount")
@@ -79,9 +83,10 @@ export async function getWeekFinanceSummary(
       .eq("direction", "expense")
       .gte("movement_date", start)
       .lte("movement_date", end),
+    getVisitorSalesTotalsForDates(supabase, start, end),
   ]);
 
-  return sumFinance(payments, expenses);
+  return sumFinance(payments, expenses, visitorIncome);
 }
 
 export async function getMonthFinanceSummary(
@@ -90,7 +95,7 @@ export async function getMonthFinanceSummary(
 ): Promise<DayFinanceSummary> {
   const { start, end } = getMexicoCityMonthBounds(dateString);
 
-  const [{ data: payments }, { data: expenses }] = await Promise.all([
+  const [{ data: payments }, { data: expenses }, visitorIncome] = await Promise.all([
     supabase
       .from("payments")
       .select("amount")
@@ -102,9 +107,10 @@ export async function getMonthFinanceSummary(
       .eq("direction", "expense")
       .gte("movement_date", start)
       .lte("movement_date", end),
+    getVisitorSalesTotalsForDates(supabase, start, end),
   ]);
 
-  return sumFinance(payments, expenses);
+  return sumFinance(payments, expenses, visitorIncome);
 }
 
 function datesInRange(startDate: string, endDate: string) {
@@ -120,19 +126,30 @@ export async function getDailyFinanceSummariesInRange(
   startDate: string,
   endDate: string,
 ): Promise<DailyFinanceEntry[]> {
-  const [{ data: payments }, { data: expenses }] = await Promise.all([
-    supabase
-      .from("payments")
-      .select("amount, effective_date")
-      .gte("effective_date", startDate)
-      .lte("effective_date", endDate),
-    supabase
-      .from("cash_movements")
-      .select("amount, movement_date")
-      .eq("direction", "expense")
-      .gte("movement_date", startDate)
-      .lte("movement_date", endDate),
-  ]);
+  const [{ data: payments }, { data: expenses }, { data: showers }, { data: lockers }] =
+    await Promise.all([
+      supabase
+        .from("payments")
+        .select("amount, effective_date")
+        .gte("effective_date", startDate)
+        .lte("effective_date", endDate),
+      supabase
+        .from("cash_movements")
+        .select("amount, movement_date")
+        .eq("direction", "expense")
+        .gte("movement_date", startDate)
+        .lte("movement_date", endDate),
+      supabase
+        .from("visitor_shower_sales")
+        .select("amount, sold_date")
+        .gte("sold_date", startDate)
+        .lte("sold_date", endDate),
+      supabase
+        .from("visitor_locker_sales")
+        .select("amount, sold_date")
+        .gte("sold_date", startDate)
+        .lte("sold_date", endDate),
+    ]);
 
   const totals = new Map<string, { income: number; expenses: number }>();
 
@@ -141,6 +158,14 @@ export async function getDailyFinanceSummariesInRange(
     if (date < startDate || date > endDate) continue;
     const row = totals.get(date) ?? { income: 0, expenses: 0 };
     row.income += Number(payment.amount);
+    totals.set(date, row);
+  }
+
+  for (const sale of [...(showers ?? []), ...(lockers ?? [])]) {
+    const date = String((sale as { sold_date?: string }).sold_date);
+    if (date < startDate || date > endDate) continue;
+    const row = totals.get(date) ?? { income: 0, expenses: 0 };
+    row.income += Number((sale as { amount?: number | string }).amount ?? 0);
     totals.set(date, row);
   }
 
@@ -245,6 +270,48 @@ export async function getDailyFinanceGuestDetailsInRange(
 
     byDate.set(date, dayMap);
   }
+
+  const [{ data: showers }, { data: lockers }] = await Promise.all([
+    supabase
+      .from("visitor_shower_sales")
+      .select("id, visitor_name, resource_number, amount, sold_date")
+      .gte("sold_date", startDate)
+      .lte("sold_date", endDate),
+    supabase
+      .from("visitor_locker_sales")
+      .select("id, visitor_name, resource_number, amount, sold_date")
+      .gte("sold_date", startDate)
+      .lte("sold_date", endDate),
+  ]);
+
+  type VisitorDetailRow = {
+    id: string;
+    visitor_name?: string | null;
+    resource_number?: string | null;
+    amount: number | string;
+    sold_date: string;
+  };
+
+  function addVisitorDetails(rows: VisitorDetailRow[] | null, concept: "Regadera" | "Locker") {
+    for (const sale of rows ?? []) {
+      const date = sale.sold_date;
+      if (date < startDate || date > endDate) continue;
+      const folioCode = `Invitado · ${concept}${sale.resource_number ? ` ${sale.resource_number}` : ""}`;
+      const dayMap = byDate.get(date) ?? new Map<string, DayFinanceGuestLine>();
+      dayMap.set(folioCode + sale.id, {
+        folioCode,
+        guestNames: [sale.visitor_name?.trim() || "Invitado"],
+        nights: 0,
+        checkIn: date,
+        checkOut: date,
+        paidAmount: Number(sale.amount),
+      });
+      byDate.set(date, dayMap);
+    }
+  }
+
+  addVisitorDetails((showers ?? []) as VisitorDetailRow[], "Regadera");
+  addVisitorDetails((lockers ?? []) as VisitorDetailRow[], "Locker");
 
   const result: DailyFinanceGuestDetailsByDate = {};
   for (const [date, folioMap] of byDate) {

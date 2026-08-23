@@ -128,6 +128,18 @@ export function rosterParamsActive(
   return Object.keys(params).some((key) => key.startsWith(p));
 }
 
+export function getRosterPeriodBounds(
+  params: Record<string, string | string[] | undefined>,
+  paramPrefix?: string,
+) {
+  const period = parseRosterPeriod(params, paramPrefix);
+  const today = getMexicoCityDateString();
+  const selectedMonth = parseRosterMonthKey(params, today, paramPrefix);
+  const monthAnchor = financeMonthKeyToAnchorDate(selectedMonth);
+  const periodAnchor = period === "month" ? monthAnchor : today;
+  return getReservationPeriodBounds(period, periodAnchor);
+}
+
 type ReceptionGuestRosterContentProps = {
   searchParams: Record<string, string | string[] | undefined>;
   basePath?: string;
@@ -257,7 +269,7 @@ export async function ReceptionGuestRosterContent({
     };
   });
 
-  const sortedRows = mappedRows.slice().sort((a, b) => {
+  const sortedRows = [...mappedRows].sort((a, b) => {
     const byColumn = (() => {
       switch (sortColumn) {
         case "dia":
@@ -402,8 +414,7 @@ export async function ReceptionGuestRosterContent({
         <>
           <h2 className="text-lg font-semibold text-text-main">Huéspedes</h2>
           <p className="mt-1 text-sm text-text-muted">
-            Listado por persona y estadía ({periodBounds.label}). Una fila por huésped en cada
-            reservación.
+            Listado por persona ({periodBounds.label}).
           </p>
         </>
       ) : null}

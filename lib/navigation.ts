@@ -42,6 +42,7 @@ export const HIDDEN_NAV_MODULE_KEYS = new Set(["folios", "users"]);
 /** Frontend display labels (RBAC module keys stay unchanged). */
 const NAV_LABEL_OVERRIDES: Record<string, string> = {
   dashboard: "Inicio",
+  register_stay: "Registrar concepto",
   payments: "Ingresos",
   expenses: "Egresos",
 };
@@ -75,7 +76,7 @@ export const RECEPTION_NAV_GROUP_DEFS: { label: string; keys: string[] }[] = [
 
 export const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Inicio",
-  "/dashboard/register-stay": "Registrar estancia",
+  "/dashboard/register-stay": "Registrar concepto",
   "/dashboard/reservations": "Reservas",
   "/dashboard/folios": "Folios",
   "/dashboard/beds": "Camas",
@@ -94,7 +95,7 @@ export const PAGE_TITLES: Record<string, string> = {
 // Fallback estático para cuando no hay conexión a DB o para el modo bypass
 const staticDashboardLinks: DashboardLink[] = [
   { href: "/dashboard", label: "Resumen", roles: ["admin", "reception"] },
-  { href: "/dashboard/register-stay", label: "Registrar estancia", roles: ["admin", "reception"] },
+  { href: "/dashboard/register-stay", label: "Registrar concepto", roles: ["admin", "reception"] },
   { href: "/dashboard/reservations", label: "Reservas", roles: ["admin", "reception"] },
   { href: "/dashboard/beds", label: "Camas", roles: ["admin", "reception"] },
   { href: "/dashboard/guests", label: "Huéspedes", roles: ["admin", "reception"] },

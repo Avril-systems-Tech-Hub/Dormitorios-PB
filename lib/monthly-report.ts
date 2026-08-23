@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getFinanceDayOptions, getMexicoCityMonthBoundsFromKey } from "@/lib/dates";
 import { getExpenseConceptLabel } from "@/lib/expense-concepts";
+import { VISITOR_CONCEPT_LABELS, type VisitorConcept } from "@/lib/visitor-sales";
 
 export type MonthlyReportPaymentDetail = {
   id: string;
@@ -150,10 +151,16 @@ export async function getMonthlyReport(
     .map((option) => option.value)
     .reverse();
 
-  const [{ data: paymentData, error: paymentError }, { data: expenseData, error: expenseError }, {
-    data: reservationData,
-    error: reservationError,
-  }] = await Promise.all([
+  const [
+    { data: paymentData, error: paymentError },
+    { data: expenseData, error: expenseError },
+    {
+      data: reservationData,
+      error: reservationError,
+    },
+    { data: showerSales },
+    { data: lockerSales },
+  ] = await Promise.all([
     supabase
       .from("payments")
       .select(
@@ -187,6 +194,16 @@ export async function getMonthlyReport(
       .neq("status", "cancelled")
       .lte("check_in_date", end)
       .gt("check_out_date", start),
+    supabase
+      .from("visitor_shower_sales")
+      .select("id, visitor_name, resource_number, amount, method, sold_date")
+      .gte("sold_date", start)
+      .lte("sold_date", end),
+    supabase
+      .from("visitor_locker_sales")
+      .select("id, visitor_name, resource_number, amount, method, sold_date")
+      .gte("sold_date", start)
+      .lte("sold_date", end),
   ]);
 
   if (paymentError) throw new Error(`No se pudieron consultar los ingresos: ${paymentError.message}`);
@@ -231,6 +248,37 @@ export async function getMonthlyReport(
     });
     addToRecord(incomeByMethod, payment.method, amount);
   }
+
+  type VisitorIncomeRow = {
+    id: string;
+    visitor_name?: string | null;
+    resource_number?: string | null;
+    amount: number | string;
+    method: string;
+    sold_date: string;
+  };
+
+  function addVisitorIncome(rows: VisitorIncomeRow[] | null, concept: VisitorConcept) {
+    for (const sale of rows ?? []) {
+      const day = days.get(sale.sold_date);
+      if (!day) continue;
+      const amount = Number(sale.amount);
+      const label = VISITOR_CONCEPT_LABELS[concept];
+      const number = sale.resource_number ? ` ${sale.resource_number}` : "";
+      day.income = roundMoney(day.income + amount);
+      day.payments.push({
+        id: sale.id,
+        folioCode: `Invitado · ${label}${number}`,
+        guestNames: [sale.visitor_name?.trim() || "Invitado"],
+        amount,
+        method: sale.method,
+      });
+      addToRecord(incomeByMethod, sale.method, amount);
+    }
+  }
+
+  addVisitorIncome((showerSales ?? []) as VisitorIncomeRow[], "shower");
+  addVisitorIncome((lockerSales ?? []) as VisitorIncomeRow[], "locker");
 
   for (const expense of (expenseData ?? []) as ExpenseRow[]) {
     const day = days.get(expense.movement_date);

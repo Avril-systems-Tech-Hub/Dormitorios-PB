@@ -11,6 +11,7 @@ type ReservationGuestFieldsProps = {
   showLockerFields?: boolean;
   /** Reception can assign a locker number; guests only choose service and days. */
   showLockerNumberField?: boolean;
+  lockerDailyPrice?: number;
   /** When false, only locker controls are shown (e.g. recurring guest already identified). */
   showIdentityFields?: boolean;
   contactRequired?: boolean;
@@ -28,6 +29,7 @@ export function ReservationGuestFields({
   variant = "marketing",
   showLockerFields = false,
   showLockerNumberField = false,
+  lockerDailyPrice = LOCKER_DAILY_PRICE,
   showIdentityFields = true,
   contactRequired = true,
   enablePhoneMatching = false,
@@ -157,7 +159,7 @@ export function ReservationGuestFields({
               onChange={(e) => onChange("add_locker", e.target.value)}
             >
               <option value="no">No</option>
-              <option value="yes">Sí (+${LOCKER_DAILY_PRICE}/día)</option>
+              <option value="yes">Sí (+${lockerDailyPrice}/día)</option>
             </select>
           </div>
           {guest.add_locker === "yes" ? (
@@ -174,7 +176,7 @@ export function ReservationGuestFields({
                 />
                 <p className={hintClass}>
                   Máx. {stayNights} noche{stayNights === 1 ? "" : "s"}. Cargo: $
-                  {(guest.locker_days * LOCKER_DAILY_PRICE).toFixed(0)} MXN
+                  {(guest.locker_days * lockerDailyPrice).toFixed(0)} MXN
                 </p>
               </div>
               {showLockerNumberField ? (

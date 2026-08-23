@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   emptyGuest,
-  LOCKER_DAILY_PRICE,
   type GuestFormRow,
   validateGuestRow,
 } from "@/hooks/use-reservation-form";
@@ -25,8 +24,14 @@ import {
   type StayRegistrationMode,
   validateStayDates,
 } from "@/lib/stay-registration";
+import { VisitorSaleForm } from "@/components/dashboard/visitor-sale-form";
+import {
+  VISITOR_REGISTRATION_CONCEPTS,
+  type VisitorConcept,
+} from "@/lib/visitor-sales";
+import type { ServicePrices } from "@/lib/service-prices";
 
-const NIGHTLY_RATE = 120;
+type RegistrationConcept = StayRegistrationMode | VisitorConcept;
 
 type StayGuestDraft = GuestFormRow & { bed_id: string };
 
@@ -34,21 +39,34 @@ function emptyStayGuest(): StayGuestDraft {
   return { ...emptyGuest(), bed_id: "" };
 }
 
-export function StayRegistrationEntry({ role }: { role: string }) {
+export function StayRegistrationEntry({
+  role,
+  prices,
+}: {
+  role: string;
+  prices: ServicePrices;
+}) {
   const router = useRouter();
   const today = getMexicoCityDateString();
+  const nightlyRate = prices.bed_night;
+  const lockerDailyPrice = prices.guest_locker_day;
+  const visitorPrices = {
+    shower: prices.visitor_shower,
+    locker: prices.visitor_locker,
+  };
   const yesterday = new Date(`${today}T12:00:00Z`);
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const yesterdayString = yesterday.toISOString().slice(0, 10);
   const tomorrow = new Date(`${today}T12:00:00Z`);
   tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
   const tomorrowString = tomorrow.toISOString().slice(0, 10);
+  const [concept, setConcept] = useState<RegistrationConcept>("new");
   const [mode, setMode] = useState<StayRegistrationMode>("new");
+  const isVisitor = concept === "shower" || concept === "locker";
   const [checkIn, setCheckIn] = useState(today);
   const [checkOut, setCheckOut] = useState("");
   const [guests, setGuests] = useState<StayGuestDraft[]>([emptyStayGuest()]);
   const [folioCode, setFolioCode] = useState("");
-  const [discountPercent, setDiscountPercent] = useState("0");
   const [paymentAmount, setPaymentAmount] = useState("0");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [paymentDate, setPaymentDate] = useState(today);
@@ -64,13 +82,11 @@ export function StayRegistrationEntry({ role }: { role: string }) {
     (sum, guest) =>
       sum +
       (guest.add_locker === "yes"
-        ? Math.min(nights, guest.locker_days) * LOCKER_DAILY_PRICE
+        ? Math.min(nights, guest.locker_days) * lockerDailyPrice
         : 0),
     0,
   );
-  const discount = mode === "new" ? Math.min(100, Math.max(0, Number(discountPercent) || 0)) : 0;
-  const nightsTotal =
-    Math.round((guests.length * nights * NIGHTLY_RATE * (100 - discount) / 100) * 100) / 100;
+  const nightsTotal = Math.round((guests.length * nights * nightlyRate) * 100) / 100;
   const totalAmount = Math.round((nightsTotal + lockerTotal) * 100) / 100;
   const requiresBeds = mode === "current" || (mode === "new" && assignBedsNow);
   const dateError = validateStayDates(mode, checkIn, checkOut, today);
@@ -188,12 +204,12 @@ export function StayRegistrationEntry({ role }: { role: string }) {
   }
 
   function resetForm(nextMode: StayRegistrationMode = mode) {
+    setConcept(nextMode);
     setMode(nextMode);
     setCheckIn(nextMode === "new" ? today : "");
     setCheckOut("");
     setGuests([emptyStayGuest()]);
     setFolioCode("");
-    setDiscountPercent("0");
     setPaymentAmount("0");
     setPaymentMethod("cash");
     setPaymentDate(today);
@@ -250,7 +266,7 @@ export function StayRegistrationEntry({ role }: { role: string }) {
     formData.set("check_out_date", checkOut);
     formData.set("folio_code", folioCode);
     formData.set("total_amount", String(totalAmount));
-    formData.set("discount_percent", String(discount));
+    formData.set("discount_percent", "0");
     formData.set("payment_amount", String(payment));
     formData.set("payment_method", paymentMethod);
     formData.set("payment_date", payment > 0 ? paymentDate : "");
@@ -304,9 +320,9 @@ export function StayRegistrationEntry({ role }: { role: string }) {
   return (
     <div className="space-y-4">
       <Card>
-        <h1 className="text-xl font-semibold text-text-main">Registrar estancia</h1>
+        <h1 className="text-xl font-semibold text-text-main">Registrar concepto</h1>
         <p className="mt-1 text-sm text-text-muted">
-          Elige el tipo correcto para mantener camas, pagos e historial relacionados.
+          Estancias de huéspedes, o cobros de invitado (regadera y locker) sin cama.
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           {STAY_REGISTRATION_MODES.map((option) => (
@@ -315,7 +331,27 @@ export function StayRegistrationEntry({ role }: { role: string }) {
               type="button"
               onClick={() => resetForm(option.value)}
               className={`rounded-xl border p-4 text-left transition ${
-                mode === option.value
+                !isVisitor && mode === option.value
+                  ? "border-brand-primary bg-brand-primary/5 ring-2 ring-brand-primary/15"
+                  : "border-border-soft bg-white hover:border-brand-primary/40"
+              }`}
+            >
+              <span className="font-semibold text-text-main">{option.label}</span>
+              <span className="mt-1 block text-sm text-text-muted">{option.description}</span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-5 text-xs font-semibold uppercase tracking-[0.16em] text-text-muted">
+          Invitados
+        </p>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          {VISITOR_REGISTRATION_CONCEPTS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setConcept(option.value)}
+              className={`rounded-xl border p-4 text-left transition ${
+                concept === option.value
                   ? "border-brand-primary bg-brand-primary/5 ring-2 ring-brand-primary/15"
                   : "border-border-soft bg-white hover:border-brand-primary/40"
               }`}
@@ -327,6 +363,14 @@ export function StayRegistrationEntry({ role }: { role: string }) {
         </div>
       </Card>
 
+      {isVisitor ? (
+        <VisitorSaleForm
+          key={concept}
+          concept={concept}
+          price={concept === "shower" ? visitorPrices.shower : visitorPrices.locker}
+        />
+      ) : (
+        <>
       <Card>
         <div className="grid gap-4 lg:grid-cols-2">
           <label className="grid gap-1 text-sm text-text-main">
@@ -395,6 +439,7 @@ export function StayRegistrationEntry({ role }: { role: string }) {
                 enablePhoneMatching
                 showLockerFields
                 showLockerNumberField={mode !== "finished"}
+                lockerDailyPrice={lockerDailyPrice}
                 onLookupPhone={() => void lookupGuest(index)}
                 onMatchDecision={(decision) => decideGuestMatch(index, decision)}
                 onChange={(field, value) => updateGuest(index, field, value)}
@@ -465,23 +510,7 @@ export function StayRegistrationEntry({ role }: { role: string }) {
                 Déjalo vacío y el sistema asigna un folio IMP- automáticamente.
               </span>
             </label>
-          ) : (
-            <label className="grid gap-1 text-sm text-text-main">
-              Descuento
-              <span className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={discountPercent}
-                  onChange={(event) => setDiscountPercent(event.target.value)}
-                  className="h-10 w-28 rounded-lg border border-border-soft bg-white px-3"
-                />
-                %
-              </span>
-            </label>
-          )}
+          ) : null}
           <div className="rounded-lg border border-border-soft bg-surface-soft p-3 text-sm">
             <span className="text-text-muted">Total calculado</span>
             <strong className="mt-1 block text-lg text-text-main">
@@ -760,6 +789,8 @@ export function StayRegistrationEntry({ role }: { role: string }) {
           </section>
         </div>
       ) : null}
+        </>
+      )}
     </div>
   );
 }

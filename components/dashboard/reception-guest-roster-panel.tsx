@@ -4,11 +4,15 @@ import { useState, type ReactNode } from "react";
 import { Card } from "@/components/ui/card";
 
 type ReceptionGuestRosterPanelProps = {
+  title?: string;
+  description?: string;
   defaultExpanded?: boolean;
   children: ReactNode;
 };
 
 export function ReceptionGuestRosterPanel({
+  title = "Listado de huéspedes",
+  description = "Tabla completa con día, folio, cama, locker, fechas y total por persona.",
   defaultExpanded = false,
   children,
 }: ReceptionGuestRosterPanelProps) {
@@ -18,10 +22,8 @@ export function ReceptionGuestRosterPanel({
     <Card>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h2 className="text-base font-semibold text-text-main sm:text-lg">Listado de huéspedes</h2>
-          <p className="text-sm text-text-muted">
-            Tabla completa con día, folio, cama, locker, fechas y total por persona.
-          </p>
+          <h2 className="text-base font-semibold text-text-main sm:text-lg">{title}</h2>
+          <p className="text-sm text-text-muted">{description}</p>
         </div>
         <button
           type="button"

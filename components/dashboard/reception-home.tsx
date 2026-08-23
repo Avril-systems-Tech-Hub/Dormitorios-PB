@@ -1,10 +1,12 @@
 import { ReceptionCheckInWizard } from "@/components/dashboard/reception-check-in-wizard";
 import {
   ReceptionGuestRosterContent,
+  getRosterPeriodBounds,
   rosterParamsActive,
 } from "@/components/dashboard/reception-guest-roster-content";
 import { ReceptionGuestRosterPanel } from "@/components/dashboard/reception-guest-roster-panel";
 import { ReceptionShiftHeader } from "@/components/dashboard/reception-shift-header";
+import { VisitorSalesSection } from "@/components/dashboard/visitor-sales-section";
 import {
   getRecentReceptionReservations,
   getReceptionReservationDetailAction,
@@ -47,6 +49,8 @@ export async function ReceptionHome({
       "No se pudo abrir la reservación recién creada. Puedes buscarla manualmente."
     : undefined;
   const rosterExpanded = rosterParamsActive(searchParams);
+  const visitorsExpanded = rosterParamsActive(searchParams, "visitor");
+  const visitorPeriod = getRosterPeriodBounds(searchParams, "roster");
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -65,6 +69,19 @@ export async function ReceptionHome({
           searchParams={searchParams}
           basePath="/dashboard"
           paramPrefix="roster"
+          embedded
+        />
+      </ReceptionGuestRosterPanel>
+      <ReceptionGuestRosterPanel
+        title="Listado de invitados"
+        description="Personas que pagaron regadera o locker y se fueron, sin cama ni folio de estancia."
+        defaultExpanded={visitorsExpanded}
+      >
+        <VisitorSalesSection
+          startDate={visitorPeriod.start}
+          endDate={visitorPeriod.end}
+          periodLabel={visitorPeriod.label}
+          searchParams={searchParams}
           embedded
         />
       </ReceptionGuestRosterPanel>

@@ -112,7 +112,7 @@ export function DashboardShell({
                   href="/dashboard/register-stay"
                   className="inline-flex h-9 min-w-0 flex-1 items-center justify-center rounded-lg bg-mkt-terracotta px-3 text-sm font-semibold text-white transition hover:bg-mkt-terracotta-hover lg:flex-none"
                 >
-                  Registrar estancia
+                  Registrar concepto
                 </Link>
                 <Suspense fallback={null}>
                   <ReceptionSessionNav />
@@ -132,7 +132,7 @@ export function DashboardShell({
                   href="/dashboard/register-stay"
                   className="inline-flex h-8 items-center rounded-lg bg-mkt-terracotta px-2.5 text-xs font-semibold text-white transition hover:bg-mkt-terracotta-hover sm:h-9 sm:px-3 sm:text-sm"
                 >
-                  Registrar estancia
+                  Registrar concepto
                 </Link>
                 {userName ? (
                   <div className="min-w-0 max-w-[9.5rem] text-right sm:max-w-[14rem]">

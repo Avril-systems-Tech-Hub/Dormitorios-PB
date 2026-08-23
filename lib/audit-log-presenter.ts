@@ -25,12 +25,12 @@ export const AUDIT_CATEGORY_FILTERS: {
   {
     value: "payments",
     toggleLabel: "Pagos",
-    actions: ["payment_registered", "payment_reversed", "payment_receipt_resent", "folio_extra_service_added"],
+    actions: ["payment_registered", "payment_reversed", "payment_receipt_resent", "folio_extra_service_added", "visitor_sale_registered", "visitor_sale_deleted"],
   },
   {
     value: "cash",
     toggleLabel: "Caja y gastos",
-    actions: ["expense_created", "expense_updated", "cash_movement_created", "daily_cash_cut_generated"],
+    actions: ["expense_created", "expense_updated", "cash_movement_created", "daily_cash_cut_generated", "service_prices_updated"],
   },
   {
     value: "beds",
@@ -72,6 +72,9 @@ const ACTION_LABELS: Record<string, string> = {
   import_record_recalculated: "Registro histórico recalculado",
   import_record_updated: "Registro histórico editado",
   folio_extra_service_added: "Servicio extra agregado",
+  visitor_sale_registered: "Cobro de invitado",
+  visitor_sale_deleted: "Cobro de invitado eliminado",
+  service_prices_updated: "Precios actualizados",
 };
 
 const ENTITY_LABELS: Record<string, string> = {
@@ -82,6 +85,8 @@ const ENTITY_LABELS: Record<string, string> = {
   bed: "Cama",
   import_batch: "Importación",
   imported_record: "Histórico",
+  visitor_sale: "Invitado",
+  service_prices: "Precios",
 };
 
 const BED_STATUS_LABELS: Record<string, string> = {
@@ -234,6 +239,15 @@ export function formatAuditSummary(action: string, metadata: Record<string, unkn
       const amount = money(meta.amount);
       return [folio, service, amount].filter(Boolean).join(" · ");
     }
+    case "visitor_sale_registered":
+    case "visitor_sale_deleted": {
+      const concept = meta.concept === "locker" ? "Locker" : "Regadera";
+      const number = meta.resource_number ? String(meta.resource_number) : null;
+      const name = meta.visitor_name ? String(meta.visitor_name) : "Invitado";
+      const amount = money(meta.amount);
+      const method = methodLabel(meta.method);
+      return [concept, number, name, amount, method].filter(Boolean).join(" · ");
+    }
     case "import_preview_created":
       return meta.preview_count
         ? `${meta.preview_count} registro(s) en vista previa`
@@ -246,6 +260,8 @@ export function formatAuditSummary(action: string, metadata: Record<string, unkn
         : "Registro recalculado";
     case "import_record_updated":
       return "Datos del registro histórico actualizados";
+    case "service_prices_updated":
+      return "Catálogo de tarifas operativas";
     default:
       return summarizeGenericMetadata(meta);
   }

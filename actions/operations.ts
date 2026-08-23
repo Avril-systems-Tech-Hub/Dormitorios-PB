@@ -46,9 +46,8 @@ import {
   type StayRegistrationMode,
   validateStayDates,
 } from "@/lib/stay-registration";
-
-const BASE_NIGHTLY_RATE = 120;
-const LOCKER_DAILY_PRICE = 30;
+import { getVisitorSalesTotalsForShift } from "@/lib/visitor-sales";
+import { getServicePrices } from "@/lib/service-prices";
 
 export type OperationResult = {
   status: "success" | "error";
@@ -476,7 +475,9 @@ export async function createReservationAction(
   }
 
   const folioCode = generateFolioCode();
-  const nightlyRate = BASE_NIGHTLY_RATE;
+  const prices = await getServicePrices();
+  const nightlyRate = prices.bed_night;
+  const lockerDailyPrice = prices.guest_locker_day;
   const discountRuleId = String(formData.get("discount_rule_id") ?? "") || null;
   const promoCode = String(formData.get("promo_code") ?? "") || null;
   const discountPercent = Number(formData.get("discount_percent") ?? 0) || 0;
@@ -492,7 +493,7 @@ export async function createReservationAction(
       return { locker_days: 0, locker_price: 0, locker_amount: 0, locker_number: null as string | null };
     }
 
-    const lockerPriceWithDiscount = Math.round(LOCKER_DAILY_PRICE * (100 - discountPercent)) / 100;
+    const lockerPriceWithDiscount = Math.round(lockerDailyPrice * (100 - discountPercent)) / 100;
     const requestedDays = Number(guest.locker_days ?? nights);
     const locker_days = Math.min(
       Math.max(1, Number.isFinite(requestedDays) ? requestedDays : nights),
@@ -507,7 +508,7 @@ export async function createReservationAction(
 
   const lockerTotal = lockerByGuest.reduce((sum, row) => sum + row.locker_amount, 0);
   const originalLockerTotal = lockerByGuest.reduce(
-    (sum, row) => sum + row.locker_days * LOCKER_DAILY_PRICE,
+    (sum, row) => sum + row.locker_days * lockerDailyPrice,
     0,
   );
   const totalAmount = finalRate * nights * guestIds.length + lockerTotal;
@@ -1951,15 +1952,17 @@ export async function createDailyCashCutAction(): Promise<void> {
     .select("amount, direction")
     .eq("shift_id", currentShift.id);
 
+  const visitorSales = await getVisitorSalesTotalsForShift(supabase, currentShift.id);
+
   const totalCash = (payments ?? [])
     .filter((p) => p.method === "cash")
-    .reduce((sum, p) => sum + Number(p.amount), 0);
+    .reduce((sum, p) => sum + Number(p.amount), 0) + visitorSales.cash;
   const totalTransfer = (payments ?? [])
     .filter((p) => p.method === "transfer")
-    .reduce((sum, p) => sum + Number(p.amount), 0);
+    .reduce((sum, p) => sum + Number(p.amount), 0) + visitorSales.transfer;
   const totalCard = (payments ?? [])
     .filter((p) => p.method === "card")
-    .reduce((sum, p) => sum + Number(p.amount), 0);
+    .reduce((sum, p) => sum + Number(p.amount), 0) + visitorSales.card;
   const movementIncome = (movements ?? [])
     .filter((m) => m.direction === "income")
     .reduce((sum, m) => sum + Number(m.amount), 0);
@@ -2711,7 +2714,8 @@ export async function assignLockerAction(formData: FormData): Promise<OperationR
 
   const nights = Math.max(1, Number(reservation.nights ?? 1));
   const discountPercent = Number(reservation.discount_percent ?? 0);
-  const lockerPriceWithDiscount = Math.round(LOCKER_DAILY_PRICE * (100 - discountPercent)) / 100;
+  const prices = await getServicePrices();
+  const lockerPriceWithDiscount = Math.round(prices.guest_locker_day * (100 - discountPercent)) / 100;
 
   let locker_days = Number(currentRg.locker_days ?? 0);
   let locker_price = Number(currentRg.locker_price ?? 0);
