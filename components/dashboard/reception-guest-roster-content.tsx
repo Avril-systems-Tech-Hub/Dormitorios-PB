@@ -446,15 +446,13 @@ export async function ReceptionGuestRosterContent({
           <span className="font-medium text-text-main">{sortedRows.length}</span> registros ·{" "}
           {periodBounds.label}
         </p>
-        <div className="md:hidden">
-          <Suspense fallback={null}>
-            <GuestsPaymentFilter
-              value={paymentFilter}
-              basePath={basePath}
-              paramPrefix={paramPrefix}
-            />
-          </Suspense>
-        </div>
+        <Suspense fallback={null}>
+          <GuestsPaymentFilter
+            value={paymentFilter}
+            basePath={basePath}
+            paramPrefix={paramPrefix}
+          />
+        </Suspense>
       </div>
 
       <ResponsiveTable

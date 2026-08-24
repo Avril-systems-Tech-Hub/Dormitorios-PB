@@ -176,7 +176,6 @@ export default async function GuestsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const profile = await requireModulePermission("guests");
-
   if (profile.role === "reception") {
     return <ReceptionGuestRosterPage searchParams={searchParams} />;
   }
@@ -392,7 +391,7 @@ export default async function GuestsPage({
             />
           </Suspense>
         </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 md:hidden">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-text-muted">Pago</p>
           <Suspense fallback={null}>
             <GuestsPaymentFilter value={paymentFilter} />
