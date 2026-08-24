@@ -193,15 +193,19 @@ export function GuestPaymentCell({
   }
 
   return (
-    <div className="min-w-[9rem] space-y-1 whitespace-nowrap">
+    <div className="min-w-[9rem] space-y-1">
       <PaymentStatusBadge status={paymentStatus} />
-      <p className="text-sm text-text-main">
-        <span className="font-medium">${paidAmount.toFixed(2)}</span>
-        <span className="text-text-muted"> pagado</span>
-      </p>
-      <p className="text-xs text-text-muted">
-        Total ${totalAmount.toFixed(2)}
-        {balanceDue > 0 ? ` · Saldo $${balanceDue.toFixed(2)}` : null}
+      <p className="text-xs tabular-nums text-text-main">
+        <span className="text-text-muted">Total</span> ${totalAmount.toFixed(2)}
+        <span className="text-text-muted"> · </span>
+        <span className="text-text-muted">Pagado</span> ${paidAmount.toFixed(2)}
+        <span className="text-text-muted"> · </span>
+        <span className={balanceDue > 0 ? "font-medium text-amber-800" : "text-text-muted"}>
+          Pendiente
+        </span>{" "}
+        <span className={balanceDue > 0 ? "font-medium text-amber-800" : undefined}>
+          ${balanceDue.toFixed(2)}
+        </span>
       </p>
     </div>
   );

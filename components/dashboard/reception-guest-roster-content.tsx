@@ -2,10 +2,15 @@ import { Suspense } from "react";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
 import { ft } from "@/components/ui/filterable-cell";
 import { ReservationsPeriodFilter } from "@/components/dashboard/reservations-period-filter";
+import { GuestsPaymentFilter } from "@/components/dashboard/guests-payment-filter";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatGuestSexLabel } from "@/lib/guest-sex-label";
 import { formatBedLabel } from "@/lib/beds";
 import { normalizeLockerCode } from "@/lib/locker";
+import {
+  matchesGuestPaymentFilter,
+  parseGuestPaymentFilter,
+} from "@/lib/guest-payment-filter";
 import {
   computeGuestLineTotal,
   formatRosterDate,
@@ -156,6 +161,7 @@ export async function ReceptionGuestRosterContent({
   const { page, pageSize } = parsePagination(searchParams, paramPrefix);
   const [from, to] = getRange(page, pageSize);
   const period = parseRosterPeriod(searchParams, paramPrefix);
+  const paymentFilter = parseGuestPaymentFilter(searchParams, paramPrefix);
   const today = getMexicoCityDateString();
   const selectedMonth = parseRosterMonthKey(searchParams, today, paramPrefix);
   const monthAnchor = financeMonthKeyToAnchorDate(selectedMonth);
@@ -269,7 +275,11 @@ export async function ReceptionGuestRosterContent({
     };
   });
 
-  const sortedRows = [...mappedRows].sort((a, b) => {
+  const filteredRows = mappedRows.filter((item) =>
+    matchesGuestPaymentFilter(item.paymentStatus, paymentFilter),
+  );
+
+  const sortedRows = [...filteredRows].sort((a, b) => {
     const byColumn = (() => {
       switch (sortColumn) {
         case "dia":
@@ -357,6 +367,7 @@ export async function ReceptionGuestRosterContent({
             folioCode={folioCode}
             balanceDue={balanceDue}
             totalAmount={folioTotal}
+            paidAmount={paidAmount}
             paymentStatus={paymentStatus}
             returnTo={basePath}
           />
@@ -430,10 +441,21 @@ export async function ReceptionGuestRosterContent({
         />
       </Suspense>
 
-      <p className="text-sm text-text-muted">
-        <span className="font-medium text-text-main">{sortedRows.length}</span> registros ·{" "}
-        {periodBounds.label}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-text-muted">
+          <span className="font-medium text-text-main">{sortedRows.length}</span> registros ·{" "}
+          {periodBounds.label}
+        </p>
+        <div className="md:hidden">
+          <Suspense fallback={null}>
+            <GuestsPaymentFilter
+              value={paymentFilter}
+              basePath={basePath}
+              paramPrefix={paramPrefix}
+            />
+          </Suspense>
+        </div>
+      </div>
 
       <ResponsiveTable
         columns={GUEST_ROSTER_COLUMNS}

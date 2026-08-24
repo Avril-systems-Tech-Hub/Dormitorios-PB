@@ -13,9 +13,35 @@ type ReservationPaymentInlineProps = {
   folioCode: string;
   balanceDue: number;
   totalAmount: number;
+  paidAmount?: number;
   paymentStatus: string;
   returnTo?: string;
 };
+
+function PaymentBreakdown({
+  totalAmount,
+  paidAmount,
+  balanceDue,
+}: {
+  totalAmount: number;
+  paidAmount: number;
+  balanceDue: number;
+}) {
+  return (
+    <p className="text-[10px] leading-snug tabular-nums text-text-main">
+      <span className="text-text-muted">Total</span> ${totalAmount.toFixed(2)}
+      <span className="text-text-muted"> · </span>
+      <span className="text-text-muted">Pagado</span> ${paidAmount.toFixed(2)}
+      <span className="text-text-muted"> · </span>
+      <span className={balanceDue > 0 ? "font-medium text-amber-800" : "text-text-muted"}>
+        Pendiente
+      </span>{" "}
+      <span className={balanceDue > 0 ? "font-medium text-amber-800" : "text-text-muted"}>
+        ${balanceDue.toFixed(2)}
+      </span>
+    </p>
+  );
+}
 
 /**
  * Inline payment widget for reservation rows.
@@ -26,6 +52,7 @@ export function ReservationPaymentInline({
   folioCode,
   balanceDue,
   totalAmount,
+  paidAmount,
   paymentStatus,
   returnTo,
 }: ReservationPaymentInlineProps) {
@@ -36,18 +63,34 @@ export function ReservationPaymentInline({
   const [notes, setNotes] = useState("");
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const resolvedPaid =
+    paidAmount != null ? paidAmount : Math.max(0, Number((totalAmount - balanceDue).toFixed(2)));
 
   if (paymentStatus === "liquidated") {
     return (
       <div className="flex flex-col items-stretch gap-1">
         <span className="text-xs font-medium text-green-600">Pagado ✓</span>
+        <PaymentBreakdown
+          totalAmount={totalAmount}
+          paidAmount={resolvedPaid > 0 ? resolvedPaid : totalAmount}
+          balanceDue={0}
+        />
         <ResendReceiptButton folioId={folioId} returnTo={returnTo} compact />
       </div>
     );
   }
 
   if (!balanceDue || balanceDue <= 0) {
-    return <span className="text-xs text-gray-400">Sin saldo</span>;
+    return (
+      <div className="flex flex-col gap-1">
+        <PaymentBreakdown
+          totalAmount={totalAmount}
+          paidAmount={resolvedPaid}
+          balanceDue={0}
+        />
+        <span className="text-xs text-gray-400">Sin pendiente</span>
+      </div>
+    );
   }
 
   const numAmount = Number(amount) || 0;
@@ -84,9 +127,11 @@ export function ReservationPaymentInline({
 
   return (
     <form onSubmit={handleSubmit} className="flex w-full min-w-[8.5rem] flex-col gap-1.5">
-      <p className="text-[10px] font-medium tabular-nums text-amber-800">
-        Saldo ${balanceDue.toFixed(2)}
-      </p>
+      <PaymentBreakdown
+        totalAmount={totalAmount}
+        paidAmount={resolvedPaid}
+        balanceDue={balanceDue}
+      />
       <div className="flex items-center gap-1">
         <span className="text-xs text-gray-500">$</span>
         <input

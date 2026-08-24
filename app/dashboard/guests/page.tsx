@@ -18,6 +18,11 @@ import {
   GuestsPeriodFilter,
   type GuestPeriod,
 } from "@/components/dashboard/guests-period-filter";
+import { GuestsPaymentFilter } from "@/components/dashboard/guests-payment-filter";
+import {
+  matchesGuestPaymentFilter,
+  parseGuestPaymentFilter,
+} from "@/lib/guest-payment-filter";
 import { parsePagination, getRange } from "@/lib/pagination";
 import {
   ADMIN_GUESTS_COLUMNS,
@@ -181,6 +186,7 @@ export default async function GuestsPage({
   const [from, to] = getRange(page, pageSize);
   const today = getMexicoCityDateString();
   const period = parseGuestPeriod(params.guestPeriod);
+  const paymentFilter = parseGuestPaymentFilter(params);
   const selectedMonth = parseFinanceMonthKey(params.financeMonth, today);
   const monthAnchor = financeMonthKeyToAnchorDate(selectedMonth);
   const selectedDay = parseFinanceDayKey(params.financeDay, selectedMonth, today);
@@ -242,7 +248,8 @@ export default async function GuestsPage({
         if (byReservation !== 0) return byReservation > 0 ? stay : best;
         return stay.checkIn > best.checkIn ? stay : best;
       }, stays[0]),
-    }));
+    }))
+    .filter(({ latest }) => matchesGuestPaymentFilter(latest.paymentStatus, paymentFilter));
 
   const sortedGuests = [...guestsWithStays].sort((a, b) => {
     const nameOf = (item: (typeof guestsWithStays)[number]) => item.guest.full_name;
@@ -383,6 +390,12 @@ export default async function GuestsPage({
               dayOptions={dayOptions}
               weekOptions={weekOptions}
             />
+          </Suspense>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 md:hidden">
+          <p className="text-xs text-text-muted">Pago</p>
+          <Suspense fallback={null}>
+            <GuestsPaymentFilter value={paymentFilter} />
           </Suspense>
         </div>
         <div className="mt-4 border-t border-border-soft pt-4">

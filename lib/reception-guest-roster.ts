@@ -60,7 +60,7 @@ export const GUEST_ROSTER_COLUMNS: TableColumnConfig[] = [
   { key: "salida", label: "Fecha salida", sortable: true },
   { key: "noches", label: "Noches", sortable: true },
   { key: "total", label: "Total", sortable: true },
-  { key: "pago", label: "Pago / saldo", sortable: true },
+  { key: "pago", label: "Pago", sortable: true },
   { key: "nota", label: "Nota de reservación", sortable: true },
   { key: "estado", label: "Estado / salida", sortable: true },
   { key: "editar", label: "Editar" },
