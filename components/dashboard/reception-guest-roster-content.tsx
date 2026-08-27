@@ -21,10 +21,14 @@ import {
 } from "@/lib/reception-guest-roster";
 import {
   financeMonthKeyToAnchorDate,
+  getFinanceDayOptions,
   getFinanceMonthOptions,
+  getFinanceWeekOptions,
   getMexicoCityDateString,
   getReservationPeriodBounds,
+  parseFinanceDayKey,
   parseFinanceMonthKey,
+  parseFinanceWeekAnchor,
   parseReservationPeriod,
   type ReservationPeriod,
 } from "@/lib/dates";
@@ -141,7 +145,12 @@ export function getRosterPeriodBounds(
   const today = getMexicoCityDateString();
   const selectedMonth = parseRosterMonthKey(params, today, paramPrefix);
   const monthAnchor = financeMonthKeyToAnchorDate(selectedMonth);
-  const periodAnchor = period === "month" ? monthAnchor : today;
+  const dayKey = paramPrefix ? `${paramPrefix}_financeDay` : "financeDay";
+  const weekKey = paramPrefix ? `${paramPrefix}_financeWeek` : "financeWeek";
+  const selectedDay = parseFinanceDayKey(params[dayKey], selectedMonth, today);
+  const selectedWeek = parseFinanceWeekAnchor(params[weekKey], selectedMonth, today);
+  const periodAnchor =
+    period === "day" ? selectedDay : period === "week" ? selectedWeek : monthAnchor;
   return getReservationPeriodBounds(period, periodAnchor);
 }
 
@@ -166,7 +175,14 @@ export async function ReceptionGuestRosterContent({
   const selectedMonth = parseRosterMonthKey(searchParams, today, paramPrefix);
   const monthAnchor = financeMonthKeyToAnchorDate(selectedMonth);
   const monthOptions = getFinanceMonthOptions(24, today);
-  const periodAnchor = period === "month" ? monthAnchor : today;
+  const dayKey = paramPrefix ? `${paramPrefix}_financeDay` : "financeDay";
+  const weekKey = paramPrefix ? `${paramPrefix}_financeWeek` : "financeWeek";
+  const selectedDay = parseFinanceDayKey(searchParams[dayKey], selectedMonth, today);
+  const selectedWeek = parseFinanceWeekAnchor(searchParams[weekKey], selectedMonth, today);
+  const dayOptions = getFinanceDayOptions(selectedMonth);
+  const weekOptions = getFinanceWeekOptions(selectedMonth);
+  const periodAnchor =
+    period === "day" ? selectedDay : period === "week" ? selectedWeek : monthAnchor;
   const periodBounds = getReservationPeriodBounds(period, periodAnchor);
 
   const supabase = createAdminClient();
@@ -435,7 +451,11 @@ export async function ReceptionGuestRosterContent({
           period={period}
           periodLabel={periodBounds.label}
           selectedMonth={selectedMonth}
+          selectedDay={selectedDay}
+          selectedWeek={selectedWeek}
           monthOptions={monthOptions}
+          dayOptions={dayOptions}
+          weekOptions={weekOptions}
           basePath={basePath}
           paramPrefix={paramPrefix}
         />
