@@ -15,9 +15,11 @@ import {
 import {
   PAYMENT_METHOD_LABELS,
   parsePayPeriod,
+  parseShiftOperatorFilter,
   type OpenFolioStats,
   type PayPeriod,
   type PaymentPeriodStats,
+  type ShiftOperatorFilter,
 } from "@/lib/payment-insights";
 
 type PaymentsOverviewProps = {
@@ -32,6 +34,8 @@ type PaymentsOverviewProps = {
   periodStats: PaymentPeriodStats;
   openFolioStats: OpenFolioStats;
   folioFilter: FolioSummaryFilter;
+  shiftFilter: ShiftOperatorFilter;
+  shiftOptions: { value: string; label: string }[];
   paidFolioCount: number;
 };
 
@@ -62,6 +66,8 @@ export function PaymentsOverview({
   periodStats,
   openFolioStats,
   folioFilter,
+  shiftFilter,
+  shiftOptions,
   paidFolioCount,
 }: PaymentsOverviewProps) {
   const router = useRouter();
@@ -84,6 +90,7 @@ export function PaymentsOverview({
     clearStaleTableParams(params);
     if (next === "por_pagar") {
       params.delete("folioFilter");
+      params.delete("shiftOp");
     } else {
       params.set("folioFilter", next);
     }
@@ -92,8 +99,22 @@ export function PaymentsOverview({
     router.push(qs ? `/dashboard/payments?${qs}` : "/dashboard/payments");
   };
 
+  const setShiftFilter = (next: ShiftOperatorFilter) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "all") {
+      params.delete("shiftOp");
+    } else {
+      params.set("shiftOp", next);
+    }
+    params.delete("page");
+    const qs = params.toString();
+    router.push(qs ? `/dashboard/payments?${qs}` : "/dashboard/payments");
+  };
+
   const activeFilter = parseFolioSummaryFilter(searchParams.get("folioFilter") ?? folioFilter);
   const activePeriod = parsePayPeriod(searchParams.get("payPeriod") ?? payPeriod);
+  const activeShift = parseShiftOperatorFilter(searchParams.get("shiftOp") ?? shiftFilter);
+  const showShiftFilter = activeFilter !== "por_pagar" && shiftOptions.length > 0;
 
   return (
     <div className="space-y-4">
@@ -198,30 +219,50 @@ export function PaymentsOverview({
             {activeFilter === "por_pagar"
               ? "Todos los folios con saldo pendiente (coincide con el KPI de arriba). Haz clic en Saldo para ordenar."
               : activeFilter === "pagados"
-                ? "Pagos del periodo en folios ya liquidados. Haz clic en Monto para ordenar."
-                : "Todos los pagos del periodo seleccionado. Haz clic en Monto para ordenar."}
+                ? "Pagos del periodo en folios ya liquidados. Filtra por turno del operador. Haz clic en Monto para ordenar."
+                : "Todos los pagos del periodo seleccionado. Filtra por turno del operador. Haz clic en Monto para ordenar."}
           </p>
         </div>
-        <div
-          className="inline-flex max-w-full flex-wrap gap-0.5 rounded-lg border border-border-soft bg-surface-soft p-0.5 text-xs"
-          role="group"
-          aria-label="Estado del folio"
-        >
-          {FOLIO_SUMMARY_FILTERS.map(({ value, toggleLabel }) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setFolioFilter(value)}
-              className={cn(
-                "rounded-md px-2 py-1 font-medium transition",
-                activeFilter === value
-                  ? "bg-white text-text-main shadow-sm"
-                  : "text-text-muted hover:text-text-main",
-              )}
-            >
-              {toggleLabel}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          {showShiftFilter ? (
+            <label className="flex items-center gap-2 text-xs text-text-muted">
+              <span className="whitespace-nowrap font-medium">Turno</span>
+              <select
+                value={activeShift}
+                onChange={(event) => setShiftFilter(parseShiftOperatorFilter(event.target.value))}
+                className="max-w-[12rem] rounded-md border border-border-soft bg-white px-2 py-1.5 text-xs font-medium text-text-main"
+                aria-label="Filtrar cobros por turno"
+              >
+                <option value="all">Todos los turnos</option>
+                {shiftOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <div
+            className="inline-flex max-w-full flex-wrap gap-0.5 rounded-lg border border-border-soft bg-surface-soft p-0.5 text-xs"
+            role="group"
+            aria-label="Estado del folio"
+          >
+            {FOLIO_SUMMARY_FILTERS.map(({ value, toggleLabel }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setFolioFilter(value)}
+                className={cn(
+                  "rounded-md px-2 py-1 font-medium transition",
+                  activeFilter === value
+                    ? "bg-white text-text-main shadow-sm"
+                    : "text-text-muted hover:text-text-main",
+                )}
+              >
+                {toggleLabel}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>

@@ -194,6 +194,62 @@ function paymentShiftOperatorName(payment: PaymentTransactionRow): string {
   return opener?.full_name?.trim() || unwrap(payment.receiver)?.full_name?.trim() || "";
 }
 
+export function paymentShiftOperatorId(payment: PaymentTransactionRow): string | null {
+  const openedBy = unwrap(payment.shift)?.opened_by;
+  return openedBy?.trim() || null;
+}
+
+/** `all` | profile id of shift opener | `__none__` for payments without shift. */
+export type ShiftOperatorFilter = "all" | string;
+
+export const SHIFT_OPERATOR_NONE = "__none__";
+
+export function parseShiftOperatorFilter(
+  raw: string | string[] | undefined,
+): ShiftOperatorFilter {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value || value === "all") return "all";
+  return value;
+}
+
+export function filterPaymentsByShiftOperator(
+  payments: PaymentTransactionRow[],
+  shiftFilter: ShiftOperatorFilter,
+): PaymentTransactionRow[] {
+  if (shiftFilter === "all") return payments;
+  if (shiftFilter === SHIFT_OPERATOR_NONE) {
+    return payments.filter((payment) => !paymentShiftOperatorId(payment));
+  }
+  return payments.filter((payment) => paymentShiftOperatorId(payment) === shiftFilter);
+}
+
+export function buildShiftOperatorOptions(
+  payments: PaymentTransactionRow[],
+): { value: string; label: string }[] {
+  const byId = new Map<string, string>();
+  let hasNone = false;
+
+  for (const payment of payments) {
+    const id = paymentShiftOperatorId(payment);
+    if (!id) {
+      hasNone = true;
+      continue;
+    }
+    if (!byId.has(id)) {
+      byId.set(id, paymentShiftOperatorName(payment) || "Sin nombre");
+    }
+  }
+
+  const options = [...byId.entries()]
+    .sort((a, b) => a[1].localeCompare(b[1], "es"))
+    .map(([value, label]) => ({ value, label }));
+
+  if (hasNone) {
+    options.push({ value: SHIFT_OPERATOR_NONE, label: "Sin turno" });
+  }
+  return options;
+}
+
 export function filterPaymentsByFolioStatus(
   payments: PaymentTransactionRow[] | null,
   folioFilter: FolioSummaryFilter,

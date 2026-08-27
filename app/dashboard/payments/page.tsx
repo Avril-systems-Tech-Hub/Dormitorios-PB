@@ -33,10 +33,13 @@ import {
   PAYMENT_METHOD_LABELS,
   PAYMENT_TYPE_LABELS,
   filterPaymentsByFolioStatus,
+  filterPaymentsByShiftOperator,
+  buildShiftOperatorOptions,
   getPayPeriodAnchor,
   getPayPeriodBounds,
   paginateRows,
   parsePayPeriod,
+  parseShiftOperatorFilter,
   sortOpenFolios,
   sortPaymentTransactions,
   sumOpenFolioBalances,
@@ -69,6 +72,8 @@ export default async function PaymentsPage({
   const today = getMexicoCityDateString();
   const payPeriod = parsePayPeriod(params.payPeriod);
   const folioFilter = parseFolioSummaryFilter(params.folioFilter);
+  const shiftFilter =
+    folioFilter === "por_pagar" ? "all" : parseShiftOperatorFilter(params.shiftOp);
   const selectedMonth = parseFinanceMonthKey(params.financeMonth, today);
   const monthAnchor = financeMonthKeyToAnchorDate(selectedMonth);
   const selectedDay = parseFinanceDayKey(params.financeDay, selectedMonth, today);
@@ -138,7 +143,12 @@ export default async function PaymentsPage({
     throw new Error(`No se pudieron cargar los folios por pagar: ${pendingError.message}`);
   }
 
-  const periodStats = aggregatePaymentStats(periodPayments);
+  const paymentsInPeriod = (paymentsRaw ?? []) as PaymentTransactionRow[];
+  const shiftOptions = buildShiftOperatorOptions(paymentsInPeriod);
+  const shiftFilteredPayments = filterPaymentsByShiftOperator(paymentsInPeriod, shiftFilter);
+  const periodStats = aggregatePaymentStats(
+    shiftFilter === "all" ? periodPayments : shiftFilteredPayments,
+  );
   const openFolioStats = sumOpenFolioBalances(openFolios);
 
   let tableColumns: TableColumnConfig[];
@@ -214,9 +224,9 @@ export default async function PaymentsPage({
     ));
     tableColumns = PAYMENTS_TABLE_COLUMNS;
 
-    let payments = filterPaymentsByFolioStatus(
-      paymentsRaw as PaymentTransactionRow[] | null,
-      folioFilter,
+    let payments = filterPaymentsByShiftOperator(
+      filterPaymentsByFolioStatus(paymentsInPeriod, folioFilter),
+      shiftFilter,
     );
 
     if (q) {
@@ -326,6 +336,8 @@ export default async function PaymentsPage({
           periodStats={periodStats}
           openFolioStats={openFolioStats}
           folioFilter={folioFilter}
+          shiftFilter={shiftFilter}
+          shiftOptions={shiftOptions}
           paidFolioCount={paidFolioCount ?? 0}
         />
       </Suspense>
