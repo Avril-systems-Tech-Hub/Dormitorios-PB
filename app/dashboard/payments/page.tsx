@@ -114,7 +114,7 @@ export default async function PaymentsPage({
     supabase
       .from("payments")
       .select(
-        `id,amount,method,payment_type,effective_date,captured_at,balance_after,is_reversal,reversal_of_payment_id,reversal_reason,receiver:profiles!payments_received_by_fkey(full_name),folios!inner(folio_code,payment_status,${FOLIO_GUESTS_SELECT})`,
+        `id,amount,method,payment_type,effective_date,captured_at,balance_after,is_reversal,reversal_of_payment_id,reversal_reason,receiver:profiles!payments_received_by_fkey(full_name),shift:shifts!payments_shift_id_fkey(opened_by,open_by:opened_by(full_name)),folios!inner(folio_code,payment_status,${FOLIO_GUESTS_SELECT})`,
       )
       .gte("effective_date", periodBounds.start)
       .lte("effective_date", periodBounds.end)
@@ -248,6 +248,10 @@ export default async function PaymentsPage({
       const method = payment.method as PaymentMethod;
       const status = (folio?.payment_status ?? "pending") as FolioPaymentStatus;
       const receiver = unwrapRelation(payment.receiver);
+      const shift = unwrapRelation(payment.shift);
+      const shiftOpener = unwrapRelation(shift?.open_by);
+      const turnoName =
+        shiftOpener?.full_name?.trim() || receiver?.full_name?.trim() || "Sin turno";
       const isReversal = Boolean(payment.is_reversal);
       const availableAmount = Math.max(
         0,
@@ -274,7 +278,7 @@ export default async function PaymentsPage({
           payment.payment_type,
         payment.effective_date,
         formatMexicoCityDateTime(payment.captured_at),
-        receiver?.full_name ?? "Sin receptor",
+        turnoName,
         payment.balance_after == null ? "—" : `$${Number(payment.balance_after).toFixed(2)}`,
         <Badge
           key={`${payment.id}-status`}

@@ -51,7 +51,7 @@ export const PAYMENTS_TABLE_COLUMNS: TableColumnConfig[] = [
   { key: "tipo", label: "Tipo", sortable: true },
   { key: "fecha", label: "Fecha efectiva", sortable: true },
   { key: "captura", label: "Capturado", sortable: true },
-  { key: "receptor", label: "Recibió", sortable: true },
+  { key: "turno", label: "Turno", sortable: true },
   { key: "saldo", label: "Saldo posterior", sortable: true },
   { key: "estatus", label: "Estatus folio", sortable: true },
   { key: "correccion", label: "Corrección" },
@@ -175,8 +175,24 @@ export type PaymentTransactionRow = {
   reversal_of_payment_id?: string | null;
   reversal_reason?: string | null;
   receiver?: { full_name?: string } | { full_name?: string }[] | null;
+  shift?:
+    | {
+        opened_by?: string | null;
+        open_by?: { full_name?: string } | { full_name?: string }[] | null;
+      }
+    | {
+        opened_by?: string | null;
+        open_by?: { full_name?: string } | { full_name?: string }[] | null;
+      }[]
+    | null;
   folios?: FolioGuestEmbed | FolioGuestEmbed[] | null;
 };
+
+function paymentShiftOperatorName(payment: PaymentTransactionRow): string {
+  const shift = unwrap(payment.shift);
+  const opener = unwrap(shift?.open_by);
+  return opener?.full_name?.trim() || unwrap(payment.receiver)?.full_name?.trim() || "";
+}
 
 export function filterPaymentsByFolioStatus(
   payments: PaymentTransactionRow[] | null,
@@ -279,11 +295,9 @@ export function sortPaymentTransactions(
         return mult * a.effective_date.localeCompare(b.effective_date);
       case "captura":
         return mult * a.captured_at.localeCompare(b.captured_at);
+      case "turno":
       case "receptor":
-        return mult * (unwrap(a.receiver)?.full_name ?? "").localeCompare(
-          unwrap(b.receiver)?.full_name ?? "",
-          "es",
-        );
+        return mult * paymentShiftOperatorName(a).localeCompare(paymentShiftOperatorName(b), "es");
       case "saldo":
         return mult * (Number(a.balance_after ?? 0) - Number(b.balance_after ?? 0));
       case "estatus":
