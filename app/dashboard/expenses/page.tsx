@@ -6,6 +6,7 @@ import { PaymentsExpensesComparison } from "@/components/dashboard/payments-expe
 import { Card } from "@/components/ui/card";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
 import { requireModulePermission } from "@/lib/auth/guards";
+import { canMutate } from "@/lib/auth/roles";
 import { getExpenseConceptLabel } from "@/lib/expense-concepts";
 import { formatOpenShiftLabel, getOpenShift, getShiftExpenseTotal } from "@/lib/open-shift";
 import {
@@ -27,7 +28,6 @@ import {
   parseReservationPeriod,
 } from "@/lib/dates";
 import { getPayPeriodAnchor, getPayPeriodBounds } from "@/lib/payment-insights";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 import type { ExpenseConcept } from "@/types/domain";
@@ -51,10 +51,10 @@ export default async function ExpensesPage({
   const { page, pageSize, q } = parsePagination(params);
   const [from, to] = getRange(page, pageSize);
 
-  const supabase = await createClient();
   const adminSupabase = createAdminClient();
   const today = getMexicoCityDateString();
   const isReception = profile.role === "reception";
+  const allowMutations = canMutate(profile.role);
   const openShift = await getOpenShift(profile.id);
   const shiftLabel = openShift ? formatOpenShiftLabel(openShift) : undefined;
   const shiftExpenseTotal = openShift ? await getShiftExpenseTotal(openShift.id) : 0;
@@ -199,10 +199,10 @@ export default async function ExpensesPage({
 
   const summaryPromise =
     expensePeriod === "day"
-      ? getDayFinanceSummary(supabase, selectedDay)
+      ? getDayFinanceSummary(adminSupabase, selectedDay)
       : expensePeriod === "week"
-        ? getWeekFinanceSummary(supabase, selectedWeek)
-        : getMonthFinanceSummary(supabase, monthAnchor);
+        ? getWeekFinanceSummary(adminSupabase, selectedWeek)
+        : getMonthFinanceSummary(adminSupabase, monthAnchor);
 
   const [summary, { count: paymentCount }, { count: expenseCount }] = await Promise.all([
     summaryPromise,
@@ -268,7 +268,7 @@ export default async function ExpensesPage({
           ? `${conceptLabel}: ${expense.concept_detail}`
           : conceptLabel;
 
-      return [
+      const row = [
         expense.movement_date,
         detail,
         `$${Number(expense.amount).toFixed(2)}`,
@@ -277,13 +277,18 @@ export default async function ExpensesPage({
         expense.notes ?? "—",
         photoCell,
         new Date(expense.recorded_at).toLocaleString("es-MX", { timeZone: "America/Mexico_City" }),
-        <ExpenseDeleteButton
-          key={`delete-${expense.id}`}
-          movementId={expense.id}
-          concept={detail}
-          amount={Number(expense.amount)}
-        />,
       ];
+      if (allowMutations) {
+        row.push(
+          <ExpenseDeleteButton
+            key={`delete-${expense.id}`}
+            movementId={expense.id}
+            concept={detail}
+            amount={Number(expense.amount)}
+          />,
+        );
+      }
+      return row;
     }),
   );
 
@@ -333,7 +338,7 @@ export default async function ExpensesPage({
               "Notas",
               "Foto",
               "Registrado",
-              "Acciones",
+              ...(allowMutations ? ["Acciones"] : []),
             ]}
             rows={rows}
             filterMode="global"
@@ -348,13 +353,15 @@ export default async function ExpensesPage({
         </div>
       </Card>
 
-      <ExpenseRegisterPanel
-        returnTo="/dashboard/expenses"
-        hasOpenShift={Boolean(openShift)}
-        shiftLabel={shiftLabel}
-        shiftExpenseTotal={openShift ? shiftExpenseTotal : undefined}
-        defaultOpen={Boolean(openShift)}
-      />
+      {allowMutations ? (
+        <ExpenseRegisterPanel
+          returnTo="/dashboard/expenses"
+          hasOpenShift={Boolean(openShift)}
+          shiftLabel={shiftLabel}
+          shiftExpenseTotal={openShift ? shiftExpenseTotal : undefined}
+          defaultOpen={Boolean(openShift)}
+        />
+      ) : null}
     </div>
   );
 }

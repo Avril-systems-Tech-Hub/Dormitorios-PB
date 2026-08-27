@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
 import { createClient } from "@/lib/supabase/server";
+import { requireRole } from "@/lib/auth/guards";
 import {
   addImportedRecordExtraServiceAction,
   commitImportedBatchAction,
@@ -17,6 +18,7 @@ export default async function ImportedRecordsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireRole(["admin"]);
   const params = await searchParams;
   const supabase = await createClient();
 

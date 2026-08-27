@@ -9,6 +9,7 @@ import {
   normalizeStaffUsername,
   staffUsernameToEmail,
 } from "@/lib/auth/staff-credentials";
+import { roleUsesStaffUsername } from "@/lib/auth/roles";
 
 // ============================================================
 // CRUD Usuarios del sistema (solo admin)
@@ -49,7 +50,7 @@ export async function createSystemUserAction(formData: FormData) {
     );
   }
 
-  const usesUsername = role.name === "reception";
+  const usesUsername = roleUsesStaffUsername(role.name);
   if (usesUsername && !isValidStaffUsername(username)) {
     return redirectWithResult(
       returnTo,
@@ -430,8 +431,8 @@ export async function createRoleAction(formData: FormData) {
     return redirectWithResult(returnTo, "error", "Nombre y etiqueta son obligatorios.");
   }
 
-  if (name === "admin") {
-    return redirectWithResult(returnTo, "error", "No se puede crear un rol llamado 'admin'.");
+  if (name === "admin" || name === "reception" || name === "consulta") {
+    return redirectWithResult(returnTo, "error", "Ese nombre de rol está reservado.");
   }
 
   const { error } = await adminSupabase.from("system_roles").insert({ name, label });
@@ -519,7 +520,7 @@ export async function updateRolePermissionsAction(formData: FormData) {
   }
 
   if (role.is_system) {
-    return redirectWithResult(returnTo, "error", "No se pueden modificar los permisos del administrador.");
+    return redirectWithResult(returnTo, "error", "No se pueden modificar los permisos de un rol del sistema.");
   }
 
   // Eliminar permisos actuales

@@ -9,6 +9,7 @@ import { ResponsiveTable } from "@/components/ui/responsive-table";
 import { ft } from "@/components/ui/filterable-cell";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModulePermission } from "@/lib/auth/guards";
+import { canMutate } from "@/lib/auth/roles";
 import {
   financeMonthKeyToAnchorDate,
   getFinanceDayOptions,
@@ -61,7 +62,8 @@ export default async function PaymentsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireModulePermission("payments");
+  const profile = await requireModulePermission("payments");
+  const allowMutations = canMutate(profile.role);
   const params = await searchParams;
   const { page, pageSize, q } = parsePagination(params);
 
@@ -211,7 +213,9 @@ export default async function PaymentsPage({
       "monto",
       "desc",
     ));
-    tableColumns = PAYMENTS_TABLE_COLUMNS;
+    tableColumns = allowMutations
+      ? PAYMENTS_TABLE_COLUMNS
+      : PAYMENTS_TABLE_COLUMNS.filter((column) => column.key !== "correccion");
 
     let payments = filterPaymentsByFolioStatus(
       paymentsRaw as PaymentTransactionRow[] | null,
@@ -253,7 +257,7 @@ export default async function PaymentsPage({
         Number(payment.amount) - (reversedByPayment.get(payment.id) ?? 0),
       );
       const guestSummary = summarizeFolioGuests(folio);
-      return [
+      const row = [
         ft(
           guestSummary.searchText,
           <FolioGuestCell
@@ -283,19 +287,24 @@ export default async function PaymentsPage({
         >
           {FOLIO_STATUS_LABELS[status] ?? status}
         </Badge>,
-        isReversal ? (
-          <span key={`${payment.id}-reversal`} className="text-xs text-red-700">
-            Compensación
-            {payment.reversal_reason ? `: ${payment.reversal_reason}` : ""}
-          </span>
-        ) : (
-          <PaymentCorrectionButton
-            key={`${payment.id}-correct`}
-            paymentId={payment.id}
-            availableAmount={availableAmount}
-          />
-        ),
       ];
+      if (allowMutations) {
+        row.push(
+          isReversal ? (
+            <span key={`${payment.id}-reversal`} className="text-xs text-red-700">
+              Compensación
+              {payment.reversal_reason ? `: ${payment.reversal_reason}` : ""}
+            </span>
+          ) : (
+            <PaymentCorrectionButton
+              key={`${payment.id}-correct`}
+              paymentId={payment.id}
+              availableAmount={availableAmount}
+            />
+          ),
+        );
+      }
+      return row;
     });
     totalCount = paged.totalCount;
     visibleAmountTotal = Number(
@@ -343,7 +352,9 @@ export default async function PaymentsPage({
         serverSort={{ column: sortColumn, direction: sortDirection }}
       />
 
-      <PaymentRegisterPanel action={registerPaymentAction} folios={foliosForForm ?? []} />
+      {allowMutations ? (
+        <PaymentRegisterPanel action={registerPaymentAction} folios={foliosForForm ?? []} />
+      ) : null}
     </div>
   );
 }

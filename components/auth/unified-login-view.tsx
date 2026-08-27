@@ -119,7 +119,7 @@ export function UnifiedLoginView({
           />
           <h1 className="text-xl font-semibold">Acceso operativo</h1>
           <p className="text-sm text-text-muted">
-            Recepción: usuario (ej. arturo). Admin: correo.
+            Recepción y consulta: usuario (ej. arturo). Admin: correo.
           </p>
         </div>
 
@@ -228,7 +228,7 @@ export function UnifiedLoginView({
         />
         <h1 className="text-xl font-semibold">Ingreso</h1>
         <p className="text-sm text-text-muted">
-          Entra con el mismo correo que usaste al reservar (correo o Google).
+          Entra con el mismo correo que usaste al reservar, o con Google.
         </p>
       </div>
 
@@ -250,7 +250,7 @@ export function UnifiedLoginView({
       </Button>
 
       <p className="text-center text-xs text-text-muted">
-        Human Wallet creará tu wallet con ese correo para futuros beneficios.
+        Solo correo o Google. No necesitas wallet ni GitHub.
       </p>
 
       <div className="border-t border-border-soft pt-3">

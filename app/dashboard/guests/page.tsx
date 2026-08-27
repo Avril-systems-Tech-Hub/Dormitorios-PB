@@ -11,6 +11,7 @@ import {
 } from "@/components/dashboard/guest-history-detail";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModulePermission } from "@/lib/auth/guards";
+import { canMutate } from "@/lib/auth/roles";
 import { ReceptionGuestRosterPage } from "@/components/dashboard/reception-guest-roster-page";
 import { GuestDeleteButton } from "@/components/dashboard/guest-delete-button";
 import { VisitorSalesSection } from "@/components/dashboard/visitor-sales-section";
@@ -176,6 +177,8 @@ export default async function GuestsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const profile = await requireModulePermission("guests");
+  const allowMutations = canMutate(profile.role);
+
   if (profile.role === "reception") {
     return <ReceptionGuestRosterPage searchParams={searchParams} />;
   }
@@ -354,15 +357,19 @@ export default async function GuestsPage({
             : new Date(guest.created_at).toLocaleDateString("es-MX", { timeZone: "America/Mexico_City" })}
         </span>,
       ),
-      ft(
-        "eliminar",
-        <GuestDeleteButton
-          key={`delete-${guest.id}`}
-          guestId={guest.id}
-          guestName={guest.full_name}
-          stayCount={stays.length}
-        />,
-      ),
+      ...(allowMutations
+        ? [
+            ft(
+              "eliminar",
+              <GuestDeleteButton
+                key={`delete-${guest.id}`}
+                guestId={guest.id}
+                guestName={guest.full_name}
+                stayCount={stays.length}
+              />,
+            ),
+          ]
+        : []),
     ];
   });
 
@@ -399,7 +406,11 @@ export default async function GuestsPage({
         </div>
         <div className="mt-4 border-t border-border-soft pt-4">
           <ResponsiveTable
-            columns={ADMIN_GUESTS_COLUMNS}
+            columns={
+              allowMutations
+                ? ADMIN_GUESTS_COLUMNS
+                : ADMIN_GUESTS_COLUMNS.filter((column) => column.key !== "eliminar")
+            }
             rows={rows}
             dense
             serverPagination={{
@@ -417,7 +428,7 @@ export default async function GuestsPage({
         endDate={periodBounds?.end ?? null}
         periodLabel={periodLabel}
         searchParams={params}
-        canDelete
+        canDelete={allowMutations}
       />
     </div>
   );

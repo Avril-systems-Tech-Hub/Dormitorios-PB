@@ -119,7 +119,7 @@ function BedZoneSection({
                         status={bed.status as BedStatus}
                       />
                     ) : null}
-                    <BedCardAccordion detail={detail} />
+                    <BedCardAccordion detail={detail} canCheckout={canManageBedStatus} />
                   </div>
                 );
               })}

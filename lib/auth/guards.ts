@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { isOperatorRole } from "@/lib/auth/roles";
 import type { UserRole } from "@/types/domain";
 
 type Profile = {
@@ -51,6 +52,15 @@ export async function getSessionProfile() {
 export async function requireRole(allowed: UserRole[]) {
   const profile = await getSessionProfile();
   if (!allowed.includes(profile.role)) {
+    redirect("/dashboard");
+  }
+  return profile;
+}
+
+/** Bloquea al rol consulta (y a cualquiera que no opere) en acciones que mutan datos. */
+export async function requireOperator() {
+  const profile = await getSessionProfile();
+  if (!isOperatorRole(profile.role)) {
     redirect("/dashboard");
   }
   return profile;

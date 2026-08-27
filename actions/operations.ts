@@ -42,6 +42,7 @@ import {
 import { normalizeLockerCode } from "@/lib/locker";
 import { formatBedLabel } from "@/lib/beds";
 import { requireRole } from "@/lib/auth/guards";
+import { isOperatorRole } from "@/lib/auth/roles";
 import {
   type StayRegistrationMode,
   validateStayDates,
@@ -201,6 +202,16 @@ async function getActorProfile() {
   if (!user) return null;
   const { data: profile } = await supabase.from("profiles").select("id, role, full_name").eq("id", user.id).single();
   return profile ?? null;
+}
+
+function assertOperator(
+  actor: { id: string; role: string } | null,
+  returnTo: string,
+  message = "No tienes permiso para realizar esta acción.",
+): asserts actor is { id: string; role: string } {
+  if (!actor || !isOperatorRole(actor.role)) {
+    redirectWithResult(returnTo, "error", message);
+  }
 }
 
 async function getFolioExpectedTotal(supabase: ReturnType<typeof createAdminClient>, folioId: string) {
@@ -1044,8 +1055,10 @@ export async function receptionReservationPaymentAction(formData: FormData): Pro
 
 export async function createCashMovementAction(formData: FormData): Promise<void> {
   const supabase = await createClient();
-  const actorId = await getActorProfileId();
+  const actor = await getActorProfile();
   const returnTo = String(formData.get("return_to") ?? "/dashboard/cash-cuts");
+  assertOperator(actor, returnTo, "No tienes permiso para registrar movimientos.");
+  const actorId = actor.id;
   const direction = String(formData.get("direction") ?? "income") as CashMovementDirection;
   const category = String(formData.get("category") ?? "other") as CashMovementCategory;
   const amount = Number(formData.get("amount") ?? 0);
@@ -2041,9 +2054,11 @@ export async function createDailyCashCutAction(): Promise<void> {
 
 export async function sendWhatsAppTicketAction(formData: FormData): Promise<void> {
   const supabase = await createClient();
-  const actorId = await getActorProfileId();
+  const actor = await getActorProfile();
   const folioId = String(formData.get("folio_id") ?? "");
   const returnTo = String(formData.get("return_to") ?? "/dashboard/folios");
+  assertOperator(actor, returnTo, "No tienes permiso para enviar tickets.");
+  const actorId = actor.id;
 
   if (!folioId) return redirectWithResult(returnTo, "error", "Folio requerido.");
 
@@ -2111,8 +2126,10 @@ export async function sendWhatsAppTicketAction(formData: FormData): Promise<void
 
 export async function previewImportedRecordsAction(formData: FormData): Promise<void> {
   const supabase = createAdminClient();
-  const actorId = await getActorProfileId();
+  const actor = await getActorProfile();
   const returnTo = String(formData.get("return_to") ?? "/dashboard/imported-records");
+  assertOperator(actor, returnTo, "No tienes permiso para importar registros.");
+  const actorId = actor.id;
   const sourceName = String(formData.get("source_name") ?? "TSV import");
   const rawTsv = String(formData.get("raw_tsv") ?? "");
   if (!rawTsv.trim()) return redirectWithResult(returnTo, "error", "Pega contenido TSV para previsualizar.");
@@ -2207,8 +2224,10 @@ export async function previewImportedRecordsAction(formData: FormData): Promise<
 
 export async function commitImportedBatchAction(formData: FormData): Promise<void> {
   const supabase = createAdminClient();
-  const actorId = await getActorProfileId();
+  const actor = await getActorProfile();
   const returnTo = String(formData.get("return_to") ?? "/dashboard/imported-records");
+  assertOperator(actor, returnTo, "No tienes permiso para importar registros.");
+  const actorId = actor.id;
   const batchId = String(formData.get("batch_id") ?? "");
   if (!batchId) return redirectWithResult(returnTo, "error", "Lote no especificado.");
 
@@ -2234,8 +2253,10 @@ export async function commitImportedBatchAction(formData: FormData): Promise<voi
 
 export async function resendPaymentReceiptAction(formData: FormData): Promise<void> {
   const supabase = createAdminClient();
-  const actorId = await getActorProfileId();
+  const actor = await getActorProfile();
   const returnTo = String(formData.get("return_to") ?? "/dashboard");
+  assertOperator(actor, returnTo, "No tienes permiso para reenviar recibos.");
+  const actorId = actor.id;
   const folioId = String(formData.get("folio_id") ?? "");
 
   if (!folioId) {
@@ -3080,8 +3101,10 @@ async function recalculateImportedRecordInternal({
 
 export async function recalculateImportedRecordAction(formData: FormData): Promise<void> {
   const supabase = createAdminClient();
-  const actorId = await getActorProfileId();
+  const actor = await getActorProfile();
   const returnTo = String(formData.get("return_to") ?? "/dashboard/imported-records");
+  assertOperator(actor, returnTo, "No tienes permiso para modificar importados.");
+  const actorId = actor.id;
   const recordId = String(formData.get("record_id") ?? "");
   if (!recordId) return redirectWithResult(returnTo, "error", "Registro no especificado.");
   const result = await recalculateImportedRecordInternal({ supabase, recordId, actorId });
@@ -3093,8 +3116,10 @@ export async function recalculateImportedRecordAction(formData: FormData): Promi
 
 export async function updateImportedRecordAction(formData: FormData): Promise<void> {
   const supabase = createAdminClient();
-  const actorId = await getActorProfileId();
+  const actor = await getActorProfile();
   const returnTo = String(formData.get("return_to") ?? "/dashboard/imported-records");
+  assertOperator(actor, returnTo, "No tienes permiso para modificar importados.");
+  const actorId = actor.id;
   const recordId = String(formData.get("record_id") ?? "");
   if (!recordId) return redirectWithResult(returnTo, "error", "Registro no especificado.");
 
@@ -3143,8 +3168,10 @@ export async function updateImportedRecordAction(formData: FormData): Promise<vo
 
 export async function addImportedRecordExtraServiceAction(formData: FormData): Promise<void> {
   const supabase = createAdminClient();
-  const actorId = await getActorProfileId();
+  const actor = await getActorProfile();
   const returnTo = String(formData.get("return_to") ?? "/dashboard/imported-records");
+  assertOperator(actor, returnTo, "No tienes permiso para modificar importados.");
+  const actorId = actor.id;
   const importedRecordId = String(formData.get("imported_record_id") ?? "");
   const serviceName = String(formData.get("service_name") ?? "").trim();
   const amount = Number(formData.get("amount") ?? 0);
@@ -3168,8 +3195,10 @@ export async function addImportedRecordExtraServiceAction(formData: FormData): P
 
 export async function addFolioExtraServiceAction(formData: FormData): Promise<void> {
   const supabase = createAdminClient();
-  const actorId = await getActorProfileId();
+  const actor = await getActorProfile();
   const returnTo = String(formData.get("return_to") ?? "/dashboard/folios");
+  assertOperator(actor, returnTo, "No tienes permiso para agregar extras.");
+  const actorId = actor.id;
   const folioId = String(formData.get("folio_id") ?? "");
   const serviceName = String(formData.get("service_name") ?? "").trim();
   const amount = Number(formData.get("amount") ?? 0);

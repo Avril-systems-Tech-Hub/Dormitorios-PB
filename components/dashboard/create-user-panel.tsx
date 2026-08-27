@@ -5,6 +5,7 @@ import { createSystemUserAction } from "@/actions/auth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { roleUsesStaffUsername } from "@/lib/auth/roles";
 
 type RoleOption = { id: string; name: string; label: string };
 
@@ -23,7 +24,7 @@ export function CreateUserPanel({
   const [open, setOpen] = useState(false);
   const [selectedRoleId, setSelectedRoleId] = useState("");
   const selectedRole = roles.find((role) => role.id === selectedRoleId);
-  const usesUsername = selectedRole?.name === "reception";
+  const usesUsername = roleUsesStaffUsername(selectedRole?.name);
 
   return (
     <Card className="border-brand-primary/30 bg-brand-primary/5">
@@ -134,6 +135,12 @@ export function CreateUserPanel({
               </select>
             </div>
           </div>
+          {selectedRole?.name === "consulta" ? (
+            <p className="rounded-lg border border-border-soft bg-surface-soft/60 p-3 text-sm text-text-muted">
+              Este rol solo consulta operación, finanzas, turnos y auditoría. Entra con usuario y
+              contraseña, igual que recepción. No puede registrar, editar ni borrar.
+            </p>
+          ) : null}
           {selectedRole?.name === "admin" ? (
             <label className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
               <input

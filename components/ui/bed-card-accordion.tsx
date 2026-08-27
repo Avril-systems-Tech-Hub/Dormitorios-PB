@@ -26,7 +26,13 @@ type ReservationDetail = {
   pending_checkout?: boolean;
 };
 
-export function BedCardAccordion({ detail }: { detail: ReservationDetail | null }) {
+export function BedCardAccordion({
+  detail,
+  canCheckout = true,
+}: {
+  detail: ReservationDetail | null;
+  canCheckout?: boolean;
+}) {
   const [open, setOpen] = useState(false);
 
   if (!detail) return null;
@@ -143,7 +149,7 @@ export function BedCardAccordion({ detail }: { detail: ReservationDetail | null 
               </div>
             </>
           )}
-          {detail.reservation_id && (detail.in_house_today || detail.pending_checkout) ? (
+          {canCheckout && detail.reservation_id && (detail.in_house_today || detail.pending_checkout) ? (
             <RegisterCheckoutButton
               reservationId={detail.reservation_id}
               balanceDue={Number(detail.balance_due ?? 0)}

@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSessionProfile, requireModulePermission } from "@/lib/auth/guards";
+import { canMutate } from "@/lib/auth/roles";
 import { ExpenseRegisterPanel } from "@/components/dashboard/expense-register-panel";
 import { ShiftActionButtons } from "@/components/dashboard/shift-action-buttons";
 import { Card } from "@/components/ui/card";
@@ -15,6 +16,7 @@ export default async function ShiftsPage({
 }) {
   await requireModulePermission("shifts");
   const profile = await getSessionProfile();
+  const allowMutations = canMutate(profile.role);
   const params = await searchParams;
   const { page, pageSize } = parsePagination(params);
   const [from, to] = getRange(page, pageSize);
@@ -61,12 +63,18 @@ export default async function ShiftsPage({
               </Badge>
             </div>
             <p className="mt-1 text-sm text-text-muted">
-              {openShift
-                ? `${shiftLabel}. Inicia o cierra turno aquí; los egresos de recepción se registran en este turno.`
-                : "Inicia turno aquí antes de registrar egresos en recepción."}
+              {allowMutations
+                ? openShift
+                  ? `${shiftLabel}. Inicia o cierra turno aquí; los egresos de recepción se registran en este turno.`
+                  : "Inicia turno aquí antes de registrar egresos en recepción."
+                : openShift
+                  ? `${shiftLabel}.`
+                  : "Consulta de turnos abiertos y cerrados. No puedes iniciar ni cerrar turnos."}
             </p>
           </div>
-          <ShiftActionButtons hasOpenShift={Boolean(openShift)} returnTo="/dashboard/shifts" />
+          {allowMutations ? (
+            <ShiftActionButtons hasOpenShift={Boolean(openShift)} returnTo="/dashboard/shifts" />
+          ) : null}
         </div>
       </Card>
 

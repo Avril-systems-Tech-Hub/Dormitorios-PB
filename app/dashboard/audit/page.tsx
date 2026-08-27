@@ -3,7 +3,7 @@ import { AuditOverview } from "@/components/dashboard/audit-overview";
 import { AuditTechnicalDetail } from "@/components/dashboard/audit-technical-detail";
 import { Badge } from "@/components/ui/badge";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
-import { requireRole } from "@/lib/auth/guards";
+import { requireModulePermission } from "@/lib/auth/guards";
 import {
   formatAuditDetailLines,
   formatAuditSummary,
@@ -36,7 +36,7 @@ export default async function AuditPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireRole(["admin"]);
+  await requireModulePermission("audit");
   const params = await searchParams;
   const { page, pageSize, q } = parsePagination(params);
   const [from, to] = getRange(page, pageSize);

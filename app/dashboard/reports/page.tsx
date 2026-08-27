@@ -1,5 +1,5 @@
 import { MonthlyReportView } from "@/components/dashboard/monthly-report-view";
-import { requireModulePermission, requireRole } from "@/lib/auth/guards";
+import { requireModulePermission } from "@/lib/auth/guards";
 import {
   getFinanceMonthOptions,
   getMexicoCityDateString,
@@ -15,7 +15,6 @@ export default async function ReportsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireRole(["admin"]);
   await requireModulePermission("reports");
 
   const params = await searchParams;

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { groupDashboardLinks, groupModules } from "@/lib/navigation";
 import type { UserRole } from "@/types/domain";
 import type { SystemModule } from "@/lib/auth/permissions";
+import { canMutate, seesAdminWorkspace } from "@/lib/auth/roles";
 import { Button } from "@/components/ui/button";
 import { ReceptionSessionNav } from "@/components/dashboard/reception-session-nav";
 import {
@@ -60,7 +61,7 @@ export function DashboardShell({
       });
     }
   }
-  const showSidebar = role === "admin" || (modules !== undefined && modules.length > 0);
+  const showSidebar = seesAdminWorkspace(role) || (modules !== undefined && modules.length > 0);
   const showSidebarNav = showSidebar && role !== "reception";
   const primaryNavItemCount = primaryNavGroups.reduce(
     (count, group) => count + group.items.length,
@@ -128,12 +129,14 @@ export function DashboardShell({
                 <DashboardHeaderTitle fallback={title} branded />
               </div>
               <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-                <Link
-                  href="/dashboard/register-stay"
-                  className="inline-flex h-8 items-center rounded-lg bg-mkt-terracotta px-2.5 text-xs font-semibold text-white transition hover:bg-mkt-terracotta-hover sm:h-9 sm:px-3 sm:text-sm"
-                >
-                  Registrar concepto
-                </Link>
+                {canMutate(role) ? (
+                  <Link
+                    href="/dashboard/register-stay"
+                    className="inline-flex h-8 items-center rounded-lg bg-mkt-terracotta px-2.5 text-xs font-semibold text-white transition hover:bg-mkt-terracotta-hover sm:h-9 sm:px-3 sm:text-sm"
+                  >
+                    Registrar concepto
+                  </Link>
+                ) : null}
                 {userName ? (
                   <div className="min-w-0 max-w-[9.5rem] text-right sm:max-w-[14rem]">
                     <p className="truncate text-xs font-semibold leading-tight text-white sm:text-sm">

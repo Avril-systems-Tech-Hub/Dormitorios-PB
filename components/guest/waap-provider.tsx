@@ -1,6 +1,5 @@
 "use client";
 
-import { initWaaP } from "@human.tech/waap-sdk";
 import {
   createContext,
   useCallback,
@@ -10,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { waapConfig } from "@/lib/waap/config";
+import { ensureWaaPReady, toGuestLoginError } from "@/lib/waap/client";
 import { normalizeWalletAddress } from "@/lib/guest-auth/wallet";
 
 type WaaPContextValue = {
@@ -34,8 +33,19 @@ export function WaaPProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.lang = "es-MX";
-    initWaaP(waapConfig);
-    setReady(true);
+    let cancelled = false;
+
+    ensureWaaPReady()
+      .then(() => {
+        if (!cancelled) setReady(true);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(toGuestLoginError(err));
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const fetchLoginEmail = useCallback(async () => {
@@ -52,17 +62,13 @@ export function WaaPProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async () => {
-    if (!ready || typeof window === "undefined" || !window.waap) {
-      setError("El inicio de sesión aún no está listo. Intenta de nuevo.");
-      return null;
-    }
-
     setIsConnecting(true);
     setError(null);
 
     try {
-      await window.waap.login();
-      const accounts = (await window.waap.request({
+      const provider = await ensureWaaPReady();
+      await provider.login();
+      const accounts = (await provider.request({
         method: "eth_requestAccounts",
       })) as string[];
 
@@ -75,14 +81,12 @@ export function WaaPProvider({ children }: { children: ReactNode }) {
       setAddress(normalized);
       return normalized;
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "No se pudo completar el inicio de sesión.";
-      setError(message);
+      setError(toGuestLoginError(err));
       return null;
     } finally {
       setIsConnecting(false);
     }
-  }, [ready]);
+  }, []);
 
   const logout = useCallback(async () => {
     if (typeof window !== "undefined" && window.waap?.logout) {

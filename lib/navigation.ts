@@ -1,5 +1,6 @@
 import type { UserRole } from "@/types/domain";
 import type { SystemModule } from "@/lib/auth/permissions";
+import { isConsultaModuleKey, isConsultaRole } from "@/lib/auth/roles";
 
 type DashboardLink = {
   href: string;
@@ -94,18 +95,18 @@ export const PAGE_TITLES: Record<string, string> = {
 
 // Fallback estático para cuando no hay conexión a DB o para el modo bypass
 const staticDashboardLinks: DashboardLink[] = [
-  { href: "/dashboard", label: "Resumen", roles: ["admin", "reception"] },
+  { href: "/dashboard", label: "Resumen", roles: ["admin", "reception", "consulta"] },
   { href: "/dashboard/register-stay", label: "Registrar concepto", roles: ["admin", "reception"] },
-  { href: "/dashboard/reservations", label: "Reservas", roles: ["admin", "reception"] },
-  { href: "/dashboard/beds", label: "Camas", roles: ["admin", "reception"] },
-  { href: "/dashboard/guests", label: "Huéspedes", roles: ["admin", "reception"] },
-  { href: "/dashboard/payments", label: "Ingresos", roles: ["admin", "reception"] },
-  { href: "/dashboard/expenses", label: "Egresos", roles: ["admin", "reception"] },
+  { href: "/dashboard/reservations", label: "Reservas", roles: ["admin", "reception", "consulta"] },
+  { href: "/dashboard/beds", label: "Camas", roles: ["admin", "reception", "consulta"] },
+  { href: "/dashboard/guests", label: "Huéspedes", roles: ["admin", "reception", "consulta"] },
+  { href: "/dashboard/payments", label: "Ingresos", roles: ["admin", "reception", "consulta"] },
+  { href: "/dashboard/expenses", label: "Egresos", roles: ["admin", "reception", "consulta"] },
   { href: "/dashboard/imported-records", label: "Importados", roles: ["admin"] },
-  { href: "/dashboard/shifts", label: "Turnos", roles: ["admin", "reception"] },
-  { href: "/dashboard/cash-cuts", label: "Cortes", roles: ["admin", "reception"] },
-  { href: "/dashboard/reports", label: "Reportes", roles: ["admin"] },
-  { href: "/dashboard/audit", label: "Auditoría", roles: ["admin"] },
+  { href: "/dashboard/shifts", label: "Turnos", roles: ["admin", "reception", "consulta"] },
+  { href: "/dashboard/cash-cuts", label: "Cortes", roles: ["admin", "reception", "consulta"] },
+  { href: "/dashboard/reports", label: "Reportes", roles: ["admin", "consulta"] },
+  { href: "/dashboard/audit", label: "Auditoría", roles: ["admin", "consulta"] },
   { href: "/dashboard/users", label: "Usuarios", roles: ["admin"] },
   { href: "/dashboard/settings", label: "Ajustes", roles: ["admin"] },
 ];
@@ -224,6 +225,8 @@ export function groupModules(modules: SystemModule[], role?: UserRole): NavGroup
         item.key === "guests" ||
         item.key === "expenses",
     );
+  } else if (isConsultaRole(role)) {
+    items = items.filter((item) => isConsultaModuleKey(item.key));
   }
   return groupNavItems(items, groupDefs);
 }

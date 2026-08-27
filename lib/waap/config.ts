@@ -1,19 +1,32 @@
 import type { InitSilkOptions } from "@human.tech/waap-sdk";
 
-export const waapConfig: InitSilkOptions = {
-  useStaging: process.env.NEXT_PUBLIC_WAAP_USE_STAGING === "true",
-  walletConnectProjectId: process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID,
-  project: {
-    name: "Dormitorios Plaza Basílica",
-    entryTitle: "Dormitorios Plaza Basilica",
-    projectId: process.env.NEXT_PUBLIC_WAAP_PROJECT_ID,
+/** Email + Google only — no wallets, GitHub, or other socials. */
+export const waapGuestUiConfig: NonNullable<InitSilkOptions["config"]> = {
+  authenticationMethods: ["email", "social"],
+  allowedSocials: ["google"],
+  styles: {
+    darkMode: false,
   },
-  config: {
-    authenticationMethods: ["email", "social"],
-    allowedSocials: ["google"],
-    styles: {
-      darkMode: false,
-    },
-    showSecured: true,
-  },
+  showSecured: true,
 };
+
+export function getWaapConfig(origin?: string): InitSilkOptions {
+  return {
+    useStaging: process.env.NEXT_PUBLIC_WAAP_USE_STAGING === "true",
+    project: {
+      name: "Dormitorios Plaza Basílica",
+      entryTitle: "Entra con tu correo",
+      projectId: process.env.NEXT_PUBLIC_WAAP_PROJECT_ID,
+      ...(origin
+        ? {
+            authSuccessUrl: `${origin}/login`,
+            authErrorUrl: `${origin}/login`,
+          }
+        : {}),
+    },
+    config: waapGuestUiConfig,
+  };
+}
+
+/** Static config for non-window contexts. Prefer getWaapConfig() in the browser. */
+export const waapConfig: InitSilkOptions = getWaapConfig();

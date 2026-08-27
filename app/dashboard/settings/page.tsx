@@ -34,8 +34,9 @@ export default async function SettingsPage() {
             <div>
               <h2 className="text-lg font-semibold text-text-main">Accesos del personal</h2>
               <p className="mt-1 text-sm text-text-muted">
-                Crea usuarios de recepción, mira su nombre de acceso y restablece contraseñas cuando
-                las olviden. La clave nunca se puede recuperar: solo definir una nueva.
+                Crea usuarios de recepción o consulta, mira su nombre de acceso y restablece
+                contraseñas cuando las olviden. La clave nunca se puede recuperar: solo definir una
+                nueva.
               </p>
             </div>
             <Link

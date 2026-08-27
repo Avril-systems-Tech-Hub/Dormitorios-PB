@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSessionProfile } from "@/lib/auth/guards";
+import { seesAdminWorkspace } from "@/lib/auth/roles";
 import {
   getDailyFinanceGuestDetailsInRange,
   getDailyFinanceSummariesInRange,
@@ -52,7 +53,7 @@ export default async function DashboardPage({
   const monthAnchor = financeMonthKeyToAnchorDate(selectedMonth);
   const monthOptions = getFinanceMonthOptions(24, today);
 
-  if (profile.role !== "admin") {
+  if (!seesAdminWorkspace(profile.role)) {
     const openShift = await getOpenShift(profile.id);
     if (!openShift) {
       return (

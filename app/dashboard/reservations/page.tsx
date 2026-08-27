@@ -25,6 +25,7 @@ import {
 import { reservationHasPendingCheckout, reservationIsInHouseNow } from "@/lib/bed-occupancy";
 import { autoCloseLiquidatedStays } from "@/lib/auto-checkout";
 import { requireModulePermission } from "@/lib/auth/guards";
+import { canMutate } from "@/lib/auth/roles";
 import { formatBedLabel } from "@/lib/beds";
 
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | undefined {
@@ -37,7 +38,8 @@ export default async function ReservationsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireModulePermission("reservations");
+  const profile = await requireModulePermission("reservations");
+  const allowMutations = canMutate(profile.role);
   const params = await searchParams;
   const { page, pageSize, q } = parsePagination(params);
   const [from, to] = getRange(page, pageSize);
@@ -122,6 +124,7 @@ export default async function ReservationsPage({
         payment_status: folio?.payment_status,
       });
       const canCheckout =
+        allowMutations &&
         !isCheckedOut &&
         reservation.status !== "cancelled" &&
         reservation.check_in_date <= today &&
@@ -137,7 +140,7 @@ export default async function ReservationsPage({
               reservationId={reservation.id}
               nights={reservation.nights}
               returnTo="/dashboard/reservations"
-              readOnly={isCheckedOut || reservation.status === "cancelled"}
+              readOnly={!allowMutations || isCheckedOut || reservation.status === "cancelled"}
             />
           </div>,
         ),
@@ -160,7 +163,7 @@ export default async function ReservationsPage({
             reservationId={reservation.id}
             nights={reservation.nights}
             returnTo="/dashboard/reservations"
-            readOnly={isCheckedOut || reservation.status === "cancelled"}
+            readOnly={!allowMutations || isCheckedOut || reservation.status === "cancelled"}
           />,
         ),
         `${reservation.check_in_date} -> ${reservation.check_out_date}`,
@@ -233,29 +236,33 @@ export default async function ReservationsPage({
         ),
         folio?.total_amount ? `$${Number(folio.total_amount).toFixed(2)}` : "$0.00",
         folio?.balance_due ? `$${Number(folio.balance_due).toFixed(2)}` : "$0.00",
-        folio?.id ? (
-          <ReservationPaymentInline
-            key={`pay-${reservation.id}`}
-            folioId={folio.id}
-            folioCode={folio.folio_code ?? ""}
-            balanceDue={Number(folio.balance_due ?? 0)}
-            totalAmount={Number(folio.total_amount ?? 0)}
-            paymentStatus={folio.payment_status ?? "pending"}
-            returnTo="/dashboard/reservations"
-          />
-        ) : (
-          <span className="text-xs text-gray-400">—</span>
-        ),
-        canCheckout ? (
-          <RegisterCheckoutButton
-            key={`checkout-${reservation.id}`}
-            reservationId={reservation.id}
-            balanceDue={Number(folio?.balance_due ?? 0)}
-            compact
-          />
-        ) : (
-          <span className="text-xs text-text-muted">—</span>
-        ),
+        ...(allowMutations
+          ? [
+              folio?.id ? (
+                <ReservationPaymentInline
+                  key={`pay-${reservation.id}`}
+                  folioId={folio.id}
+                  folioCode={folio.folio_code ?? ""}
+                  balanceDue={Number(folio.balance_due ?? 0)}
+                  totalAmount={Number(folio.total_amount ?? 0)}
+                  paymentStatus={folio.payment_status ?? "pending"}
+                  returnTo="/dashboard/reservations"
+                />
+              ) : (
+                <span className="text-xs text-gray-400">—</span>
+              ),
+              canCheckout ? (
+                <RegisterCheckoutButton
+                  key={`checkout-${reservation.id}`}
+                  reservationId={reservation.id}
+                  balanceDue={Number(folio?.balance_due ?? 0)}
+                  compact
+                />
+              ) : (
+                <span className="text-xs text-text-muted">—</span>
+              ),
+            ]
+          : []),
       ];
     }) ?? [];
 
@@ -264,7 +271,7 @@ export default async function ReservationsPage({
       <Card>
         <h2 className="text-lg font-semibold text-text-main">Reservaciones y estancias</h2>
         <p className="mt-1 text-sm text-text-muted">
-          Control de check-in, cama asignada y estado de pago por folio.
+          Control de estancias, cama asignada y estado de pago por folio.
         </p>
         <div className="mt-4 border-t border-border-soft pt-4">
           <Suspense fallback={<p className="text-sm text-text-muted">Cargando filtro…</p>}>
@@ -292,8 +299,7 @@ export default async function ReservationsPage({
           "Pago",
           "Total",
           "Saldo",
-          "Cobrar",
-          "Salida",
+          ...(allowMutations ? ["Cobrar", "Salida"] : []),
         ]}
         rows={rows}
         filterMode="global"
