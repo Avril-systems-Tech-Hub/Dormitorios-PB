@@ -1,0 +1,81 @@
+---
+description: When and how to use RootRouter MCP (index_repo, select_context) for token-efficient repo context
+alwaysApply: true
+---
+
+# RootRouter MCP — agent playbook
+
+Install via `rootrouter init cursor --project-store` (writes this rule + MCP config), or copy to **`.cursor/rules/rootrouter-mcp.mdc`**.
+
+RootRouter **complements** specs and anchor files — it does **not** replace reading them.
+
+## Store isolation (Motus / production)
+
+- **This workspace store:** `/Users/brahma101/.rootrouter/dormitorios/cursor-store.json`
+- **Default agentId:** `dormitorios` (passed as `ROOTROUTER_DEFAULT_AGENT_ID`; use on `index_repo` / `select_*` when omitted)
+- Store data lives on the **machine** under `~/.rootrouter/<slug>/`, not as committed git source
+- **Never** invent a store path. If `.cursor/mcp.json` is missing project store, tell the user to run:  
+  `rootrouter init cursor --project-store --project-agent-id <slug>`
+- Global `~/.rootrouter/store.json` is **demos only** — do not index Motus repos there
+
+## When to use (cold path)
+
+Call RootRouter when **any** of these apply:
+
+- New chat and unfamiliar repo area or large monorepo slice
+- User mentions a **spec**, **slice**, **acceptance criteria**, or `ROOTROUTER_ACTIVE_SPEC` / `MOTUS_ACTIVE_SPEC`
+- Task is cross-module: "where does X live?", new feature spanning many files
+- Repo not indexed yet this session **and** task needs more than 1–2 known files
+
+## When to skip (warm path)
+
+**Do not** call `index_repo` or `select_context` when:
+
+- Single-file or localized fix (typo, one component, one API route)
+- Anchor files are **already read** in this chat and task is a follow-up
+- User named exact file paths and the change is confined to them
+
+Re-running selection adds overhead without savings on warm work.
+
+## Required workflow (cold slice)
+
+1. **Read the active spec first** (if user or env points to one)
+2. **`index_repo`** — once per repo root per slice kickoff (not every turn); path = this workspace root
+3. **`select_for_spec`** when `ROOTROUTER_ACTIVE_SPEC` is set — **or** **`select_context`** with a shaped query:
+   - slice name + acceptance criteria + module names + anchor file names
+   - ✅ `"Academy slice 4: lesson player progress bar, cache invalidation, LessonPlayer.tsx, AC 3.2"`
+   - ❌ `"read everything"` / `"Academy stuff"`
+   - Monorepos: add `pathPrefix` (e.g. `"apps/academy"`) or `excludePaths` to drop sibling apps
+4. **Read anchor files** the spec names (do not skip)
+5. **`Read` / `Grep` only for gaps** selection missed
+6. **`stats`** or **`list_selections`** at slice handoff — use `docs/templates/slice-handoff.md`
+
+## MCP tools
+
+| Tool | Use |
+|------|-----|
+| `index_repo` | `path` = workspace root; call once when store cold |
+| `select_for_spec` | One call when spec env set — parses spec, builds query + path scope |
+| `select_context` | `query` + `tokenBudget` (default 4000) |
+| `record_context` | Ad-hoc chunks (tool output, docs) if needed |
+| `stats` | Handoff summary — cumulative savings + last selection |
+| `list_selections` | Review past `select_context` calls (`selections.jsonl`) |
+
+Before calling: read the tool schema from the enabled **rootrouter** MCP server.
+
+## Anti-patterns
+
+- `@`-mentioning whole `apps/` or `packages/` without need
+- Vague `select_context` queries
+- Re-`index_repo` on every turn
+- Skipping the spec because chunks were returned
+- Using RootRouter for a one-line edit when the file is already in context
+- Indexing multiple repos into one global store
+
+## Decision (quick)
+
+```
+New task → spec/slice or unfamiliar repo?
+  YES → cold? → index_repo (if needed) → select_context → spec + anchors → implement
+  NO  → single file / already warm? → Read/edit directly
+```
