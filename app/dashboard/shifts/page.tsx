@@ -5,6 +5,7 @@ import { ShiftActionButtons } from "@/components/dashboard/shift-action-buttons"
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ResponsiveTable } from "@/components/ui/responsive-table";
+import { formatMexicoCityDateTime } from "@/lib/dates";
 import { formatOpenShiftLabel, getOpenShift, getShiftExpenseTotal } from "@/lib/open-shift";
 import { parsePagination, getRange } from "@/lib/pagination";
 
@@ -39,8 +40,8 @@ export default async function ShiftsPage({
       const openedBy = shift.open_by as { full_name?: string } | undefined;
       const closedBy = shift.close_by as { full_name?: string } | undefined;
       return [
-        new Date(shift.opened_at).toLocaleString("es-MX"),
-        shift.closed_at ? new Date(shift.closed_at).toLocaleString("es-MX") : "-",
+        formatMexicoCityDateTime(shift.opened_at),
+        shift.closed_at ? formatMexicoCityDateTime(shift.closed_at) : "-",
         openedBy?.full_name ?? "Sin usuario",
         closedBy?.full_name ?? "-",
         <Badge key={shift.id} variant={shift.status === "open" ? "warning" : "success"}>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { RegisterCheckoutButton } from "@/components/ui/register-checkout-button";
+import { formatMexicoCityDateTime } from "@/lib/dates";
 import { normalizeLockerCode } from "@/lib/locker";
 
 type ReservationDetail = {
@@ -115,9 +116,7 @@ export function BedCardAccordion({ detail }: { detail: ReservationDetail | null 
           <div className="flex justify-between gap-2">
             <span className="text-text-muted shrink-0">Creada</span>
             <span className="text-text-main min-w-0 break-all text-right">
-              {detail.created_at
-                ? new Date(detail.created_at).toLocaleString("es-MX", { timeZone: "America/Mexico_City", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
-                : "—"}
+              {detail.created_at ? formatMexicoCityDateTime(detail.created_at) : "—"}
             </span>
           </div>
           <div className="flex justify-between items-center">

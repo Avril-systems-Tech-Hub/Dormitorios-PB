@@ -5,6 +5,7 @@ import {
   type RecentReservationLimit,
   type ReceptionSearchResult,
 } from "@/lib/reception-check-in";
+import { formatMexicoCityDateTime } from "@/lib/dates";
 
 function formatMoney(value: number) {
   return `$${value.toFixed(2)}`;
@@ -12,8 +13,7 @@ function formatMoney(value: number) {
 
 function formatCreatedAt(value: string | null) {
   if (!value) return null;
-  return new Date(value).toLocaleString("es-MX", {
-    timeZone: "America/Mexico_City",
+  return formatMexicoCityDateTime(value, {
     day: "2-digit",
     month: "short",
     hour: "2-digit",

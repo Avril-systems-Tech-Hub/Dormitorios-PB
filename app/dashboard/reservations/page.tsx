@@ -16,6 +16,7 @@ import { ReservationsPeriodFilter } from "@/components/dashboard/reservations-pe
 import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 import {
   financeMonthKeyToAnchorDate,
+  formatMexicoCityDateTime,
   getFinanceMonthOptions,
   getMexicoCityDateString,
   getReservationPeriodBounds,
@@ -192,16 +193,7 @@ export default async function ReservationsPage({
             lockerDays={lockerDays}
           />,
         ),
-        reservation.created_at
-          ? new Date(reservation.created_at).toLocaleString("es-MX", {
-              timeZone: "America/Mexico_City",
-              day: "2-digit",
-              month: "short",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "—",
+        reservation.created_at ? formatMexicoCityDateTime(reservation.created_at) : "—",
         ft(
           reservation.is_historical
             ? "Histórica sin inventario"

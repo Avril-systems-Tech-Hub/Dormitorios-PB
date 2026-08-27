@@ -5,6 +5,7 @@ import { DayButton, DayPicker } from "react-day-picker";
 import type { DateRange, DayButtonProps } from "react-day-picker";
 import { es } from "date-fns/locale/es";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { formatMexicoCityDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
 function CalendarDayButton({
@@ -98,10 +99,7 @@ export function DateRangeCalendar({
           <p className="text-[10px] font-semibold uppercase tracking-wide text-mkt-terracotta">Entrada</p>
           <p className={dateTextClass}>
             {checkInDate
-              ? new Date(checkInDate + "T12:00:00").toLocaleDateString("es-MX", {
-                  day: "numeric",
-                  month: "short",
-                })
+              ? formatMexicoCityDate(checkInDate, { day: "numeric", month: "short" })
               : "—"}
           </p>
         </div>
@@ -112,10 +110,7 @@ export function DateRangeCalendar({
           <p className="text-[10px] font-semibold uppercase tracking-wide text-mkt-terracotta">Salida</p>
           <p className={dateTextClass}>
             {checkOutDate
-              ? new Date(checkOutDate + "T12:00:00").toLocaleDateString("es-MX", {
-                  day: "numeric",
-                  month: "short",
-                })
+              ? formatMexicoCityDate(checkOutDate, { day: "numeric", month: "short" })
               : "—"}
           </p>
         </div>

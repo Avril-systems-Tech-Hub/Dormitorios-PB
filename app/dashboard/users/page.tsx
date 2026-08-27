@@ -10,6 +10,7 @@ import { ResponsiveTable } from "@/components/ui/responsive-table";
 import { requireRole } from "@/lib/auth/guards";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAllRoles, getAllModules, getRoleModules } from "@/lib/auth/permissions";
+import { formatMexicoCityDate } from "@/lib/dates";
 import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 
 export default async function UsersPage({
@@ -108,7 +109,7 @@ export default async function UsersPage({
     return [
       nameCell,
       roleCell,
-      new Date(p.created_at).toLocaleDateString("es-MX", { timeZone: "America/Mexico_City" }),
+      formatMexicoCityDate(p.created_at),
       statusCell,
       actionsCell,
     ];

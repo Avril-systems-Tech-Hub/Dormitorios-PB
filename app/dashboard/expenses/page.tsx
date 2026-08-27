@@ -15,6 +15,7 @@ import {
 } from "@/lib/day-finance";
 import {
   financeMonthKeyToAnchorDate,
+  formatMexicoCityDateTime,
   formatMexicoCityMonthLabel,
   getFinanceDayOptions,
   getFinanceMonthOptions,
@@ -120,7 +121,7 @@ export default async function ExpensesPage({
           expenseProfile?.full_name ?? "Sin usuario",
           expense.notes ?? "—",
           photoCell,
-          new Date(expense.recorded_at).toLocaleString("es-MX", { timeZone: "America/Mexico_City" }),
+          formatMexicoCityDateTime(expense.recorded_at),
           <ShiftExpenseRowActions
             key={`actions-${expense.id}`}
             expense={{
@@ -276,7 +277,7 @@ export default async function ExpensesPage({
         profile?.full_name ?? "Sin usuario",
         expense.notes ?? "—",
         photoCell,
-        new Date(expense.recorded_at).toLocaleString("es-MX", { timeZone: "America/Mexico_City" }),
+        formatMexicoCityDateTime(expense.recorded_at),
         <ExpenseDeleteButton
           key={`delete-${expense.id}`}
           movementId={expense.id}

@@ -17,6 +17,7 @@ import {
 } from "@/lib/audit-log-presenter";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
+import { formatMexicoCityDateTime } from "@/lib/dates";
 
 const CATEGORY_BADGE_VARIANT: Record<
   string,
@@ -133,9 +134,7 @@ export default async function AuditPage({
       );
 
       return [
-        new Date(log.created_at).toLocaleString("es-MX", {
-          timeZone: "America/Mexico_City",
-        }),
+        formatMexicoCityDateTime(log.created_at),
         actorCell,
         activityCell,
         detailCell,

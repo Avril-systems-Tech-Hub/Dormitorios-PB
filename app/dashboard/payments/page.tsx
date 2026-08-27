@@ -11,6 +11,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireModulePermission } from "@/lib/auth/guards";
 import {
   financeMonthKeyToAnchorDate,
+  formatMexicoCityDateTime,
   getFinanceDayOptions,
   getFinanceMonthOptions,
   getFinanceWeekOptions,
@@ -272,9 +273,7 @@ export default async function PaymentsPage({
         PAYMENT_TYPE_LABELS[payment.payment_type as keyof typeof PAYMENT_TYPE_LABELS] ??
           payment.payment_type,
         payment.effective_date,
-        new Date(payment.captured_at).toLocaleString("es-MX", {
-          timeZone: "America/Mexico_City",
-        }),
+        formatMexicoCityDateTime(payment.captured_at),
         receiver?.full_name ?? "Sin receptor",
         payment.balance_after == null ? "—" : `$${Number(payment.balance_after).toFixed(2)}`,
         <Badge

@@ -1,3 +1,4 @@
+import { formatMexicoCityDateTime } from "@/lib/dates";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type OpenShiftInfo = {
@@ -30,8 +31,7 @@ export async function getOpenShift(profileId: string): Promise<OpenShiftInfo | n
 }
 
 export function formatOpenShiftLabel(shift: OpenShiftInfo): string {
-  const when = new Date(shift.opened_at).toLocaleString("es-MX", {
-    timeZone: "America/Mexico_City",
+  const when = formatMexicoCityDateTime(shift.opened_at, {
     day: "2-digit",
     month: "short",
     hour: "2-digit",

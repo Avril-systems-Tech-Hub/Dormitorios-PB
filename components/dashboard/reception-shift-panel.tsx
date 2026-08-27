@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ShiftActionButtons } from "@/components/dashboard/shift-action-buttons";
+import { formatMexicoCityDateTime } from "@/lib/dates";
 
 type ReceptionShiftPanelProps = {
   returnTo?: string;
@@ -29,7 +30,7 @@ export async function ReceptionShiftPanel({ returnTo = "/dashboard" }: Reception
           </div>
           <p className="mt-1 text-sm text-text-muted">
             {hasOpenShift
-              ? `Turno activo desde ${new Date(openShift!.opened_at).toLocaleString("es-MX")}.`
+              ? `Turno activo desde ${formatMexicoCityDateTime(openShift!.opened_at)}.`
               : "Inicia turno al comenzar operaciones en recepción."}
           </p>
         </div>

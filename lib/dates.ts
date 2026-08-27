@@ -72,6 +72,22 @@ export function formatMexicoCityDateTime(
   return new Date(value).toLocaleString("es-MX", { ...options, timeZone: MEXICO_CITY_TZ });
 }
 
+/** Format a calendar day (YYYY-MM-DD) or instant as a date in Mexico City. */
+export function formatMexicoCityDate(
+  value: string | Date,
+  options: Intl.DateTimeFormatOptions = {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  },
+) {
+  const date =
+    typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+      ? mexicoCityCalendarDate(value)
+      : new Date(value);
+  return date.toLocaleDateString("es-MX", { ...options, timeZone: MEXICO_CITY_TZ });
+}
+
 function daysInCalendarMonth(year: number, month: number) {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }

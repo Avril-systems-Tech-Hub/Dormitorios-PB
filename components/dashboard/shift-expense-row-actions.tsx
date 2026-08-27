@@ -12,6 +12,7 @@ import {
   EXPENSE_CONCEPT_LABELS,
   getExpenseConceptLabel,
 } from "@/lib/expense-concepts";
+import { formatMexicoCityDateTime } from "@/lib/dates";
 import type { ExpenseConcept } from "@/types/domain";
 
 const METHOD_LABELS: Record<string, string> = {
@@ -318,9 +319,7 @@ function ExpenseHistoryModal({
             <div key={entry.id} className="rounded-lg border border-border-soft bg-surface-soft/50 p-3">
               <p className="text-sm font-medium text-text-main">{entry.summary}</p>
               <p className="mt-1 text-xs text-text-muted">
-                {new Date(entry.createdAt).toLocaleString("es-MX", {
-                  timeZone: "America/Mexico_City",
-                })}
+                {formatMexicoCityDateTime(entry.createdAt)}
                 {entry.actorName ? ` · ${entry.actorName}` : ""}
               </p>
               {entry.action === "expense_updated" && entry.before && entry.after ? (

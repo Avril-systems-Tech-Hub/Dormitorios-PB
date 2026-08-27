@@ -1,7 +1,7 @@
-import { mexicoCityCalendarDate } from "@/lib/dates";
+import { formatMexicoCityDate, formatMexicoCityDateTime, MEXICO_CITY_TZ } from "@/lib/dates";
 import { type TableColumnConfig } from "@/lib/table-controls";
 
-const CDMX = "America/Mexico_City";
+const CDMX = MEXICO_CITY_TZ;
 
 /** Day of month from check-in date (legacy "Día" column). */
 export function formatRosterDay(checkInDate: string): string {
@@ -11,8 +11,7 @@ export function formatRosterDay(checkInDate: string): string {
 }
 
 export function formatRosterDate(dateString: string): string {
-  return mexicoCityCalendarDate(dateString).toLocaleDateString("es-MX", {
-    timeZone: CDMX,
+  return formatMexicoCityDate(dateString, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -29,8 +28,7 @@ export function formatRosterTime(isoTimestamp: string): string {
 }
 
 export function formatRosterDateTime(isoTimestamp: string): string {
-  return new Date(isoTimestamp).toLocaleString("es-MX", {
-    timeZone: CDMX,
+  return formatMexicoCityDateTime(isoTimestamp, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

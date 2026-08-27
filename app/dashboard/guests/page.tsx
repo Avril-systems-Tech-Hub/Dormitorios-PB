@@ -32,6 +32,7 @@ import {
 import { compareByDirection, parseTableSort } from "@/lib/table-controls";
 import {
   financeMonthKeyToAnchorDate,
+  formatMexicoCityDate,
   getFinanceDayOptions,
   getFinanceMonthOptions,
   getFinanceWeekOptions,
@@ -351,7 +352,7 @@ export default async function GuestsPage({
         <span className="whitespace-nowrap tabular-nums">
           {latest.createdAt
             ? formatRosterDateTime(latest.createdAt)
-            : new Date(guest.created_at).toLocaleDateString("es-MX", { timeZone: "America/Mexico_City" })}
+            : formatMexicoCityDate(guest.created_at)}
         </span>,
       ),
       ft(

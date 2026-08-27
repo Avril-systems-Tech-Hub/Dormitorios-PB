@@ -17,6 +17,7 @@ import {
 import { getExpenseConceptLabel } from "@/lib/expense-concepts";
 import {
   financeMonthKeyToAnchorDate,
+  formatMexicoCityDateTime,
   formatMexicoCityMonthLabel,
   getFinanceDayOptions,
   getFinanceMonthOptions,
@@ -128,7 +129,7 @@ export default async function CashCutsPage({
     cashCuts?.map((cut) => {
       const profile = cut.profiles as { full_name?: string } | undefined;
       return [
-        new Date(cut.created_at).toLocaleString("es-MX"),
+        formatMexicoCityDateTime(cut.created_at),
         profile?.full_name ?? "Sin usuario",
         `$${Number(cut.total_cash).toFixed(2)}`,
         `$${Number(cut.total_transfer).toFixed(2)}`,

@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { formatMexicoCityDayLabel } from "@/lib/dates";
+import { formatMexicoCityDate, formatMexicoCityDayLabel } from "@/lib/dates";
 import type { DailyFinanceEntry, DayFinanceGuestLine } from "@/lib/day-finance";
 
 const INCOME_COLOR = "#1f8f4e";
@@ -11,10 +11,9 @@ const EXPENSE_COLOR = "#c53b3b";
 
 function formatShortStayDate(isoDate: string) {
   if (!isoDate) return "—";
-  return new Date(`${isoDate}T12:00:00`).toLocaleDateString("es-MX", {
+  return formatMexicoCityDate(isoDate, {
     day: "numeric",
     month: "short",
-    timeZone: "America/Mexico_City",
   });
 }
 

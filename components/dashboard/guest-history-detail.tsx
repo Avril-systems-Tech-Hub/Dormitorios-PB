@@ -3,6 +3,7 @@
 import { Fragment, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { formatBedLabel } from "@/lib/beds";
+import { formatMexicoCityDate } from "@/lib/dates";
 
 export type GuestStaySummary = {
   checkIn: string;
@@ -24,11 +25,10 @@ export type GuestStaySummary = {
 };
 
 function formatShortDate(isoDate: string) {
-  return new Date(`${isoDate}T12:00:00`).toLocaleDateString("es-MX", {
+  return formatMexicoCityDate(isoDate, {
     day: "numeric",
     month: "short",
     year: "numeric",
-    timeZone: "America/Mexico_City",
   });
 }
 
