@@ -13,16 +13,22 @@ import {
 import { ReservationPaymentInline } from "@/components/ui/reservation-payment-inline";
 import { RegisterCheckoutButton } from "@/components/ui/register-checkout-button";
 import { ReservationsPeriodFilter } from "@/components/dashboard/reservations-period-filter";
+import { GuestsPaymentFilter } from "@/components/dashboard/guests-payment-filter";
 import { parsePagination, getRange, escapeIlike } from "@/lib/pagination";
 import {
   financeMonthKeyToAnchorDate,
   formatMexicoCityDateTime,
+  getFinanceDayOptions,
   getFinanceMonthOptions,
+  getFinanceWeekOptions,
   getMexicoCityDateString,
   getReservationPeriodBounds,
+  parseFinanceDayKey,
   parseFinanceMonthKey,
+  parseFinanceWeekAnchor,
   parseReservationPeriod,
 } from "@/lib/dates";
+import { parseGuestPaymentFilter } from "@/lib/guest-payment-filter";
 import { reservationHasPendingCheckout, reservationIsInHouseNow } from "@/lib/bed-occupancy";
 import { autoCloseLiquidatedStays } from "@/lib/auto-checkout";
 import { requireModulePermission } from "@/lib/auth/guards";
@@ -43,11 +49,17 @@ export default async function ReservationsPage({
   const { page, pageSize, q } = parsePagination(params);
   const [from, to] = getRange(page, pageSize);
   const period = parseReservationPeriod(params.period);
+  const paymentFilter = parseGuestPaymentFilter(params);
   const today = getMexicoCityDateString();
   const selectedMonth = parseFinanceMonthKey(params.financeMonth, today);
   const monthAnchor = financeMonthKeyToAnchorDate(selectedMonth);
+  const selectedDay = parseFinanceDayKey(params.financeDay, selectedMonth, today);
+  const selectedWeek = parseFinanceWeekAnchor(params.financeWeek, selectedMonth, today);
   const monthOptions = getFinanceMonthOptions(24, today);
-  const periodAnchor = period === "month" ? monthAnchor : today;
+  const dayOptions = getFinanceDayOptions(selectedMonth);
+  const weekOptions = getFinanceWeekOptions(selectedMonth);
+  const periodAnchor =
+    period === "day" ? selectedDay : period === "week" ? selectedWeek : monthAnchor;
   const periodBounds = getReservationPeriodBounds(period, periodAnchor);
 
   const supabase = createAdminClient();
@@ -61,6 +73,12 @@ export default async function ReservationsPage({
     )
     .gte("check_in_date", periodBounds.start)
     .lte("check_in_date", periodBounds.end);
+
+  if (paymentFilter === "paid") {
+    query = query.eq("folios.payment_status", "liquidated");
+  } else if (paymentFilter === "debt") {
+    query = query.neq("folios.payment_status", "liquidated");
+  }
 
   if (q) {
     query = query.ilike("folios.folio_code", `%${escapeIlike(q)}%`);
@@ -258,15 +276,30 @@ export default async function ReservationsPage({
         <p className="mt-1 text-sm text-text-muted">
           Control de check-in, cama asignada y estado de pago por folio.
         </p>
-        <div className="mt-4 border-t border-border-soft pt-4">
+        <div className="mt-4 space-y-3 border-t border-border-soft pt-4">
           <Suspense fallback={<p className="text-sm text-text-muted">Cargando filtro…</p>}>
             <ReservationsPeriodFilter
               period={period}
               periodLabel={periodBounds.label}
               selectedMonth={selectedMonth}
+              selectedDay={selectedDay}
+              selectedWeek={selectedWeek}
               monthOptions={monthOptions}
+              dayOptions={dayOptions}
+              weekOptions={weekOptions}
             />
           </Suspense>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-text-muted">
+              Filtra por periodo y por estado de pago del folio (sin mezclar con cortes).
+            </p>
+            <Suspense fallback={null}>
+              <GuestsPaymentFilter
+                value={paymentFilter}
+                basePath="/dashboard/reservations"
+              />
+            </Suspense>
+          </div>
         </div>
       </Card>
       <ResponsiveTable
